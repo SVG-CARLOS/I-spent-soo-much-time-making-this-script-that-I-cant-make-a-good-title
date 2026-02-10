@@ -1,0 +1,1707 @@
+-- ☀️ SHADES — Advanced Shader & Post-Processing Suite v1.0 ☀️
+-- Standalone Script | Mobile + PC | Real-time Controls
+-- Sunrays, Bloom, Blur, Shadows, Color Correction, Atmosphere, DOF & more
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+
+local LP = Players.LocalPlayer
+local PlayerGui = LP:WaitForChild("PlayerGui")
+local Camera = workspace.CurrentCamera
+local IsMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled
+
+-- ═══════════════════════════════════
+-- CLEANUP
+-- ═══════════════════════════════════
+if PlayerGui:FindFirstChild("ShadesGUI") then
+    PlayerGui.ShadesGUI:Destroy()
+end
+
+-- ═══════════════════════════════════
+-- ORIGINAL LIGHTING BACKUP
+-- ═══════════════════════════════════
+local OrigLighting = {
+    Brightness = Lighting.Brightness,
+    ClockTime = Lighting.ClockTime,
+    GeographicLatitude = Lighting.GeographicLatitude,
+    Ambient = Lighting.Ambient,
+    OutdoorAmbient = Lighting.OutdoorAmbient,
+    ColorShift_Bottom = Lighting.ColorShift_Bottom,
+    ColorShift_Top = Lighting.ColorShift_Top,
+    EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
+    EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
+    GlobalShadows = Lighting.GlobalShadows,
+    ShadowSoftness = Lighting.ShadowSoftness,
+    FogColor = Lighting.FogColor,
+    FogEnd = Lighting.FogEnd,
+    FogStart = Lighting.FogStart,
+    ExposureCompensation = Lighting.ExposureCompensation,
+}
+
+-- Store existing post effects to restore
+local OrigEffects = {}
+for _, child in pairs(Lighting:GetChildren()) do
+    if child:IsA("PostEffect") or child:IsA("Atmosphere") or child:IsA("Sky") then
+        OrigEffects[child.Name.."_"..child.ClassName] = {
+            instance = child,
+            enabled = child:IsA("PostEffect") and child.Enabled or nil,
+        }
+    end
+end
+
+-- ═══════════════════════════════════
+-- THEME
+-- ═══════════════════════════════════
+local TH = {
+    Bg = Color3.fromRGB(10, 10, 14),
+    Panel = Color3.fromRGB(18, 18, 24),
+    Card = Color3.fromRGB(26, 26, 34),
+    CardH = Color3.fromRGB(36, 36, 46),
+    Accent = Color3.fromRGB(255, 180, 60),
+    AccDim = Color3.fromRGB(180, 120, 40),
+    Text = Color3.fromRGB(240, 235, 225),
+    TextDim = Color3.fromRGB(130, 125, 115),
+    TextAct = Color3.fromRGB(10, 10, 14),
+    TOn = Color3.fromRGB(255, 180, 60),
+    TOff = Color3.fromRGB(45, 45, 52),
+    KOn = Color3.fromRGB(10, 10, 14),
+    KOff = Color3.fromRGB(120, 115, 105),
+    Border = Color3.fromRGB(50, 48, 42),
+    Slider = Color3.fromRGB(255, 180, 60),
+    Good = Color3.fromRGB(100, 255, 140),
+    Bad = Color3.fromRGB(255, 70, 70),
+    Sun = Color3.fromRGB(255, 220, 100),
+    Moon = Color3.fromRGB(140, 160, 255),
+    Warm = Color3.fromRGB(255, 160, 80),
+    Cool = Color3.fromRGB(80, 160, 255),
+}
+
+-- ═══════════════════════════════════
+-- SHADER STATE
+-- ═══════════════════════════════════
+local Shaders = {
+    -- Post effects we create
+    Bloom = nil,
+    Blur = nil,
+    ColorCorrection = nil,
+    SunRays = nil,
+    DepthOfField = nil,
+    Atmosphere = nil,
+
+    -- Enabled states
+    BloomOn = false,
+    BlurOn = false,
+    CCOn = false,
+    SunRaysOn = false,
+    DOFOn = false,
+    AtmoOn = false,
+    ShadowsOn = false,
+    VignetteOn = false,
+    ChromaOn = false,
+    FilmGrainOn = false,
+    NightVisionOn = false,
+    CinematicOn = false,
+    DreamOn = false,
+    HorrorOn = false,
+    RetroOn = false,
+    NeonOn = false,
+    UnderwaterOn = false,
+    SunsetOn = false,
+    FogOn = false,
+    RainOn = false,
+}
+
+local ActivePreset = "None"
+
+-- ═══════════════════════════════════
+-- GUI SETUP
+-- ═══════════════════════════════════
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "ShadesGUI"
+Gui.ResetOnSpawn = false
+Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+Gui.DisplayOrder = 1000
+Gui.Parent = PlayerGui
+
+-- ═══════════════════════════════════
+-- HELPERS
+-- ═══════════════════════════════════
+local function TW(obj, props, dur, style)
+    TweenService:Create(obj, TweenInfo.new(dur or 0.3, style or Enum.EasingStyle.Quad), props):Play()
+end
+
+local function Corner(p, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r or 8)
+    c.Parent = p
+    return c
+end
+
+local function Stroke(p, th, col, tr)
+    local s = Instance.new("UIStroke")
+    s.Thickness = th or 1
+    s.Color = col or TH.Border
+    s.Transparency = tr or 0.5
+    s.Parent = p
+    return s
+end
+
+-- ═══════════════════════════════════
+-- NOTIFICATION
+-- ═══════════════════════════════════
+local NotifBox = Instance.new("Frame")
+NotifBox.Size = UDim2.new(0, 260, 1, -20)
+NotifBox.Position = UDim2.new(1, -270, 0, 10)
+NotifBox.BackgroundTransparency = 1
+NotifBox.Parent = Gui
+
+local NL = Instance.new("UIListLayout")
+NL.SortOrder = Enum.SortOrder.LayoutOrder
+NL.Padding = UDim.new(0, 4)
+NL.VerticalAlignment = Enum.VerticalAlignment.Bottom
+NL.Parent = NotifBox
+
+local nOrd = 0
+local function Notify(title, msg, dur, col)
+    dur = dur or 3
+    col = col or TH.Accent
+    nOrd = nOrd + 1
+
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, 0, 0, 0)
+    f.BackgroundColor3 = TH.Bg
+    f.BackgroundTransparency = 0.05
+    f.BorderSizePixel = 0
+    f.ClipsDescendants = true
+    f.LayoutOrder = nOrd
+    f.Parent = NotifBox
+    Corner(f, 8)
+    Stroke(f, 1, col, 0.4)
+
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(0, 3, 1, 0)
+    bar.BackgroundColor3 = col
+    bar.BorderSizePixel = 0
+    bar.Parent = f
+
+    local tl = Instance.new("TextLabel")
+    tl.Size = UDim2.new(1, -14, 0, 15)
+    tl.Position = UDim2.new(0, 11, 0, 5)
+    tl.BackgroundTransparency = 1
+    tl.Text = title
+    tl.Font = Enum.Font.GothamBold
+    tl.TextSize = 11
+    tl.TextColor3 = col
+    tl.TextXAlignment = Enum.TextXAlignment.Left
+    tl.Parent = f
+
+    local ml = Instance.new("TextLabel")
+    ml.Size = UDim2.new(1, -14, 0, 13)
+    ml.Position = UDim2.new(0, 11, 0, 22)
+    ml.BackgroundTransparency = 1
+    ml.Text = msg or ""
+    ml.Font = Enum.Font.Gotham
+    ml.TextSize = 9
+    ml.TextColor3 = TH.TextDim
+    ml.TextXAlignment = Enum.TextXAlignment.Left
+    ml.Parent = f
+
+    local prog = Instance.new("Frame")
+    prog.Size = UDim2.new(1, 0, 0, 2)
+    prog.Position = UDim2.new(0, 0, 1, -2)
+    prog.BackgroundColor3 = col
+    prog.BorderSizePixel = 0
+    prog.Parent = f
+
+    TW(f, {Size = UDim2.new(1, 0, 0, 42)}, 0.3, Enum.EasingStyle.Back)
+    task.delay(0.35, function()
+        TweenService:Create(prog, TweenInfo.new(dur - 0.7, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 0, 2)}):Play()
+    end)
+    task.delay(dur, function()
+        TW(f, {Size = UDim2.new(1, 0, 0, 0)}, 0.3)
+        task.delay(0.35, function() f:Destroy() end)
+    end)
+end
+
+-- ═══════════════════════════════════
+-- MAIN PANEL
+-- ═══════════════════════════════════
+local W, H = 310, 560
+
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.new(0, W, 0, H)
+Main.Position = UDim2.new(1, -W - 14, 0.5, -H/2)
+Main.BackgroundColor3 = TH.Bg
+Main.BackgroundTransparency = 0.02
+Main.BorderSizePixel = 0
+Main.ClipsDescendants = true
+Main.Parent = Gui
+Corner(Main, 14)
+Stroke(Main, 1, TH.Border, 0.3)
+
+-- Top glow
+local topGlow = Instance.new("Frame")
+topGlow.Size = UDim2.new(1, -28, 0, 2)
+topGlow.Position = UDim2.new(0, 14, 0, 0)
+topGlow.BackgroundColor3 = TH.Accent
+topGlow.BackgroundTransparency = 0.2
+topGlow.BorderSizePixel = 0
+topGlow.ZIndex = 5
+topGlow.Parent = Main
+
+-- ═══════════════════════════════════
+-- TITLE BAR
+-- ═══════════════════════════════════
+local TBar = Instance.new("Frame")
+TBar.Size = UDim2.new(1, 0, 0, 48)
+TBar.BackgroundColor3 = TH.Panel
+TBar.BackgroundTransparency = 0.15
+TBar.BorderSizePixel = 0
+TBar.ZIndex = 3
+TBar.Parent = Main
+
+local tBarBtm = Instance.new("Frame")
+tBarBtm.Size = UDim2.new(1, 0, 0, 14)
+tBarBtm.Position = UDim2.new(0, 0, 1, -14)
+tBarBtm.BackgroundColor3 = TH.Panel
+tBarBtm.BackgroundTransparency = 0.15
+tBarBtm.BorderSizePixel = 0
+tBarBtm.ZIndex = 3
+tBarBtm.Parent = TBar
+
+local TTxt = Instance.new("TextLabel")
+TTxt.Size = UDim2.new(1, -90, 1, 0)
+TTxt.Position = UDim2.new(0, 14, 0, 0)
+TTxt.BackgroundTransparency = 1
+TTxt.Text = "☀️ SHADES"
+TTxt.Font = Enum.Font.GothamBlack
+TTxt.TextSize = 16
+TTxt.TextColor3 = TH.Accent
+TTxt.TextXAlignment = Enum.TextXAlignment.Left
+TTxt.ZIndex = 4
+TTxt.Parent = TBar
+
+local verLbl = Instance.new("TextLabel")
+verLbl.Size = UDim2.new(0, 40, 0, 16)
+verLbl.Position = UDim2.new(0, 108, 0.5, -8)
+verLbl.BackgroundColor3 = TH.Accent
+verLbl.BackgroundTransparency = 0.85
+verLbl.Text = "v1.0"
+verLbl.Font = Enum.Font.GothamBold
+verLbl.TextSize = 8
+verLbl.TextColor3 = TH.Accent
+verLbl.ZIndex = 4
+verLbl.Parent = TBar
+Corner(verLbl, 4)
+
+-- Dragging
+local dg, ds, dp = false, nil, nil
+TBar.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        dg = true; ds = i.Position; dp = Main.Position
+    end
+end)
+UIS.InputChanged:Connect(function(i)
+    if dg and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+        local d = i.Position - ds
+        Main.Position = UDim2.new(dp.X.Scale, dp.X.Offset + d.X, dp.Y.Scale, dp.Y.Offset + d.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dg = false end
+end)
+
+-- Minimize
+local panelMin = false
+local MinB = Instance.new("TextButton")
+MinB.Size = UDim2.new(0, 26, 0, 26)
+MinB.Position = UDim2.new(1, -64, 0.5, -13)
+MinB.BackgroundColor3 = TH.Card
+MinB.BorderSizePixel = 0
+MinB.Text = "—"
+MinB.Font = Enum.Font.GothamBold
+MinB.TextSize = 14
+MinB.TextColor3 = TH.TextDim
+MinB.AutoButtonColor = false
+MinB.ZIndex = 4
+MinB.Parent = TBar
+Corner(MinB, 6)
+
+-- Close
+local ClsB = Instance.new("TextButton")
+ClsB.Size = UDim2.new(0, 26, 0, 26)
+ClsB.Position = UDim2.new(1, -34, 0.5, -13)
+ClsB.BackgroundColor3 = Color3.fromRGB(190, 50, 50)
+ClsB.BorderSizePixel = 0
+ClsB.Text = "✕"
+ClsB.Font = Enum.Font.GothamBold
+ClsB.TextSize = 11
+ClsB.TextColor3 = Color3.fromRGB(255, 255, 255)
+ClsB.AutoButtonColor = false
+ClsB.ZIndex = 4
+ClsB.Parent = TBar
+Corner(ClsB, 6)
+
+-- Separator
+local sep = Instance.new("Frame")
+sep.Size = UDim2.new(1, -20, 0, 1)
+sep.Position = UDim2.new(0, 10, 1, -1)
+sep.BackgroundColor3 = TH.Border
+sep.BackgroundTransparency = 0.5
+sep.BorderSizePixel = 0
+sep.ZIndex = 4
+sep.Parent = TBar
+
+-- ═══════════════════════════════════
+-- TAB SYSTEM
+-- ═══════════════════════════════════
+local TabFrame = Instance.new("Frame")
+TabFrame.Size = UDim2.new(1, -12, 0, 30)
+TabFrame.Position = UDim2.new(0, 6, 0, 50)
+TabFrame.BackgroundTransparency = 1
+TabFrame.ZIndex = 3
+TabFrame.Parent = Main
+
+local TabLay = Instance.new("UIListLayout")
+TabLay.FillDirection = Enum.FillDirection.Horizontal
+TabLay.Padding = UDim.new(0, 3)
+TabLay.Parent = TabFrame
+
+local Content = Instance.new("Frame")
+Content.Size = UDim2.new(1, 0, 1, -84)
+Content.Position = UDim2.new(0, 0, 0, 84)
+Content.BackgroundTransparency = 1
+Content.ClipsDescendants = true
+Content.Parent = Main
+
+local Pages = {}
+local TabBtns = {}
+local ActiveTab = nil
+
+local function MakePage(name)
+    local sc = Instance.new("ScrollingFrame")
+    sc.Name = name
+    sc.Size = UDim2.new(1, -6, 1, -2)
+    sc.Position = UDim2.new(0, 3, 0, 1)
+    sc.BackgroundTransparency = 1
+    sc.ScrollBarThickness = 3
+    sc.ScrollBarImageColor3 = TH.AccDim
+    sc.BorderSizePixel = 0
+    sc.CanvasSize = UDim2.new(0, 0, 0, 0)
+    sc.Visible = false
+    sc.Parent = Content
+
+    local lay = Instance.new("UIListLayout")
+    lay.SortOrder = Enum.SortOrder.LayoutOrder
+    lay.Padding = UDim.new(0, 4)
+    lay.Parent = sc
+
+    local pad = Instance.new("UIPadding")
+    pad.PaddingLeft = UDim.new(0, 5)
+    pad.PaddingRight = UDim.new(0, 5)
+    pad.PaddingTop = UDim.new(0, 3)
+    pad.PaddingBottom = UDim.new(0, 8)
+    pad.Parent = sc
+
+    lay:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        sc.CanvasSize = UDim2.new(0, 0, 0, lay.AbsoluteContentSize.Y + 16)
+    end)
+
+    Pages[name] = sc
+    return sc
+end
+
+local function SwitchTab(name)
+    if ActiveTab == name then return end
+    for n, p in pairs(Pages) do p.Visible = (n == name) end
+    for _, td in ipairs(TabBtns) do
+        local act = td.n == name
+        TW(td.b, {BackgroundColor3 = act and TH.Accent or TH.Card, BackgroundTransparency = act and 0 or 0.5}, 0.2)
+        TW(td.l, {TextColor3 = act and TH.TextAct or TH.TextDim}, 0.2)
+    end
+    ActiveTab = name
+end
+
+local function AddTab(emoji, name, order)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 55, 0, 26)
+    b.BackgroundColor3 = TH.Card
+    b.BackgroundTransparency = 0.5
+    b.BorderSizePixel = 0
+    b.Text = ""
+    b.AutoButtonColor = false
+    b.LayoutOrder = order
+    b.ZIndex = 3
+    b.Parent = TabFrame
+    Corner(b, 7)
+
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 1, 0)
+    l.BackgroundTransparency = 1
+    l.Text = emoji
+    l.Font = Enum.Font.GothamBold
+    l.TextSize = 13
+    l.TextColor3 = TH.TextDim
+    l.ZIndex = 4
+    l.Parent = b
+
+    MakePage(name)
+    table.insert(TabBtns, {b = b, l = l, n = name})
+
+    b.MouseButton1Click:Connect(function() SwitchTab(name) end)
+    b.MouseEnter:Connect(function()
+        if ActiveTab ~= name then TW(b, {BackgroundTransparency = 0.2}, 0.12) end
+    end)
+    b.MouseLeave:Connect(function()
+        if ActiveTab ~= name then TW(b, {BackgroundTransparency = 0.5}, 0.12) end
+    end)
+end
+
+AddTab("☀️", "Light", 1)
+AddTab("✨", "FX", 2)
+AddTab("🌫️", "Atmo", 3)
+AddTab("🎬", "Preset", 4)
+AddTab("⚙️", "Tune", 5)
+
+-- ═══════════════════════════════════
+-- UI BUILDERS
+-- ═══════════════════════════════════
+local function Section(parent, text, order)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 22)
+    l.BackgroundTransparency = 1
+    l.Text = "  "..text
+    l.Font = Enum.Font.GothamBold
+    l.TextSize = 10
+    l.TextColor3 = TH.AccDim
+    l.TextTransparency = 0.15
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.LayoutOrder = order
+    l.Parent = parent
+end
+
+local function Toggle(parent, text, emoji, order, fn)
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 40)
+    card.BackgroundColor3 = TH.Card
+    card.BorderSizePixel = 0
+    card.LayoutOrder = order
+    card.Parent = parent
+    Corner(card, 9)
+    local cs = Stroke(card, 1, TH.Border, 0.7)
+
+    local emo = Instance.new("TextLabel")
+    emo.Size = UDim2.new(0, 24, 1, 0)
+    emo.Position = UDim2.new(0, 8, 0, 0)
+    emo.BackgroundTransparency = 1
+    emo.Text = emoji
+    emo.TextSize = 15
+    emo.Font = Enum.Font.SourceSans
+    emo.Parent = card
+
+    local txt = Instance.new("TextLabel")
+    txt.Size = UDim2.new(1, -100, 1, 0)
+    txt.Position = UDim2.new(0, 34, 0, 0)
+    txt.BackgroundTransparency = 1
+    txt.Text = text
+    txt.Font = Enum.Font.GothamSemibold
+    txt.TextSize = 11
+    txt.TextColor3 = TH.Text
+    txt.TextXAlignment = Enum.TextXAlignment.Left
+    txt.Parent = card
+
+    local tbg = Instance.new("Frame")
+    tbg.Size = UDim2.new(0, 36, 0, 20)
+    tbg.Position = UDim2.new(1, -44, 0.5, -10)
+    tbg.BackgroundColor3 = TH.TOff
+    tbg.BorderSizePixel = 0
+    tbg.Parent = card
+    Corner(tbg, 10)
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 14, 0, 14)
+    knob.Position = UDim2.new(0, 3, 0.5, -7)
+    knob.BackgroundColor3 = TH.KOff
+    knob.BorderSizePixel = 0
+    knob.Parent = tbg
+    Corner(knob, 7)
+
+    local active = false
+
+    local function Set(on)
+        active = on
+        TW(tbg, {BackgroundColor3 = on and TH.TOn or TH.TOff}, 0.25)
+        TW(knob, {
+            Position = on and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7),
+            BackgroundColor3 = on and TH.KOn or TH.KOff
+        }, 0.25, Enum.EasingStyle.Back)
+        TW(cs, {Color = on and TH.Accent or TH.Border, Transparency = on and 0.3 or 0.7}, 0.25)
+    end
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.ZIndex = 2
+    btn.Parent = card
+
+    btn.MouseButton1Click:Connect(function()
+        local nw = not active
+        Set(nw)
+        if fn then fn(nw) end
+    end)
+
+    btn.MouseEnter:Connect(function() TW(card, {BackgroundColor3 = TH.CardH}, 0.12) end)
+    btn.MouseLeave:Connect(function() TW(card, {BackgroundColor3 = TH.Card}, 0.12) end)
+
+    return Set
+end
+
+local function MakeSlider(parent, text, emoji, min, max, def, step, order, fn)
+    step = step or 1
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 52)
+    card.BackgroundColor3 = TH.Card
+    card.BorderSizePixel = 0
+    card.LayoutOrder = order
+    card.Parent = parent
+    Corner(card, 9)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -50, 0, 18)
+    lbl.Position = UDim2.new(0, 9, 0, 4)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = emoji.." "..text
+    lbl.Font = Enum.Font.GothamSemibold
+    lbl.TextSize = 10
+    lbl.TextColor3 = TH.Text
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = card
+
+    local vl = Instance.new("TextLabel")
+    vl.Size = UDim2.new(0, 42, 0, 18)
+    vl.Position = UDim2.new(1, -48, 0, 4)
+    vl.BackgroundTransparency = 1
+    vl.Text = tostring(def)
+    vl.Font = Enum.Font.GothamBold
+    vl.TextSize = 10
+    vl.TextColor3 = TH.Accent
+    vl.TextXAlignment = Enum.TextXAlignment.Right
+    vl.Parent = card
+
+    local sbg = Instance.new("Frame")
+    sbg.Size = UDim2.new(1, -18, 0, 5)
+    sbg.Position = UDim2.new(0, 9, 0, 33)
+    sbg.BackgroundColor3 = TH.TOff
+    sbg.BorderSizePixel = 0
+    sbg.Parent = card
+    Corner(sbg, 3)
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((def - min)/(max - min), 0, 1, 0)
+    fill.BackgroundColor3 = TH.Slider
+    fill.BorderSizePixel = 0
+    fill.Parent = sbg
+    Corner(fill, 3)
+
+    local sk = Instance.new("Frame")
+    sk.Size = UDim2.new(0, 12, 0, 12)
+    sk.Position = UDim2.new((def - min)/(max - min), -6, 0.5, -6)
+    sk.BackgroundColor3 = Color3.new(1, 1, 1)
+    sk.BorderSizePixel = 0
+    sk.ZIndex = 3
+    sk.Parent = sbg
+    Corner(sk, 6)
+
+    local sliding = false
+
+    local function Upd(inp)
+        local rel = math.clamp((inp.Position.X - sbg.AbsolutePosition.X) / sbg.AbsoluteSize.X, 0, 1)
+        local raw = min + (max - min) * rel
+        local val
+        if step < 1 then
+            val = math.floor(raw / step + 0.5) * step
+            val = math.clamp(val, min, max)
+            val = tonumber(string.format("%.2f", val))
+        else
+            val = math.floor(raw / step + 0.5) * step
+            val = math.clamp(val, min, max)
+        end
+        local norm = (val - min)/(max - min)
+        fill.Size = UDim2.new(norm, 0, 1, 0)
+        sk.Position = UDim2.new(norm, -6, 0.5, -6)
+        vl.Text = tostring(val)
+        if fn then fn(val) end
+    end
+
+    local function SetVal(val)
+        local norm = math.clamp((val - min)/(max - min), 0, 1)
+        fill.Size = UDim2.new(norm, 0, 1, 0)
+        sk.Position = UDim2.new(norm, -6, 0.5, -6)
+        vl.Text = tostring(val)
+    end
+
+    local hit = Instance.new("TextButton")
+    hit.Size = UDim2.new(1, 0, 0, 22)
+    hit.Position = UDim2.new(0, 0, 0, 24)
+    hit.BackgroundTransparency = 1
+    hit.Text = ""
+    hit.ZIndex = 4
+    hit.Parent = card
+
+    hit.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            sliding = true; Upd(inp)
+        end
+    end)
+    UIS.InputChanged:Connect(function(inp)
+        if sliding and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+            Upd(inp)
+        end
+    end)
+    UIS.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            sliding = false
+        end
+    end)
+
+    return SetVal
+end
+
+local function ActionBtn(parent, text, emoji, order, fn)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, 0, 0, 36)
+    b.BackgroundColor3 = TH.Card
+    b.BorderSizePixel = 0
+    b.LayoutOrder = order
+    b.Text = ""
+    b.AutoButtonColor = false
+    b.Parent = parent
+    Corner(b, 9)
+
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, -14, 1, 0)
+    l.Position = UDim2.new(0, 9, 0, 0)
+    l.BackgroundTransparency = 1
+    l.Text = emoji.."  "..text
+    l.Font = Enum.Font.GothamSemibold
+    l.TextSize = 11
+    l.TextColor3 = TH.Text
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Parent = b
+
+    b.MouseEnter:Connect(function()
+        TW(b, {BackgroundColor3 = TH.Accent}, 0.15)
+        TW(l, {TextColor3 = TH.TextAct}, 0.15)
+    end)
+    b.MouseLeave:Connect(function()
+        TW(b, {BackgroundColor3 = TH.Card}, 0.15)
+        TW(l, {TextColor3 = TH.Text}, 0.15)
+    end)
+    b.MouseButton1Click:Connect(function()
+        if fn then fn() end
+    end)
+end
+
+-- ═══════════════════════════════════
+-- GET OR CREATE POST EFFECTS
+-- ═══════════════════════════════════
+local function GetOrCreate(className, name, props)
+    local existing = Lighting:FindFirstChild(name)
+    if existing and existing.ClassName == className then
+        for k, v in pairs(props or {}) do
+            pcall(function() existing[k] = v end)
+        end
+        return existing
+    end
+    local obj = Instance.new(className)
+    obj.Name = name
+    for k, v in pairs(props or {}) do
+        pcall(function() obj[k] = v end)
+    end
+    obj.Parent = Lighting
+    return obj
+end
+
+local function SafeRemove(name)
+    local obj = Lighting:FindFirstChild(name)
+    if obj then obj:Destroy() end
+end
+
+-- ═══════════════════════════════════
+-- RESET ALL SHADERS
+-- ═══════════════════════════════════
+local function ResetAll()
+    -- Remove our created effects
+    for _, name in pairs({
+        "ShadesBloom", "ShadesBlur", "ShadesCC", "ShadesSunRays",
+        "ShadesDOF", "ShadesAtmo", "ShadesVignette", "ShadesChroma",
+        "ShadesGrain", "ShadesSky"
+    }) do
+        SafeRemove(name)
+    end
+
+    -- Restore lighting
+    for k, v in pairs(OrigLighting) do
+        pcall(function() Lighting[k] = v end)
+    end
+
+    -- Reset state
+    for k, v in pairs(Shaders) do
+        if type(v) == "boolean" then
+            Shaders[k] = false
+        end
+    end
+
+    ActivePreset = "None"
+end
+
+-- ═══════════════════════════════════
+-- ☀️ LIGHT TAB
+-- ═══════════════════════════════════
+local lp = Pages["Light"]
+
+Section(lp, "GLOBAL LIGHTING", 1)
+
+MakeSlider(lp, "Brightness", "🔆", 0, 10, Lighting.Brightness, 0.1, 2, function(v)
+    Lighting.Brightness = v
+end)
+
+MakeSlider(lp, "Time of Day", "🕐", 0, 24, Lighting.ClockTime, 0.5, 3, function(v)
+    Lighting.ClockTime = v
+end)
+
+MakeSlider(lp, "Exposure", "📸", -3, 3, Lighting.ExposureCompensation, 0.1, 4, function(v)
+    Lighting.ExposureCompensation = v
+end)
+
+Section(lp, "SHADOWS", 6)
+
+local setShadows = Toggle(lp, "Global Shadows", "🌑", 7, function(on)
+    Shaders.ShadowsOn = on
+    Lighting.GlobalShadows = on
+    Notify(on and "🌑 Shadows ON" or "Shadows OFF", "", 2, on and TH.Good or TH.Bad)
+end)
+-- Set initial state
+if Lighting.GlobalShadows then
+    setShadows(true)
+end
+
+MakeSlider(lp, "Shadow Softness", "🌫️", 0, 1, Lighting.ShadowSoftness, 0.05, 8, function(v)
+    Lighting.ShadowSoftness = v
+end)
+
+Section(lp, "AMBIENT", 10)
+
+MakeSlider(lp, "Ambient R", "🔴", 0, 255, math.floor(Lighting.Ambient.R * 255), 1, 11, function(v)
+    local c = Lighting.Ambient
+    Lighting.Ambient = Color3.fromRGB(v, c.G * 255, c.B * 255)
+end)
+
+MakeSlider(lp, "Ambient G", "🟢", 0, 255, math.floor(Lighting.Ambient.G * 255), 1, 12, function(v)
+    local c = Lighting.Ambient
+    Lighting.Ambient = Color3.fromRGB(c.R * 255, v, c.B * 255)
+end)
+
+MakeSlider(lp, "Ambient B", "🔵", 0, 255, math.floor(Lighting.Ambient.B * 255), 1, 13, function(v)
+    local c = Lighting.Ambient
+    Lighting.Ambient = Color3.fromRGB(c.R * 255, c.G * 255, v)
+end)
+
+Section(lp, "OUTDOOR AMBIENT", 15)
+
+MakeSlider(lp, "Outdoor R", "🔴", 0, 255, math.floor(Lighting.OutdoorAmbient.R * 255), 1, 16, function(v)
+    local c = Lighting.OutdoorAmbient
+    Lighting.OutdoorAmbient = Color3.fromRGB(v, c.G * 255, c.B * 255)
+end)
+
+MakeSlider(lp, "Outdoor G", "🟢", 0, 255, math.floor(Lighting.OutdoorAmbient.G * 255), 1, 17, function(v)
+    local c = Lighting.OutdoorAmbient
+    Lighting.OutdoorAmbient = Color3.fromRGB(c.R * 255, v, c.B * 255)
+end)
+
+MakeSlider(lp, "Outdoor B", "🔵", 0, 255, math.floor(Lighting.OutdoorAmbient.B * 255), 1, 18, function(v)
+    local c = Lighting.OutdoorAmbient
+    Lighting.OutdoorAmbient = Color3.fromRGB(c.R * 255, c.G * 255, v)
+end)
+
+Section(lp, "DIFFUSE & SPECULAR", 20)
+
+MakeSlider(lp, "Env Diffuse", "🌈", 0, 1, Lighting.EnvironmentDiffuseScale, 0.05, 21, function(v)
+    Lighting.EnvironmentDiffuseScale = v
+end)
+
+MakeSlider(lp, "Env Specular", "💎", 0, 1, Lighting.EnvironmentSpecularScale, 0.05, 22, function(v)
+    Lighting.EnvironmentSpecularScale = v
+end)
+
+-- ═══════════════════════════════════
+-- ✨ FX TAB
+-- ═══════════════════════════════════
+local fx = Pages["FX"]
+
+Section(fx, "BLOOM", 1)
+
+local setBloom = Toggle(fx, "Bloom", "🌟", 2, function(on)
+    Shaders.BloomOn = on
+    if on then
+        Shaders.Bloom = GetOrCreate("BloomEffect", "ShadesBloom", {
+            Intensity = 0.5,
+            Size = 24,
+            Threshold = 0.8,
+            Enabled = true,
+        })
+    else
+        SafeRemove("ShadesBloom")
+        Shaders.Bloom = nil
+    end
+    Notify(on and "🌟 Bloom ON" or "Bloom OFF", "", 2, on and TH.Sun or TH.Bad)
+end)
+
+local bloomIntSet = MakeSlider(fx, "Intensity", "💡", 0, 3, 0.5, 0.05, 3, function(v)
+    if Shaders.Bloom then Shaders.Bloom.Intensity = v end
+end)
+
+local bloomSizeSet = MakeSlider(fx, "Size", "📐", 1, 56, 24, 1, 4, function(v)
+    if Shaders.Bloom then Shaders.Bloom.Size = v end
+end)
+
+MakeSlider(fx, "Threshold", "🎚️", 0, 2, 0.8, 0.05, 5, function(v)
+    if Shaders.Bloom then Shaders.Bloom.Threshold = v end
+end)
+
+Section(fx, "SUN RAYS", 7)
+
+local setSunRays = Toggle(fx, "Sun Rays", "☀️", 8, function(on)
+    Shaders.SunRaysOn = on
+    if on then
+        Shaders.SunRays = GetOrCreate("SunRaysEffect", "ShadesSunRays", {
+            Intensity = 0.15,
+            Spread = 0.8,
+            Enabled = true,
+        })
+    else
+        SafeRemove("ShadesSunRays")
+        Shaders.SunRays = nil
+    end
+    Notify(on and "☀️ Sun Rays ON" or "Sun Rays OFF", "", 2, on and TH.Sun or TH.Bad)
+end)
+
+MakeSlider(fx, "Intensity", "💡", 0, 1, 0.15, 0.01, 9, function(v)
+    if Shaders.SunRays then Shaders.SunRays.Intensity = v end
+end)
+
+MakeSlider(fx, "Spread", "🌊", 0, 1, 0.8, 0.05, 10, function(v)
+    if Shaders.SunRays then Shaders.SunRays.Spread = v end
+end)
+
+Section(fx, "BLUR", 12)
+
+local setBlur = Toggle(fx, "Blur", "🌀", 13, function(on)
+    Shaders.BlurOn = on
+    if on then
+        Shaders.Blur = GetOrCreate("BlurEffect", "ShadesBlur", {
+            Size = 10,
+            Enabled = true,
+        })
+    else
+        SafeRemove("ShadesBlur")
+        Shaders.Blur = nil
+    end
+    Notify(on and "🌀 Blur ON" or "Blur OFF", "", 2, on and TH.Accent or TH.Bad)
+end)
+
+MakeSlider(fx, "Blur Size", "📐", 0, 56, 10, 1, 14, function(v)
+    if Shaders.Blur then Shaders.Blur.Size = v end
+end)
+
+Section(fx, "DEPTH OF FIELD", 16)
+
+local setDOF = Toggle(fx, "Depth of Field", "📷", 17, function(on)
+    Shaders.DOFOn = on
+    if on then
+        Shaders.DepthOfField = GetOrCreate("DepthOfFieldEffect", "ShadesDOF", {
+            FarIntensity = 0.3,
+            FocusDistance = 20,
+            InFocusRadius = 30,
+            NearIntensity = 0.5,
+            Enabled = true,
+        })
+    else
+        SafeRemove("ShadesDOF")
+        Shaders.DepthOfField = nil
+    end
+    Notify(on and "📷 DOF ON" or "DOF OFF", "", 2, on and TH.Accent or TH.Bad)
+end)
+
+MakeSlider(fx, "Focus Distance", "🎯", 0, 200, 20, 1, 18, function(v)
+    if Shaders.DepthOfField then Shaders.DepthOfField.FocusDistance = v end
+end)
+
+MakeSlider(fx, "Focus Radius", "⭕", 0, 200, 30, 1, 19, function(v)
+    if Shaders.DepthOfField then Shaders.DepthOfField.InFocusRadius = v end
+end)
+
+MakeSlider(fx, "Far Intensity", "🔭", 0, 1, 0.3, 0.05, 20, function(v)
+    if Shaders.DepthOfField then Shaders.DepthOfField.FarIntensity = v end
+end)
+
+MakeSlider(fx, "Near Intensity", "👁️", 0, 1, 0.5, 0.05, 21, function(v)
+    if Shaders.DepthOfField then Shaders.DepthOfField.NearIntensity = v end
+end)
+
+Section(fx, "COLOR CORRECTION", 23)
+
+local setCC = Toggle(fx, "Color Correction", "🎨", 24, function(on)
+    Shaders.CCOn = on
+    if on then
+        Shaders.ColorCorrection = GetOrCreate("ColorCorrectionEffect", "ShadesCC", {
+            Brightness = 0,
+            Contrast = 0,
+            Saturation = 0,
+            TintColor = Color3.new(1, 1, 1),
+            Enabled = true,
+        })
+    else
+        SafeRemove("ShadesCC")
+        Shaders.ColorCorrection = nil
+    end
+    Notify(on and "🎨 Color Correction ON" or "CC OFF", "", 2, on and TH.Accent or TH.Bad)
+end)
+
+MakeSlider(fx, "Brightness", "🔆", -1, 1, 0, 0.02, 25, function(v)
+    if Shaders.ColorCorrection then Shaders.ColorCorrection.Brightness = v end
+end)
+
+MakeSlider(fx, "Contrast", "🔲", -1, 1, 0, 0.02, 26, function(v)
+    if Shaders.ColorCorrection then Shaders.ColorCorrection.Contrast = v end
+end)
+
+MakeSlider(fx, "Saturation", "🌈", -1, 1, 0, 0.02, 27, function(v)
+    if Shaders.ColorCorrection then Shaders.ColorCorrection.Saturation = v end
+end)
+
+MakeSlider(fx, "Tint R", "🔴", 0, 255, 255, 1, 28, function(v)
+    if Shaders.ColorCorrection then
+        local c = Shaders.ColorCorrection.TintColor
+        Shaders.ColorCorrection.TintColor = Color3.fromRGB(v, c.G * 255, c.B * 255)
+    end
+end)
+
+MakeSlider(fx, "Tint G", "🟢", 0, 255, 255, 1, 29, function(v)
+    if Shaders.ColorCorrection then
+        local c = Shaders.ColorCorrection.TintColor
+        Shaders.ColorCorrection.TintColor = Color3.fromRGB(c.R * 255, v, c.B * 255)
+    end
+end)
+
+MakeSlider(fx, "Tint B", "🔵", 0, 255, 255, 1, 30, function(v)
+    if Shaders.ColorCorrection then
+        local c = Shaders.ColorCorrection.TintColor
+        Shaders.ColorCorrection.TintColor = Color3.fromRGB(c.R * 255, c.G * 255, v)
+    end
+end)
+
+-- ═══════════════════════════════════
+-- 🌫️ ATMO TAB
+-- ═══════════════════════════════════
+local at = Pages["Atmo"]
+
+Section(at, "ATMOSPHERE", 1)
+
+local setAtmo = Toggle(at, "Atmosphere", "🌫️", 2, function(on)
+    Shaders.AtmoOn = on
+    if on then
+        Shaders.Atmosphere = GetOrCreate("Atmosphere", "ShadesAtmo", {
+            Density = 0.3,
+            Offset = 0.25,
+            Color = Color3.fromRGB(199, 210, 225),
+            Decay = Color3.fromRGB(92, 100, 120),
+            Glare = 0.2,
+            Haze = 1,
+        })
+    else
+        SafeRemove("ShadesAtmo")
+        Shaders.Atmosphere = nil
+    end
+    Notify(on and "🌫️ Atmosphere ON" or "Atmosphere OFF", "", 2, on and TH.Accent or TH.Bad)
+end)
+
+MakeSlider(at, "Density", "☁️", 0, 1, 0.3, 0.02, 3, function(v)
+    if Shaders.Atmosphere then Shaders.Atmosphere.Density = v end
+end)
+
+MakeSlider(at, "Offset", "📏", 0, 1, 0.25, 0.02, 4, function(v)
+    if Shaders.Atmosphere then Shaders.Atmosphere.Offset = v end
+end)
+
+MakeSlider(at, "Glare", "✨", 0, 1, 0.2, 0.02, 5, function(v)
+    if Shaders.Atmosphere then Shaders.Atmosphere.Glare = v end
+end)
+
+MakeSlider(at, "Haze", "🌁", 0, 10, 1, 0.1, 6, function(v)
+    if Shaders.Atmosphere then Shaders.Atmosphere.Haze = v end
+end)
+
+Section(at, "FOG", 8)
+
+local setFog = Toggle(at, "Fog", "🌫️", 9, function(on)
+    Shaders.FogOn = on
+    if on then
+        Lighting.FogStart = 0
+        Lighting.FogEnd = 500
+        Lighting.FogColor = Color3.fromRGB(180, 190, 200)
+    else
+        Lighting.FogStart = OrigLighting.FogStart or 0
+        Lighting.FogEnd = OrigLighting.FogEnd or 100000
+        Lighting.FogColor = OrigLighting.FogColor or Color3.fromRGB(192, 192, 192)
+    end
+    Notify(on and "🌫️ Fog ON" or "Fog OFF", "", 2, on and TH.Accent or TH.Bad)
+end)
+
+MakeSlider(at, "Fog Start", "📍", 0, 1000, 0, 10, 10, function(v)
+    Lighting.FogStart = v
+end)
+
+MakeSlider(at, "Fog End", "🏁", 10, 10000, 500, 10, 11, function(v)
+    Lighting.FogEnd = v
+end)
+
+MakeSlider(at, "Fog R", "🔴", 0, 255, 180, 1, 12, function(v)
+    local c = Lighting.FogColor
+    Lighting.FogColor = Color3.fromRGB(v, c.G * 255, c.B * 255)
+end)
+
+MakeSlider(at, "Fog G", "🟢", 0, 255, 190, 1, 13, function(v)
+    local c = Lighting.FogColor
+    Lighting.FogColor = Color3.fromRGB(c.R * 255, v, c.B * 255)
+end)
+
+MakeSlider(at, "Fog B", "🔵", 0, 255, 200, 1, 14, function(v)
+    local c = Lighting.FogColor
+    Lighting.FogColor = Color3.fromRGB(c.R * 255, c.G * 255, v)
+end)
+
+Section(at, "COLOR SHIFT", 16)
+
+MakeSlider(at, "Shift Top R", "🔴", 0, 255, math.floor(Lighting.ColorShift_Top.R * 255), 1, 17, function(v)
+    local c = Lighting.ColorShift_Top
+    Lighting.ColorShift_Top = Color3.fromRGB(v, c.G * 255, c.B * 255)
+end)
+
+MakeSlider(at, "Shift Top G", "🟢", 0, 255, math.floor(Lighting.ColorShift_Top.G * 255), 1, 18, function(v)
+    local c = Lighting.ColorShift_Top
+    Lighting.ColorShift_Top = Color3.fromRGB(c.R * 255, v, c.B * 255)
+end)
+
+MakeSlider(at, "Shift Top B", "🔵", 0, 255, math.floor(Lighting.ColorShift_Top.B * 255), 1, 19, function(v)
+    local c = Lighting.ColorShift_Top
+    Lighting.ColorShift_Top = Color3.fromRGB(c.R * 255, c.G * 255, v)
+end)
+
+-- ═══════════════════════════════════
+-- 🎬 PRESET TAB
+-- ═══════════════════════════════════
+local pr = Pages["Preset"]
+
+Section(pr, "ONE-CLICK PRESETS", 1)
+
+local presetActiveLbl = Instance.new("TextLabel")
+presetActiveLbl.Size = UDim2.new(1, 0, 0, 28)
+presetActiveLbl.BackgroundColor3 = TH.Card
+presetActiveLbl.BorderSizePixel = 0
+presetActiveLbl.LayoutOrder = 2
+presetActiveLbl.Text = "  Active: None"
+presetActiveLbl.Font = Enum.Font.GothamBold
+presetActiveLbl.TextSize = 11
+presetActiveLbl.TextColor3 = TH.Accent
+presetActiveLbl.TextXAlignment = Enum.TextXAlignment.Left
+presetActiveLbl.Parent = pr
+Corner(presetActiveLbl, 8)
+
+local function ApplyPreset(name, settings)
+    ResetAll()
+    ActivePreset = name
+    presetActiveLbl.Text = "  Active: "..name
+
+    if settings.Brightness then Lighting.Brightness = settings.Brightness end
+    if settings.ClockTime then Lighting.ClockTime = settings.ClockTime end
+    if settings.Exposure then Lighting.ExposureCompensation = settings.Exposure end
+    if settings.Ambient then Lighting.Ambient = settings.Ambient end
+    if settings.OutdoorAmbient then Lighting.OutdoorAmbient = settings.OutdoorAmbient end
+    if settings.GlobalShadows ~= nil then Lighting.GlobalShadows = settings.GlobalShadows end
+    if settings.ShadowSoftness then Lighting.ShadowSoftness = settings.ShadowSoftness end
+    if settings.FogStart then Lighting.FogStart = settings.FogStart end
+    if settings.FogEnd then Lighting.FogEnd = settings.FogEnd end
+    if settings.FogColor then Lighting.FogColor = settings.FogColor end
+    if settings.ColorShift_Top then Lighting.ColorShift_Top = settings.ColorShift_Top end
+    if settings.ColorShift_Bottom then Lighting.ColorShift_Bottom = settings.ColorShift_Bottom end
+    if settings.EnvDiffuse then Lighting.EnvironmentDiffuseScale = settings.EnvDiffuse end
+    if settings.EnvSpecular then Lighting.EnvironmentSpecularScale = settings.EnvSpecular end
+
+    if settings.Bloom then
+        GetOrCreate("BloomEffect", "ShadesBloom", settings.Bloom)
+        Shaders.BloomOn = true
+    end
+    if settings.SunRays then
+        GetOrCreate("SunRaysEffect", "ShadesSunRays", settings.SunRays)
+        Shaders.SunRaysOn = true
+    end
+    if settings.Blur then
+        GetOrCreate("BlurEffect", "ShadesBlur", settings.Blur)
+        Shaders.BlurOn = true
+    end
+    if settings.CC then
+        GetOrCreate("ColorCorrectionEffect", "ShadesCC", settings.CC)
+        Shaders.CCOn = true
+    end
+    if settings.DOF then
+        GetOrCreate("DepthOfFieldEffect", "ShadesDOF", settings.DOF)
+        Shaders.DOFOn = true
+    end
+    if settings.Atmo then
+        GetOrCreate("Atmosphere", "ShadesAtmo", settings.Atmo)
+        Shaders.AtmoOn = true
+    end
+
+    Notify("🎬 "..name, "Preset applied!", 2, TH.Accent)
+end
+
+-- Define all presets
+local Presets = {
+    {
+        name = "Cinematic",
+        emoji = "🎬",
+        desc = "Film-like warm tones",
+        settings = {
+            Brightness = 1.5,
+            ClockTime = 15,
+            Exposure = 0.3,
+            GlobalShadows = true,
+            ShadowSoftness = 0.3,
+            Ambient = Color3.fromRGB(40, 35, 30),
+            OutdoorAmbient = Color3.fromRGB(120, 110, 95),
+            ColorShift_Top = Color3.fromRGB(255, 240, 210),
+            EnvDiffuse = 0.7,
+            EnvSpecular = 0.5,
+            Bloom = {Intensity = 0.4, Size = 30, Threshold = 0.9, Enabled = true},
+            SunRays = {Intensity = 0.12, Spread = 0.7, Enabled = true},
+            CC = {Brightness = 0.02, Contrast = 0.15, Saturation = -0.1, TintColor = Color3.fromRGB(255, 245, 230), Enabled = true},
+            DOF = {FarIntensity = 0.15, FocusDistance = 30, InFocusRadius = 50, NearIntensity = 0.2, Enabled = true},
+            Atmo = {Density = 0.25, Offset = 0.2, Glare = 0.15, Haze = 1.5, Color = Color3.fromRGB(210, 200, 180), Decay = Color3.fromRGB(100, 90, 70)},
+        },
+    },
+    {
+        name = "Golden Hour",
+        emoji = "🌅",
+        desc = "Warm sunset glow",
+        settings = {
+            Brightness = 2,
+            ClockTime = 17.5,
+            Exposure = 0.5,
+            GlobalShadows = true,
+            ShadowSoftness = 0.4,
+            Ambient = Color3.fromRGB(60, 40, 20),
+            OutdoorAmbient = Color3.fromRGB(180, 130, 60),
+            ColorShift_Top = Color3.fromRGB(255, 200, 100),
+            ColorShift_Bottom = Color3.fromRGB(200, 120, 50),
+            EnvDiffuse = 0.8,
+            EnvSpecular = 0.6,
+            Bloom = {Intensity = 0.8, Size = 40, Threshold = 0.6, Enabled = true},
+            SunRays = {Intensity = 0.25, Spread = 0.9, Enabled = true},
+            CC = {Brightness = 0.05, Contrast = 0.1, Saturation = 0.2, TintColor = Color3.fromRGB(255, 220, 170), Enabled = true},
+            Atmo = {Density = 0.35, Offset = 0.3, Glare = 0.4, Haze = 3, Color = Color3.fromRGB(255, 200, 130), Decay = Color3.fromRGB(200, 130, 60)},
+        },
+    },
+    {
+        name = "Midnight",
+        emoji = "🌙",
+        desc = "Dark blue night",
+        settings = {
+            Brightness = 0.3,
+            ClockTime = 0,
+            Exposure = -0.3,
+            GlobalShadows = true,
+            ShadowSoftness = 0.8,
+            Ambient = Color3.fromRGB(15, 20, 40),
+            OutdoorAmbient = Color3.fromRGB(20, 30, 60),
+            ColorShift_Top = Color3.fromRGB(80, 100, 180),
+            EnvDiffuse = 0.3,
+            Bloom = {Intensity = 0.3, Size = 20, Threshold = 0.95, Enabled = true},
+            CC = {Brightness = -0.08, Contrast = 0.2, Saturation = -0.3, TintColor = Color3.fromRGB(180, 200, 255), Enabled = true},
+            Atmo = {Density = 0.4, Offset = 0.1, Glare = 0, Haze = 2, Color = Color3.fromRGB(30, 40, 80), Decay = Color3.fromRGB(15, 20, 50)},
+        },
+    },
+    {
+        name = "Horror",
+        emoji = "👻",
+        desc = "Dark, desaturated, eerie",
+        settings = {
+            Brightness = 0.2,
+            ClockTime = 22,
+            Exposure = -0.5,
+            GlobalShadows = true,
+            ShadowSoftness = 0.1,
+            Ambient = Color3.fromRGB(8, 8, 12),
+            OutdoorAmbient = Color3.fromRGB(10, 12, 20),
+            FogStart = 0,
+            FogEnd = 200,
+            FogColor = Color3.fromRGB(10, 10, 15),
+            CC = {Brightness = -0.12, Contrast = 0.35, Saturation = -0.7, TintColor = Color3.fromRGB(200, 210, 230), Enabled = true},
+            Bloom = {Intensity = 0.15, Size = 15, Threshold = 0.95, Enabled = true},
+            Atmo = {Density = 0.5, Offset = 0, Glare = 0, Haze = 5, Color = Color3.fromRGB(15, 15, 25), Decay = Color3.fromRGB(5, 5, 10)},
+        },
+    },
+    {
+        name = "Dream",
+        emoji = "💭",
+        desc = "Soft, ethereal glow",
+        settings = {
+            Brightness = 2.5,
+            ClockTime = 12,
+            Exposure = 0.8,
+            GlobalShadows = false,
+            Ambient = Color3.fromRGB(120, 100, 140),
+            OutdoorAmbient = Color3.fromRGB(160, 140, 180),
+            ColorShift_Top = Color3.fromRGB(230, 210, 255),
+            EnvDiffuse = 1,
+            Bloom = {Intensity = 1.5, Size = 56, Threshold = 0.4, Enabled = true},
+            CC = {Brightness = 0.1, Contrast = -0.1, Saturation = -0.2, TintColor = Color3.fromRGB(240, 225, 255), Enabled = true},
+            Blur = {Size = 6, Enabled = true},
+            Atmo = {Density = 0.2, Offset = 0.5, Glare = 0.3, Haze = 4, Color = Color3.fromRGB(200, 180, 230), Decay = Color3.fromRGB(150, 130, 180)},
+        },
+    },
+    {
+        name = "Neon",
+        emoji = "💜",
+        desc = "Vibrant neon cyberpunk",
+        settings = {
+            Brightness = 0.8,
+            ClockTime = 21,
+            Exposure = 0.2,
+            GlobalShadows = true,
+            Ambient = Color3.fromRGB(20, 5, 30),
+            OutdoorAmbient = Color3.fromRGB(40, 10, 60),
+            ColorShift_Top = Color3.fromRGB(200, 50, 255),
+            ColorShift_Bottom = Color3.fromRGB(50, 200, 255),
+            Bloom = {Intensity = 1.2, Size = 35, Threshold = 0.5, Enabled = true},
+            CC = {Brightness = 0.05, Contrast = 0.3, Saturation = 0.6, TintColor = Color3.fromRGB(220, 180, 255), Enabled = true},
+            Atmo = {Density = 0.3, Offset = 0.15, Glare = 0.1, Haze = 2, Color = Color3.fromRGB(60, 20, 80), Decay = Color3.fromRGB(30, 10, 50)},
+        },
+    },
+    {
+        name = "Retro",
+        emoji = "📼",
+        desc = "VHS vintage look",
+        settings = {
+            Brightness = 1.2,
+            ClockTime = 14,
+            Exposure = 0.1,
+            GlobalShadows = true,
+            ShadowSoftness = 0.5,
+            Ambient = Color3.fromRGB(50, 40, 35),
+            OutdoorAmbient = Color3.fromRGB(100, 85, 70),
+            CC = {Brightness = 0.03, Contrast = 0.25, Saturation = -0.4, TintColor = Color3.fromRGB(255, 230, 200), Enabled = true},
+            Bloom = {Intensity = 0.6, Size = 20, Threshold = 0.7, Enabled = true},
+            Blur = {Size = 2, Enabled = true},
+        },
+    },
+    {
+        name = "Underwater",
+        emoji = "🌊",
+        desc = "Deep ocean feel",
+        settings = {
+            Brightness = 0.6,
+            ClockTime = 12,
+            Exposure = -0.2,
+            Ambient = Color3.fromRGB(10, 30, 50),
+            OutdoorAmbient = Color3.fromRGB(20, 60, 90),
+            ColorShift_Top = Color3.fromRGB(50, 120, 180),
+            ColorShift_Bottom = Color3.fromRGB(20, 60, 100),
+            FogStart = 0,
+            FogEnd = 300,
+            FogColor = Color3.fromRGB(20, 60, 100),
+            CC = {Brightness = -0.05, Contrast = 0.1, Saturation = -0.2, TintColor = Color3.fromRGB(150, 210, 255), Enabled = true},
+            Bloom = {Intensity = 0.3, Size = 25, Threshold = 0.85, Enabled = true},
+            Blur = {Size = 3, Enabled = true},
+            Atmo = {Density = 0.5, Offset = 0, Glare = 0, Haze = 6, Color = Color3.fromRGB(30, 70, 120), Decay = Color3.fromRGB(10, 30, 60)},
+        },
+    },
+    {
+        name = "Sunrise",
+        emoji = "🌄",
+        desc = "Early morning warmth",
+        settings = {
+            Brightness = 1.8,
+            ClockTime = 6,
+            Exposure = 0.4,
+            GlobalShadows = true,
+            ShadowSoftness = 0.5,
+            Ambient = Color3.fromRGB(40, 30, 40),
+            OutdoorAmbient = Color3.fromRGB(140, 100, 80),
+            ColorShift_Top = Color3.fromRGB(255, 180, 120),
+            ColorShift_Bottom = Color3.fromRGB(180, 100, 60),
+            EnvDiffuse = 0.6,
+            Bloom = {Intensity = 0.6, Size = 35, Threshold = 0.7, Enabled = true},
+            SunRays = {Intensity = 0.2, Spread = 0.85, Enabled = true},
+            CC = {Brightness = 0.03, Contrast = 0.08, Saturation = 0.15, TintColor = Color3.fromRGB(255, 230, 200), Enabled = true},
+            Atmo = {Density = 0.3, Offset = 0.35, Glare = 0.3, Haze = 2.5, Color = Color3.fromRGB(230, 180, 140), Decay = Color3.fromRGB(180, 120, 80)},
+        },
+    },
+    {
+        name = "Arctic",
+        emoji = "❄️",
+        desc = "Cold icy environment",
+        settings = {
+            Brightness = 2,
+            ClockTime = 12,
+            Exposure = 0.3,
+            GlobalShadows = true,
+            ShadowSoftness = 0.6,
+            Ambient = Color3.fromRGB(80, 100, 120),
+            OutdoorAmbient = Color3.fromRGB(150, 170, 190),
+            ColorShift_Top = Color3.fromRGB(200, 220, 255),
+            FogStart = 50,
+            FogEnd = 800,
+            FogColor = Color3.fromRGB(220, 235, 255),
+            CC = {Brightness = 0.08, Contrast = 0.05, Saturation = -0.3, TintColor = Color3.fromRGB(210, 230, 255), Enabled = true},
+            Bloom = {Intensity = 0.5, Size = 30, Threshold = 0.75, Enabled = true},
+            Atmo = {Density = 0.35, Offset = 0.4, Glare = 0.2, Haze = 3, Color = Color3.fromRGB(200, 220, 245), Decay = Color3.fromRGB(160, 180, 210)},
+        },
+    },
+    {
+        name = "Noir",
+        emoji = "🖤",
+        desc = "Black & white film",
+        settings = {
+            Brightness = 1,
+            ClockTime = 14,
+            Exposure = 0,
+            GlobalShadows = true,
+            ShadowSoftness = 0.15,
+            CC = {Brightness = 0, Contrast = 0.4, Saturation = -1, TintColor = Color3.fromRGB(255, 255, 255), Enabled = true},
+            Bloom = {Intensity = 0.2, Size = 18, Threshold = 0.9, Enabled = true},
+        },
+    },
+    {
+        name = "Inferno",
+        emoji = "🔥",
+        desc = "Fiery hellscape",
+        settings = {
+            Brightness = 1.5,
+            ClockTime = 19,
+            Exposure = 0.2,
+            GlobalShadows = true,
+            Ambient = Color3.fromRGB(50, 10, 0),
+            OutdoorAmbient = Color3.fromRGB(120, 40, 10),
+            ColorShift_Top = Color3.fromRGB(255, 100, 20),
+            ColorShift_Bottom = Color3.fromRGB(200, 50, 0),
+            FogStart = 0,
+            FogEnd = 400,
+            FogColor = Color3.fromRGB(60, 15, 5),
+            CC = {Brightness = 0.05, Contrast = 0.3, Saturation = 0.3, TintColor = Color3.fromRGB(255, 180, 120), Enabled = true},
+            Bloom = {Intensity = 1, Size = 40, Threshold = 0.5, Enabled = true},
+            SunRays = {Intensity = 0.15, Spread = 0.6, Enabled = true},
+            Atmo = {Density = 0.4, Offset = 0.1, Glare = 0.2, Haze = 4, Color = Color3.fromRGB(150, 50, 10), Decay = Color3.fromRGB(80, 20, 5)},
+        },
+    },
+    {
+        name = "Enchanted",
+        emoji = "🧚",
+        desc = "Magical forest feel",
+        settings = {
+            Brightness = 1.6,
+            ClockTime = 16,
+            Exposure = 0.3,
+            GlobalShadows = true,
+            Ambient = Color3.fromRGB(20, 50, 30),
+            OutdoorAmbient = Color3.fromRGB(60, 120, 70),
+            ColorShift_Top = Color3.fromRGB(150, 255, 180),
+            ColorShift_Bottom = Color3.fromRGB(50, 130, 70),
+            EnvDiffuse = 0.8,
+            Bloom = {Intensity = 0.7, Size = 32, Threshold = 0.65, Enabled = true},
+            SunRays = {Intensity = 0.18, Spread = 0.75, Enabled = true},
+            CC = {Brightness = 0.02, Contrast = 0.08, Saturation = 0.25, TintColor = Color3.fromRGB(220, 255, 230), Enabled = true},
+            Atmo = {Density = 0.3, Offset = 0.2, Glare = 0.15, Haze = 2, Color = Color3.fromRGB(120, 180, 130), Decay = Color3.fromRGB(60, 100, 70)},
+        },
+    },
+    {
+        name = "Sakura",
+        emoji = "🌸",
+        desc = "Soft pink blossom",
+        settings = {
+            Brightness = 1.8,
+            ClockTime = 10,
+            Exposure = 0.2,
+            GlobalShadows = true,
+            ShadowSoftness = 0.4,
+            Ambient = Color3.fromRGB(60, 40, 50),
+            OutdoorAmbient = Color3.fromRGB(140, 100, 120),
+            ColorShift_Top = Color3.fromRGB(255, 200, 220),
+            EnvDiffuse = 0.7,
+            Bloom = {Intensity = 0.8, Size = 38, Threshold = 0.6, Enabled = true},
+            CC = {Brightness = 0.04, Contrast = 0.05, Saturation = 0.1, TintColor = Color3.fromRGB(255, 220, 235), Enabled = true},
+            Atmo = {Density = 0.2, Offset = 0.3, Glare = 0.2, Haze = 2, Color = Color3.fromRGB(230, 190, 210), Decay = Color3.fromRGB(180, 140, 160)},
+        },
+    },
+}
+
+Section(pr, "NATURE & TIME", 3)
+
+for i, preset in ipairs(Presets) do
+    local layoutOrd
+    if i <= 3 then
+        layoutOrd = 3 + i
+    elseif i <= 6 then
+        layoutOrd = 10 + i
+    elseif i <= 10 then
+        layoutOrd = 20 + i
+    else
+        layoutOrd = 30 + i
+    end
+
+    if i == 4 then Section(pr, "MOOD & STYLE", 10) end
+    if i == 7 then Section(pr, "SPECIAL", 20) end
+    if i == 11 then Section(pr, "MORE", 30) end
+
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, 0, 0, 44)
+    b.BackgroundColor3 = TH.Card
+    b.BorderSizePixel = 0
+    b.LayoutOrder = layoutOrd
+    b.Text = ""
+    b.AutoButtonColor = false
+    b.Parent = pr
+    Corner(b, 9)
+
+    local emo = Instance.new("TextLabel")
+    emo.Size = UDim2.new(0, 28, 1, 0)
+    emo.Position = UDim2.new(0, 8, 0, 0)
+    emo.BackgroundTransparency = 1
+    emo.Text = preset.emoji
+    emo.TextSize = 18
+    emo.Font = Enum.Font.SourceSans
+    emo.Parent = b
+
+    local nm = Instance.new("TextLabel")
+    nm.Size = UDim2.new(1, -50, 0, 18)
+    nm.Position = UDim2.new(0, 38, 0, 4)
+    nm.BackgroundTransparency = 1
+    nm.Text = preset.name
+    nm.Font = Enum.Font.GothamBold
+    nm.TextSize = 12
+    nm.TextColor3 = TH.Text
+    nm.TextXAlignment = Enum.TextXAlignment.Left
+    nm.Parent = b
+
+    local desc = Instance.new("TextLabel")
+    desc.Size = UDim2.new(1, -50, 0, 14)
+    desc.Position = UDim2.new(0, 38, 0, 23)
+    desc.BackgroundTransparency = 1
+    desc.Text = preset.desc
+    desc.Font = Enum.Font.Gotham
+    desc.TextSize = 9
+    desc.TextColor3 = TH.TextDim
+    desc.TextXAlignment = Enum.TextXAlignment.Left
+    desc.Parent = b
+
+    b.MouseEnter:Connect(function()
+        TW(b, {BackgroundColor3 = TH.Accent}, 0.15)
+        TW(nm, {TextColor3 = TH.TextAct}, 0.15)
+        TW(desc, {TextColor3 = TH.TextAct}, 0.15)
+    end)
+    b.MouseLeave:Connect(function()
+        TW(b, {BackgroundColor3 = TH.Card}, 0.15)
+        TW(nm, {TextColor3 = TH.Text}, 0.15)
+        TW(desc, {TextColor3 = TH.TextDim}, 0.15)
+    end)
+    b.MouseButton1Click:Connect(function()
+        ApplyPreset(preset.name, preset.settings)
+    end)
+end
+
+-- ═══════════════════════════════════
+-- ⚙️ TUNE TAB
+-- ═══════════════════════════════════
+local tn = Pages["Tune"]
+
+Section(tn, "CAMERA", 1)
+
+MakeSlider(tn, "Field of View", "🔭", 30, 120, 70, 1, 2, function(v)
+    Camera.FieldOfView = v
+end)
+
+Section(tn, "LATITUDE", 4)
+
+MakeSlider(tn, "Geo Latitude", "🌍", -90, 90, Lighting.GeographicLatitude, 1, 5, function(v)
+    Lighting.GeographicLatitude = v
+end)
+
+Section(tn, "QUICK ACTIONS", 7)
+
+ActionBtn(tn, "Reset All Shaders", "🔄", 8, function()
+    ResetAll()
+    presetActiveLbl.Text = "  Active: None"
+    Notify("🔄 Reset", "All effects removed", 2, TH.Good)
+end)
+
+ActionBtn(tn, "Max Quality", "💎", 9, function()
+    ApplyPreset("Max Quality", {
+        Brightness = 1.5,
+        ClockTime = 14,
+        Exposure = 0.2,
+        GlobalShadows = true,
+        ShadowSoftness = 0.2,
+        EnvDiffuse = 1,
+        EnvSpecular = 1,
+        Bloom = {Intensity = 0.35, Size = 24, Threshold = 0.9, Enabled = true},
+        SunRays = {Intensity = 0.1, Spread = 0.6, Enabled = true},
+        CC = {Brightness = 0.01, Contrast = 0.08, Saturation = 0.05, TintColor = Color3.new(1,1,1), Enabled = true},
+        Atmo = {Density = 0.2, Offset = 0.25, Glare = 0.1, Haze = 1, Color = Color3.fromRGB(199, 210, 225), Decay = Color3.fromRGB(92, 100, 120)},
+    })
+end)
+
+ActionBtn(tn, "Fullbright", "☀️", 10, function()
+    ResetAll()
+    ActivePreset = "Fullbright"
+    presetActiveLbl.Text = "  Active: Fullbright"
+    Lighting.Brightness = 3
+    Lighting.ClockTime = 14
+    Lighting.FogEnd = 1e6
+    Lighting.GlobalShadows = false
+    Lighting.Ambient = Color3.fromRGB(200, 200, 200)
+    Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
+    Notify("☀️ Fullbright", "Maximum visibility", 2, TH.Sun)
+end)
+
+ActionBtn(tn, "Remove All Post Effects", "🗑️", 11, function()
+    for _, child in pairs(Lighting:GetChildren()) do
+        if child:IsA("PostEffect") and child.Name:sub(1, 6) == "Shades" then
+            child:Destroy()
+        end
+    end
+    Notify("🗑️ Cleared", "Post effects removed", 2, TH.Bad)
+end)
+
+Section(tn, "TIME QUICK SET", 13)
+
+local timeButtons = {
+    {"Dawn", "🌅", 6},
+    {"Morning", "☀️", 9},
+    {"Noon", "🔆", 12},
+    {"Afternoon", "🌤️", 15},
+    {"Sunset", "🌇", 18},
+    {"Night", "🌙", 21},
+    {"Midnight", "🌑", 0},
+}
+
+for i, tb in ipairs(timeButtons) do
+    ActionBtn(tn, tb[1].." ("..tb[3]..":00)", tb[2], 13 + i, function()
+        Lighting.ClockTime = tb[3]
+        Notify("🕐 "..tb[1], "Time set to "..tb[3]..":00", 2, TH.Accent)
+    end)
+end
+
+Section(tn, "INFO", 25)
+
+local infoCard = Instance.new("Frame")
+infoCard.Size = UDim2.new(1, 0, 0, 60)
+infoCard.BackgroundColor3 = TH.Card
+infoCard.BorderSizePixel = 0
+infoCard.LayoutOrder = 26
+infoCard.Parent = tn
+Corner(infoCard, 8)
+
+local infoTxt = Instance.new("TextLabel")
+infoTxt.Size = UDim2.new(1, -14, 1, 0)
+infoTxt.Position = UDim2.new(0, 8, 0, 0)
+infoTxt.BackgroundTransparency = 1
+infoTxt.Text = "☀️ SHADES v1.0\nShader & Post-Processing Suite\nAll changes are client-side only"
+infoTxt.Font = Enum.Font.Gotham
+infoTxt.TextSize = 9
+infoTxt.TextColor3 = TH.TextDim
+infoTxt.TextXAlignment = Enum.TextXAlignment.Left
+infoTxt.TextYAlignment = Enum.TextYAlignment.Center
+infoTxt.Parent = infoCard
+
+-- ═══════════════════════════════════
+-- MINIMIZE & CLOSE
+-- ═══════════════════════════════════
+MinB.MouseButton1Click:Connect(function()
+    panelMin = not panelMin
+    local tH = panelMin and 48 or H
+    TW(Main, {Size = UDim2.new(0, W, 0, tH)}, 0.35, Enum.EasingStyle.Back)
+    MinB.Text = panelMin and "+" or "—"
+    if panelMin then
+        Content.Visible = false
+        TabFrame.Visible = false
+    else
+        task.delay(0.15, function()
+            Content.Visible = true
+            TabFrame.Visible = true
+        end)
+    end
+end)
+
+ClsB.MouseButton1Click:Connect(function()
+    ResetAll()
+    TW(Main, {Position = UDim2.new(1, 50, 0.5, -H/2)}, 0.5, Enum.EasingStyle.Back)
+    task.delay(0.55, function() Gui:Destroy() end)
+end)
+
+-- ═══════════════════════════════════
+-- MOBILE TOGGLE
+-- ═══════════════════════════════════
+if IsMobile then
+    local mob = Instance.new("TextButton")
+    mob.Size = UDim2.new(0, 40, 0, 40)
+    mob.Position = UDim2.new(1, -48, 0, 6)
+    mob.BackgroundColor3 = TH.Card
+    mob.BackgroundTransparency = 0.1
+    mob.Text = "☀️"
+    mob.Font = Enum.Font.GothamBold
+    mob.TextSize = 20
+    mob.TextColor3 = TH.Accent
+    mob.AutoButtonColor = false
+    mob.ZIndex = 100
+    mob.Parent = Gui
+    Corner(mob, 10)
+    Stroke(mob, 1, TH.Accent, 0.4)
+
+    local panelVis = true
+    mob.MouseButton1Click:Connect(function()
+        panelVis = not panelVis
+        Main.Visible = panelVis
+    end)
+end
+
+-- Hide/Show with key
+UIS.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if inp.KeyCode == Enum.KeyCode.RightControl or inp.KeyCode == Enum.KeyCode.Backquote then
+        Main.Visible = not Main.Visible
+    end
+end)
+
+-- ═══════════════════════════════════
+-- OPENING
+-- ═══════════════════════════════════
+SwitchTab("Light")
+
+Main.Position = UDim2.new(1, 50, 0.5, -H/2)
+TW(Main, {Position = UDim2.new(1, -W - 14, 0.5, -H/2)}, 0.7, Enum.EasingStyle.Back)
+
+task.delay(0.5, function()
+    Notify("☀️ SHADES", "Shader suite loaded!", 4, TH.Accent)
+end)
+task.delay(1.5, function()
+    Notify("💡 Tip", "Try presets for instant looks! ` to hide", 5, TH.AccDim)
+end)
+
+print("☀️ SHADES v1.0 — Shader Suite Loaded")
+print("Tabs: Light, FX, Atmosphere, Presets, Tune")
+print("14 Presets | Full post-processing control")
