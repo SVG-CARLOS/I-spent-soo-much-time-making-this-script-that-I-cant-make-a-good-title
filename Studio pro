@@ -1,0 +1,2150 @@
+-- 🎬 STUDIO PRO v1.0 — Ultimate YouTuber Toolkit 🎬
+-- Green Screen | Camera System | Limb Poser | Cinematics | Shaders
+-- Standalone Script | Mobile + PC | Full Production Suite
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local Workspace = game:GetService("Workspace")
+
+local LP = Players.LocalPlayer
+local PlayerGui = LP:WaitForChild("PlayerGui")
+local Camera = workspace.CurrentCamera
+local Mouse = LP:GetMouse()
+local IsMobile = UIS.TouchEnabled and not UIS.KeyboardEnabled
+
+-- Cleanup
+if PlayerGui:FindFirstChild("StudioProGUI") then
+    PlayerGui.StudioProGUI:Destroy()
+end
+
+-- ═══════════════════════════════════
+-- BACKUP
+-- ═══════════════════════════════════
+local OrigLighting = {}
+for _, prop in ipairs({"Brightness","ClockTime","Ambient","OutdoorAmbient","GlobalShadows",
+    "ShadowSoftness","FogEnd","FogStart","FogColor","ExposureCompensation",
+    "ColorShift_Top","ColorShift_Bottom","EnvironmentDiffuseScale","EnvironmentSpecularScale",
+    "GeographicLatitude"}) do
+    pcall(function() OrigLighting[prop] = Lighting[prop] end)
+end
+
+-- ═══════════════════════════════════
+-- THEME
+-- ═══════════════════════════════════
+local TH = {
+    Bg = Color3.fromRGB(12, 12, 16),
+    Panel = Color3.fromRGB(20, 20, 26),
+    Card = Color3.fromRGB(28, 28, 36),
+    CardH = Color3.fromRGB(40, 40, 50),
+    Accent = Color3.fromRGB(255, 85, 85),
+    AccDim = Color3.fromRGB(180, 60, 60),
+    Text = Color3.fromRGB(240, 238, 235),
+    TextDim = Color3.fromRGB(125, 122, 118),
+    TextAct = Color3.fromRGB(255, 255, 255),
+    TOn = Color3.fromRGB(255, 85, 85),
+    TOff = Color3.fromRGB(48, 48, 55),
+    KOn = Color3.fromRGB(255, 255, 255),
+    KOff = Color3.fromRGB(120, 118, 112),
+    Border = Color3.fromRGB(52, 50, 46),
+    Slider = Color3.fromRGB(255, 85, 85),
+    Good = Color3.fromRGB(85, 255, 130),
+    Bad = Color3.fromRGB(255, 65, 65),
+    Green = Color3.fromRGB(0, 177, 64),
+    Blue = Color3.fromRGB(0, 120, 215),
+    Rec = Color3.fromRGB(255, 40, 40),
+    Yellow = Color3.fromRGB(255, 200, 50),
+}
+
+-- ═══════════════════════════════════
+-- STATE
+-- ═══════════════════════════════════
+local Studio = {
+    GreenScreen = nil,
+    GreenScreenOn = false,
+    ScreenColor = Color3.fromRGB(0, 177, 64),
+    ScreenSize = Vector3.new(40, 30, 1),
+    ScreenDist = 15,
+
+    CamMode = "Default",
+    CamSlots = {},
+    CamTweening = false,
+    CamSpeed = 2,
+    CamFOV = 70,
+    CamLocked = false,
+    FreecamOn = false,
+    FreecamSpeed = 1,
+    FreecamPos = nil,
+    FreecamCF = nil,
+    DollyPath = {},
+    DollyPlaying = false,
+    OrbitOn = false,
+    OrbitSpeed = 1,
+    OrbitDist = 20,
+    OrbitHeight = 5,
+    OrbitAngle = 0,
+
+    PoseMode = false,
+    PosedParts = {},
+    OriginalC0 = {},
+
+    HideUI = false,
+    HidePlayers = false,
+    HiddenParts = {},
+    NametagsHidden = false,
+    ChatHidden = false,
+    RecIndicator = false,
+    Watermark = nil,
+    WatermarkOn = false,
+    RuleOfThirds = false,
+    ThirdsFrame = nil,
+    CenterCross = false,
+    CrossFrame = nil,
+
+    Connections = {},
+}
+
+-- ═══════════════════════════════════
+-- GUI
+-- ═══════════════════════════════════
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "StudioProGUI"
+Gui.ResetOnSpawn = false
+Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+Gui.DisplayOrder = 1001
+Gui.Parent = PlayerGui
+
+-- ═══════════════════════════════════
+-- HELPERS
+-- ═══════════════════════════════════
+local function TW(obj, props, dur, style, dir)
+    TweenService:Create(obj, TweenInfo.new(dur or 0.3, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props):Play()
+end
+
+local function Corner(p, r)
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = p; return c
+end
+
+local function Stroke(p, th, col, tr)
+    local s = Instance.new("UIStroke"); s.Thickness = th or 1; s.Color = col or TH.Border; s.Transparency = tr or 0.5; s.Parent = p; return s
+end
+
+local function GetChar()
+    return LP.Character
+end
+
+local function GetRoot()
+    local c = GetChar()
+    return c and c:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetHum()
+    local c = GetChar()
+    return c and c:FindFirstChildOfClass("Humanoid")
+end
+
+-- ═══════════════════════════════════
+-- NOTIFICATIONS
+-- ═══════════════════════════════════
+local NotifBox = Instance.new("Frame")
+NotifBox.Size = UDim2.new(0, 280, 1, -20)
+NotifBox.Position = UDim2.new(1, -290, 0, 10)
+NotifBox.BackgroundTransparency = 1
+NotifBox.Parent = Gui
+
+local NL = Instance.new("UIListLayout")
+NL.SortOrder = Enum.SortOrder.LayoutOrder
+NL.Padding = UDim.new(0, 4)
+NL.VerticalAlignment = Enum.VerticalAlignment.Bottom
+NL.Parent = NotifBox
+
+local nOrd = 0
+local function Notify(title, msg, dur, col)
+    dur = dur or 3; col = col or TH.Accent; nOrd = nOrd + 1
+
+    local f = Instance.new("Frame")
+    f.Size = UDim2.new(1, 0, 0, 0)
+    f.BackgroundColor3 = TH.Bg
+    f.BackgroundTransparency = 0.05
+    f.BorderSizePixel = 0
+    f.ClipsDescendants = true
+    f.LayoutOrder = nOrd
+    f.Parent = NotifBox
+    Corner(f, 8); Stroke(f, 1, col, 0.4)
+
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(0, 3, 1, 0)
+    bar.BackgroundColor3 = col
+    bar.BorderSizePixel = 0
+    bar.Parent = f
+
+    local tl = Instance.new("TextLabel")
+    tl.Size = UDim2.new(1, -14, 0, 15)
+    tl.Position = UDim2.new(0, 11, 0, 5)
+    tl.BackgroundTransparency = 1
+    tl.Text = title
+    tl.Font = Enum.Font.GothamBold
+    tl.TextSize = 11
+    tl.TextColor3 = col
+    tl.TextXAlignment = Enum.TextXAlignment.Left
+    tl.Parent = f
+
+    local ml = Instance.new("TextLabel")
+    ml.Size = UDim2.new(1, -14, 0, 13)
+    ml.Position = UDim2.new(0, 11, 0, 22)
+    ml.BackgroundTransparency = 1
+    ml.Text = msg or ""
+    ml.Font = Enum.Font.Gotham
+    ml.TextSize = 9
+    ml.TextColor3 = TH.TextDim
+    ml.TextXAlignment = Enum.TextXAlignment.Left
+    ml.Parent = f
+
+    local prog = Instance.new("Frame")
+    prog.Size = UDim2.new(1, 0, 0, 2)
+    prog.Position = UDim2.new(0, 0, 1, -2)
+    prog.BackgroundColor3 = col
+    prog.BorderSizePixel = 0
+    prog.Parent = f
+
+    TW(f, {Size = UDim2.new(1, 0, 0, 44)}, 0.3, Enum.EasingStyle.Back)
+    task.delay(0.35, function()
+        TweenService:Create(prog, TweenInfo.new(dur - 0.7, Enum.EasingStyle.Linear), {Size = UDim2.new(0, 0, 0, 2)}):Play()
+    end)
+    task.delay(dur, function()
+        TW(f, {Size = UDim2.new(1, 0, 0, 0)}, 0.3)
+        task.delay(0.35, function() f:Destroy() end)
+    end)
+end
+
+-- ═══════════════════════════════════
+-- MAIN PANEL
+-- ═══════════════════════════════════
+local W, H = 320, 570
+
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.new(0, W, 0, H)
+Main.Position = UDim2.new(0.5, -W/2, 0.5, -H/2)
+Main.BackgroundColor3 = TH.Bg
+Main.BackgroundTransparency = 0.02
+Main.BorderSizePixel = 0
+Main.ClipsDescendants = true
+Main.Parent = Gui
+Corner(Main, 14); Stroke(Main, 1, TH.Border, 0.3)
+
+-- Top glow
+local topG = Instance.new("Frame")
+topG.Size = UDim2.new(1, -28, 0, 2)
+topG.Position = UDim2.new(0, 14, 0, 0)
+topG.BackgroundColor3 = TH.Accent
+topG.BackgroundTransparency = 0.2
+topG.BorderSizePixel = 0
+topG.ZIndex = 5
+topG.Parent = Main
+
+-- ═══════════════════════════════════
+-- TITLE BAR
+-- ═══════════════════════════════════
+local TBar = Instance.new("Frame")
+TBar.Size = UDim2.new(1, 0, 0, 48)
+TBar.BackgroundColor3 = TH.Panel
+TBar.BackgroundTransparency = 0.15
+TBar.BorderSizePixel = 0
+TBar.ZIndex = 3
+TBar.Parent = Main
+
+local tBF = Instance.new("Frame")
+tBF.Size = UDim2.new(1, 0, 0, 14)
+tBF.Position = UDim2.new(0, 0, 1, -14)
+tBF.BackgroundColor3 = TH.Panel
+tBF.BackgroundTransparency = 0.15
+tBF.BorderSizePixel = 0
+tBF.ZIndex = 3
+tBF.Parent = TBar
+
+-- REC dot
+local recDot = Instance.new("Frame")
+recDot.Size = UDim2.new(0, 10, 0, 10)
+recDot.Position = UDim2.new(0, 12, 0.5, -5)
+recDot.BackgroundColor3 = TH.Rec
+recDot.BorderSizePixel = 0
+recDot.ZIndex = 5
+recDot.Parent = TBar
+Corner(recDot, 5)
+
+-- Pulsing rec dot
+task.spawn(function()
+    while Gui.Parent do
+        TW(recDot, {BackgroundTransparency = 0.7}, 0.8)
+        task.wait(0.8)
+        TW(recDot, {BackgroundTransparency = 0}, 0.8)
+        task.wait(0.8)
+    end
+end)
+
+local TTxt = Instance.new("TextLabel")
+TTxt.Size = UDim2.new(1, -100, 1, 0)
+TTxt.Position = UDim2.new(0, 28, 0, 0)
+TTxt.BackgroundTransparency = 1
+TTxt.Text = "STUDIO PRO"
+TTxt.Font = Enum.Font.GothamBlack
+TTxt.TextSize = 15
+TTxt.TextColor3 = TH.Text
+TTxt.TextXAlignment = Enum.TextXAlignment.Left
+TTxt.ZIndex = 4
+TTxt.Parent = TBar
+
+local verL = Instance.new("TextLabel")
+verL.Size = UDim2.new(0, 36, 0, 14)
+verL.Position = UDim2.new(0, 120, 0.5, -7)
+verL.BackgroundColor3 = TH.Accent
+verL.BackgroundTransparency = 0.8
+verL.Text = "v1.0"
+verL.Font = Enum.Font.GothamBold
+verL.TextSize = 8
+verL.TextColor3 = TH.Accent
+verL.ZIndex = 4
+verL.Parent = TBar
+Corner(verL, 3)
+
+-- Dragging
+local dg, ds, dp = false, nil, nil
+TBar.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        dg = true; ds = i.Position; dp = Main.Position
+    end
+end)
+UIS.InputChanged:Connect(function(i)
+    if dg and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+        local d = i.Position - ds
+        Main.Position = UDim2.new(dp.X.Scale, dp.X.Offset + d.X, dp.Y.Scale, dp.Y.Offset + d.Y)
+    end
+end)
+UIS.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dg = false end
+end)
+
+-- Min / Close
+local panelMin = false
+local MinB = Instance.new("TextButton")
+MinB.Size = UDim2.new(0, 26, 0, 26)
+MinB.Position = UDim2.new(1, -64, 0.5, -13)
+MinB.BackgroundColor3 = TH.Card
+MinB.BorderSizePixel = 0
+MinB.Text = "—"
+MinB.Font = Enum.Font.GothamBold
+MinB.TextSize = 14
+MinB.TextColor3 = TH.TextDim
+MinB.AutoButtonColor = false
+MinB.ZIndex = 4
+MinB.Parent = TBar
+Corner(MinB, 6)
+
+local ClsB = Instance.new("TextButton")
+ClsB.Size = UDim2.new(0, 26, 0, 26)
+ClsB.Position = UDim2.new(1, -34, 0.5, -13)
+ClsB.BackgroundColor3 = Color3.fromRGB(190, 50, 50)
+ClsB.BorderSizePixel = 0
+ClsB.Text = "✕"
+ClsB.Font = Enum.Font.GothamBold
+ClsB.TextSize = 11
+ClsB.TextColor3 = Color3.fromRGB(255, 255, 255)
+ClsB.AutoButtonColor = false
+ClsB.ZIndex = 4
+ClsB.Parent = TBar
+Corner(ClsB, 6)
+
+local sep = Instance.new("Frame")
+sep.Size = UDim2.new(1, -20, 0, 1)
+sep.Position = UDim2.new(0, 10, 1, -1)
+sep.BackgroundColor3 = TH.Border
+sep.BackgroundTransparency = 0.5
+sep.BorderSizePixel = 0
+sep.ZIndex = 4
+sep.Parent = TBar
+
+-- ═══════════════════════════════════
+-- TAB SYSTEM
+-- ═══════════════════════════════════
+local TabFrame = Instance.new("Frame")
+TabFrame.Size = UDim2.new(1, -10, 0, 28)
+TabFrame.Position = UDim2.new(0, 5, 0, 50)
+TabFrame.BackgroundTransparency = 1
+TabFrame.ZIndex = 3
+TabFrame.Parent = Main
+
+local TLayout = Instance.new("UIListLayout")
+TLayout.FillDirection = Enum.FillDirection.Horizontal
+TLayout.Padding = UDim.new(0, 2)
+TLayout.Parent = TabFrame
+
+local ContentArea = Instance.new("Frame")
+ContentArea.Size = UDim2.new(1, 0, 1, -82)
+ContentArea.Position = UDim2.new(0, 0, 0, 82)
+ContentArea.BackgroundTransparency = 1
+ContentArea.ClipsDescendants = true
+ContentArea.Parent = Main
+
+local Pages = {}
+local TabBtns = {}
+local ActiveTab = nil
+
+local function MakePage(name)
+    local sc = Instance.new("ScrollingFrame")
+    sc.Name = name
+    sc.Size = UDim2.new(1, -6, 1, -2)
+    sc.Position = UDim2.new(0, 3, 0, 1)
+    sc.BackgroundTransparency = 1
+    sc.ScrollBarThickness = 3
+    sc.ScrollBarImageColor3 = TH.AccDim
+    sc.BorderSizePixel = 0
+    sc.CanvasSize = UDim2.new(0, 0, 0, 0)
+    sc.Visible = false
+    sc.Parent = ContentArea
+
+    local lay = Instance.new("UIListLayout")
+    lay.SortOrder = Enum.SortOrder.LayoutOrder
+    lay.Padding = UDim.new(0, 4)
+    lay.Parent = sc
+
+    local pad = Instance.new("UIPadding")
+    pad.PaddingLeft = UDim.new(0, 5)
+    pad.PaddingRight = UDim.new(0, 5)
+    pad.PaddingTop = UDim.new(0, 3)
+    pad.PaddingBottom = UDim.new(0, 8)
+    pad.Parent = sc
+
+    lay:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        sc.CanvasSize = UDim2.new(0, 0, 0, lay.AbsoluteContentSize.Y + 16)
+    end)
+
+    Pages[name] = sc
+    return sc
+end
+
+local function SwitchTab(name)
+    if ActiveTab == name then return end
+    for n, p in pairs(Pages) do p.Visible = (n == name) end
+    for _, td in ipairs(TabBtns) do
+        local act = td.n == name
+        TW(td.b, {BackgroundColor3 = act and TH.Accent or TH.Card, BackgroundTransparency = act and 0 or 0.5}, 0.2)
+        TW(td.l, {TextColor3 = act and TH.TextAct or TH.TextDim}, 0.2)
+    end
+    ActiveTab = name
+end
+
+local function AddTab(emoji, name, order)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 49, 0, 24)
+    b.BackgroundColor3 = TH.Card
+    b.BackgroundTransparency = 0.5
+    b.BorderSizePixel = 0
+    b.Text = ""
+    b.AutoButtonColor = false
+    b.LayoutOrder = order
+    b.ZIndex = 3
+    b.Parent = TabFrame
+    Corner(b, 6)
+
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 1, 0)
+    l.BackgroundTransparency = 1
+    l.Text = emoji
+    l.Font = Enum.Font.GothamBold
+    l.TextSize = 12
+    l.TextColor3 = TH.TextDim
+    l.ZIndex = 4
+    l.Parent = b
+
+    MakePage(name)
+    table.insert(TabBtns, {b = b, l = l, n = name})
+    b.MouseButton1Click:Connect(function() SwitchTab(name) end)
+    b.MouseEnter:Connect(function() if ActiveTab ~= name then TW(b, {BackgroundTransparency = 0.2}, 0.1) end end)
+    b.MouseLeave:Connect(function() if ActiveTab ~= name then TW(b, {BackgroundTransparency = 0.5}, 0.1) end end)
+end
+
+AddTab("🟩", "Screen", 1)
+AddTab("🎥", "Camera", 2)
+AddTab("🦾", "Pose", 3)
+AddTab("🖼️", "Over", 4)
+AddTab("🎬", "Scene", 5)
+AddTab("✨", "Shader", 6)
+
+-- ═══════════════════════════════════
+-- UI BUILDERS
+-- ═══════════════════════════════════
+local function Section(parent, text, order)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 20)
+    l.BackgroundTransparency = 1
+    l.Text = "  "..text
+    l.Font = Enum.Font.GothamBold
+    l.TextSize = 10
+    l.TextColor3 = TH.AccDim
+    l.TextTransparency = 0.1
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.LayoutOrder = order
+    l.Parent = parent
+end
+
+local function Toggle(parent, text, emoji, order, fn)
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 38)
+    card.BackgroundColor3 = TH.Card
+    card.BorderSizePixel = 0
+    card.LayoutOrder = order
+    card.Parent = parent
+    Corner(card, 9)
+    local cs = Stroke(card, 1, TH.Border, 0.7)
+
+    local emo = Instance.new("TextLabel")
+    emo.Size = UDim2.new(0, 22, 1, 0)
+    emo.Position = UDim2.new(0, 7, 0, 0)
+    emo.BackgroundTransparency = 1
+    emo.Text = emoji
+    emo.TextSize = 14
+    emo.Font = Enum.Font.SourceSans
+    emo.Parent = card
+
+    local txt = Instance.new("TextLabel")
+    txt.Size = UDim2.new(1, -90, 1, 0)
+    txt.Position = UDim2.new(0, 30, 0, 0)
+    txt.BackgroundTransparency = 1
+    txt.Text = text
+    txt.Font = Enum.Font.GothamSemibold
+    txt.TextSize = 10
+    txt.TextColor3 = TH.Text
+    txt.TextXAlignment = Enum.TextXAlignment.Left
+    txt.Parent = card
+
+    local tbg = Instance.new("Frame")
+    tbg.Size = UDim2.new(0, 34, 0, 18)
+    tbg.Position = UDim2.new(1, -42, 0.5, -9)
+    tbg.BackgroundColor3 = TH.TOff
+    tbg.BorderSizePixel = 0
+    tbg.Parent = card
+    Corner(tbg, 9)
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 12, 0, 12)
+    knob.Position = UDim2.new(0, 3, 0.5, -6)
+    knob.BackgroundColor3 = TH.KOff
+    knob.BorderSizePixel = 0
+    knob.Parent = tbg
+    Corner(knob, 6)
+
+    local active = false
+    local function Set(on)
+        active = on
+        TW(tbg, {BackgroundColor3 = on and TH.TOn or TH.TOff}, 0.2)
+        TW(knob, {
+            Position = on and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6),
+            BackgroundColor3 = on and TH.KOn or TH.KOff
+        }, 0.2, Enum.EasingStyle.Back)
+        TW(cs, {Color = on and TH.Accent or TH.Border, Transparency = on and 0.3 or 0.7}, 0.2)
+    end
+
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    btn.ZIndex = 2
+    btn.Parent = card
+
+    btn.MouseButton1Click:Connect(function()
+        local nw = not active
+        Set(nw)
+        if fn then fn(nw) end
+    end)
+    btn.MouseEnter:Connect(function() TW(card, {BackgroundColor3 = TH.CardH}, 0.1) end)
+    btn.MouseLeave:Connect(function() TW(card, {BackgroundColor3 = TH.Card}, 0.1) end)
+
+    return Set
+end
+
+local function MakeSlider(parent, text, emoji, min, max, def, step, order, fn)
+    step = step or 1
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, 0, 0, 50)
+    card.BackgroundColor3 = TH.Card
+    card.BorderSizePixel = 0
+    card.LayoutOrder = order
+    card.Parent = parent
+    Corner(card, 9)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -48, 0, 16)
+    lbl.Position = UDim2.new(0, 8, 0, 4)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = emoji.." "..text
+    lbl.Font = Enum.Font.GothamSemibold
+    lbl.TextSize = 9
+    lbl.TextColor3 = TH.Text
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = card
+
+    local vl = Instance.new("TextLabel")
+    vl.Size = UDim2.new(0, 40, 0, 16)
+    vl.Position = UDim2.new(1, -46, 0, 4)
+    vl.BackgroundTransparency = 1
+    vl.Text = tostring(def)
+    vl.Font = Enum.Font.GothamBold
+    vl.TextSize = 9
+    vl.TextColor3 = TH.Accent
+    vl.TextXAlignment = Enum.TextXAlignment.Right
+    vl.Parent = card
+
+    local sbg = Instance.new("Frame")
+    sbg.Size = UDim2.new(1, -16, 0, 5)
+    sbg.Position = UDim2.new(0, 8, 0, 31)
+    sbg.BackgroundColor3 = TH.TOff
+    sbg.BorderSizePixel = 0
+    sbg.Parent = card
+    Corner(sbg, 3)
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(math.clamp((def - min)/(max - min), 0, 1), 0, 1, 0)
+    fill.BackgroundColor3 = TH.Slider
+    fill.BorderSizePixel = 0
+    fill.Parent = sbg
+    Corner(fill, 3)
+
+    local sk = Instance.new("Frame")
+    sk.Size = UDim2.new(0, 12, 0, 12)
+    sk.Position = UDim2.new(math.clamp((def - min)/(max - min), 0, 1), -6, 0.5, -6)
+    sk.BackgroundColor3 = Color3.new(1, 1, 1)
+    sk.BorderSizePixel = 0
+    sk.ZIndex = 3
+    sk.Parent = sbg
+    Corner(sk, 6)
+
+    local sliding = false
+
+    local function Upd(inp)
+        local rel = math.clamp((inp.Position.X - sbg.AbsolutePosition.X) / sbg.AbsoluteSize.X, 0, 1)
+        local raw = min + (max - min) * rel
+        local val
+        if step < 1 then
+            val = math.floor(raw / step + 0.5) * step
+            val = tonumber(string.format("%.2f", math.clamp(val, min, max)))
+        else
+            val = math.clamp(math.floor(raw / step + 0.5) * step, min, max)
+        end
+        local norm = math.clamp((val - min)/(max - min), 0, 1)
+        fill.Size = UDim2.new(norm, 0, 1, 0)
+        sk.Position = UDim2.new(norm, -6, 0.5, -6)
+        vl.Text = tostring(val)
+        if fn then fn(val) end
+    end
+
+    local function SetVal(val)
+        local norm = math.clamp((val - min)/(max - min), 0, 1)
+        fill.Size = UDim2.new(norm, 0, 1, 0)
+        sk.Position = UDim2.new(norm, -6, 0.5, -6)
+        vl.Text = tostring(val)
+    end
+
+    local hit = Instance.new("TextButton")
+    hit.Size = UDim2.new(1, 0, 0, 22)
+    hit.Position = UDim2.new(0, 0, 0, 22)
+    hit.BackgroundTransparency = 1
+    hit.Text = ""
+    hit.ZIndex = 4
+    hit.Parent = card
+
+    hit.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then
+            sliding = true; Upd(inp)
+        end
+    end)
+    UIS.InputChanged:Connect(function(inp)
+        if sliding and (inp.UserInputType == Enum.UserInputType.MouseMovement or inp.UserInputType == Enum.UserInputType.Touch) then
+            Upd(inp)
+        end
+    end)
+    UIS.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.MouseButton1 or inp.UserInputType == Enum.UserInputType.Touch then sliding = false end
+    end)
+
+    return SetVal
+end
+
+local function ActionBtn(parent, text, emoji, order, fn)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, 0, 0, 34)
+    b.BackgroundColor3 = TH.Card
+    b.BorderSizePixel = 0
+    b.LayoutOrder = order
+    b.Text = ""
+    b.AutoButtonColor = false
+    b.Parent = parent
+    Corner(b, 9)
+
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, -12, 1, 0)
+    l.Position = UDim2.new(0, 8, 0, 0)
+    l.BackgroundTransparency = 1
+    l.Text = emoji.."  "..text
+    l.Font = Enum.Font.GothamSemibold
+    l.TextSize = 10
+    l.TextColor3 = TH.Text
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Parent = b
+
+    b.MouseEnter:Connect(function() TW(b, {BackgroundColor3 = TH.Accent}, 0.12); TW(l, {TextColor3 = TH.TextAct}, 0.12) end)
+    b.MouseLeave:Connect(function() TW(b, {BackgroundColor3 = TH.Card}, 0.12); TW(l, {TextColor3 = TH.Text}, 0.12) end)
+    b.MouseButton1Click:Connect(function() if fn then fn() end end)
+end
+
+-- ═══════════════════════════════════
+-- 🟩 GREEN SCREEN TAB
+-- ═══════════════════════════════════
+local gs = Pages["Screen"]
+
+Section(gs, "GREEN SCREEN", 1)
+
+Toggle(gs, "Spawn Green Screen", "🟩", 2, function(on)
+    Studio.GreenScreenOn = on
+    if on then
+        local root = GetRoot()
+        if not root then Notify("❌ Error", "No character", 2, TH.Bad) return end
+
+        if Studio.GreenScreen then Studio.GreenScreen:Destroy() end
+
+        local model = Instance.new("Model")
+        model.Name = "StudioGreenScreen"
+
+        -- Back wall
+        local back = Instance.new("Part")
+        back.Size = Studio.ScreenSize
+        back.CFrame = root.CFrame * CFrame.new(0, Studio.ScreenSize.Y/2 - 3, -Studio.ScreenDist)
+        back.Anchored = true
+        back.CanCollide = false
+        back.Material = Enum.Material.SmoothPlastic
+        back.Color = Studio.ScreenColor
+        back.Name = "Back"
+        back.Parent = model
+
+        -- Floor
+        local floor = Instance.new("Part")
+        floor.Size = Vector3.new(Studio.ScreenSize.X, 1, Studio.ScreenSize.X * 0.6)
+        floor.CFrame = root.CFrame * CFrame.new(0, -3, -Studio.ScreenDist + Studio.ScreenSize.X * 0.3 - Studio.ScreenSize.Z/2)
+        floor.Anchored = true
+        floor.CanCollide = true
+        floor.Material = Enum.Material.SmoothPlastic
+        floor.Color = Studio.ScreenColor
+        floor.Name = "Floor"
+        floor.Parent = model
+
+        -- Left wall
+        local left = Instance.new("Part")
+        left.Size = Vector3.new(1, Studio.ScreenSize.Y, Studio.ScreenSize.X * 0.6)
+        left.CFrame = root.CFrame * CFrame.new(-Studio.ScreenSize.X/2, Studio.ScreenSize.Y/2 - 3, -Studio.ScreenDist + Studio.ScreenSize.X * 0.3 - Studio.ScreenSize.Z/2)
+        left.Anchored = true
+        left.CanCollide = false
+        left.Material = Enum.Material.SmoothPlastic
+        left.Color = Studio.ScreenColor
+        left.Name = "Left"
+        left.Parent = model
+
+        -- Right wall
+        local right = Instance.new("Part")
+        right.Size = Vector3.new(1, Studio.ScreenSize.Y, Studio.ScreenSize.X * 0.6)
+        right.CFrame = root.CFrame * CFrame.new(Studio.ScreenSize.X/2, Studio.ScreenSize.Y/2 - 3, -Studio.ScreenDist + Studio.ScreenSize.X * 0.3 - Studio.ScreenSize.Z/2)
+        right.Anchored = true
+        right.CanCollide = false
+        right.Material = Enum.Material.SmoothPlastic
+        right.Color = Studio.ScreenColor
+        right.Name = "Right"
+        right.Parent = model
+
+        -- Ceiling
+        local ceiling = Instance.new("Part")
+        ceiling.Size = Vector3.new(Studio.ScreenSize.X, 1, Studio.ScreenSize.X * 0.6)
+        ceiling.CFrame = root.CFrame * CFrame.new(0, Studio.ScreenSize.Y - 3, -Studio.ScreenDist + Studio.ScreenSize.X * 0.3 - Studio.ScreenSize.Z/2)
+        ceiling.Anchored = true
+        ceiling.CanCollide = false
+        ceiling.Material = Enum.Material.SmoothPlastic
+        ceiling.Color = Studio.ScreenColor
+        ceiling.Name = "Ceiling"
+        ceiling.Parent = model
+
+        model.Parent = workspace
+        Studio.GreenScreen = model
+
+        Notify("🟩 Green Screen", "Spawned behind you!", 3, TH.Green)
+    else
+        if Studio.GreenScreen then
+            Studio.GreenScreen:Destroy()
+            Studio.GreenScreen = nil
+        end
+        Notify("🟩 Removed", "Green screen destroyed", 2, TH.Bad)
+    end
+end)
+
+Section(gs, "SCREEN COLOR", 4)
+
+ActionBtn(gs, "Green (Chroma Key)", "🟩", 5, function()
+    Studio.ScreenColor = Color3.fromRGB(0, 177, 64)
+    if Studio.GreenScreen then
+        for _, p in pairs(Studio.GreenScreen:GetChildren()) do
+            if p:IsA("BasePart") then p.Color = Studio.ScreenColor end
+        end
+    end
+    Notify("🟩 Green", "Standard chroma key", 2, TH.Green)
+end)
+
+ActionBtn(gs, "Blue Screen", "🟦", 6, function()
+    Studio.ScreenColor = Color3.fromRGB(0, 71, 187)
+    if Studio.GreenScreen then
+        for _, p in pairs(Studio.GreenScreen:GetChildren()) do
+            if p:IsA("BasePart") then p.Color = Studio.ScreenColor end
+        end
+    end
+    Notify("🟦 Blue", "Blue screen applied", 2, TH.Blue)
+end)
+
+ActionBtn(gs, "Black Screen", "⬛", 7, function()
+    Studio.ScreenColor = Color3.fromRGB(0, 0, 0)
+    if Studio.GreenScreen then
+        for _, p in pairs(Studio.GreenScreen:GetChildren()) do
+            if p:IsA("BasePart") then p.Color = Studio.ScreenColor end
+        end
+    end
+    Notify("⬛ Black", "Black screen applied", 2, TH.Text)
+end)
+
+ActionBtn(gs, "White Screen", "⬜", 8, function()
+    Studio.ScreenColor = Color3.fromRGB(255, 255, 255)
+    if Studio.GreenScreen then
+        for _, p in pairs(Studio.GreenScreen:GetChildren()) do
+            if p:IsA("BasePart") then p.Color = Studio.ScreenColor end
+        end
+    end
+    Notify("⬜ White", "White screen applied", 2, TH.Text)
+end)
+
+ActionBtn(gs, "Pink Screen", "🟪", 9, function()
+    Studio.ScreenColor = Color3.fromRGB(255, 0, 255)
+    if Studio.GreenScreen then
+        for _, p in pairs(Studio.GreenScreen:GetChildren()) do
+            if p:IsA("BasePart") then p.Color = Studio.ScreenColor end
+        end
+    end
+    Notify("🟪 Pink", "Magenta screen applied", 2, Color3.fromRGB(255, 0, 255))
+end)
+
+Section(gs, "SCREEN SIZE", 11)
+
+MakeSlider(gs, "Width", "↔️", 10, 100, 40, 2, 12, function(v)
+    Studio.ScreenSize = Vector3.new(v, Studio.ScreenSize.Y, Studio.ScreenSize.Z)
+end)
+
+MakeSlider(gs, "Height", "↕️", 10, 60, 30, 2, 13, function(v)
+    Studio.ScreenSize = Vector3.new(Studio.ScreenSize.X, v, Studio.ScreenSize.Z)
+end)
+
+MakeSlider(gs, "Distance", "📏", 5, 50, 15, 1, 14, function(v)
+    Studio.ScreenDist = v
+end)
+
+Section(gs, "STUDIO LIGHTS", 16)
+
+ActionBtn(gs, "Add Key Light", "💡", 17, function()
+    local root = GetRoot()
+    if not root then return end
+    local light = Instance.new("Part")
+    light.Name = "StudioKeyLight"
+    light.Size = Vector3.new(2, 2, 2)
+    light.Shape = Enum.PartType.Ball
+    light.Material = Enum.Material.Neon
+    light.Color = Color3.fromRGB(255, 250, 235)
+    light.Anchored = true
+    light.CanCollide = false
+    light.Transparency = 0.5
+    light.CFrame = root.CFrame * CFrame.new(8, 8, -5)
+    light.Parent = workspace
+
+    local pl = Instance.new("PointLight")
+    pl.Color = Color3.fromRGB(255, 250, 235)
+    pl.Brightness = 3
+    pl.Range = 40
+    pl.Parent = light
+
+    Notify("💡 Key Light", "Spawned to the right", 2, TH.Yellow)
+end)
+
+ActionBtn(gs, "Add Fill Light", "🔦", 18, function()
+    local root = GetRoot()
+    if not root then return end
+    local light = Instance.new("Part")
+    light.Name = "StudioFillLight"
+    light.Size = Vector3.new(2, 2, 2)
+    light.Shape = Enum.PartType.Ball
+    light.Material = Enum.Material.Neon
+    light.Color = Color3.fromRGB(200, 220, 255)
+    light.Anchored = true
+    light.CanCollide = false
+    light.Transparency = 0.5
+    light.CFrame = root.CFrame * CFrame.new(-8, 6, -3)
+    light.Parent = workspace
+
+    local pl = Instance.new("PointLight")
+    pl.Color = Color3.fromRGB(200, 220, 255)
+    pl.Brightness = 1.5
+    pl.Range = 30
+    pl.Parent = light
+
+    Notify("🔦 Fill Light", "Spawned to the left", 2, TH.Blue)
+end)
+
+ActionBtn(gs, "Add Back Light", "🌟", 19, function()
+    local root = GetRoot()
+    if not root then return end
+    local light = Instance.new("Part")
+    light.Name = "StudioBackLight"
+    light.Size = Vector3.new(2, 2, 2)
+    light.Shape = Enum.PartType.Ball
+    light.Material = Enum.Material.Neon
+    light.Color = Color3.fromRGB(255, 200, 150)
+    light.Anchored = true
+    light.CanCollide = false
+    light.Transparency = 0.5
+    light.CFrame = root.CFrame * CFrame.new(0, 10, -Studio.ScreenDist - 5)
+    light.Parent = workspace
+
+    local pl = Instance.new("PointLight")
+    pl.Color = Color3.fromRGB(255, 200, 150)
+    pl.Brightness = 2
+    pl.Range = 35
+    pl.Parent = light
+
+    Notify("🌟 Back Light", "Spawned behind", 2, TH.Accent)
+end)
+
+ActionBtn(gs, "Remove All Studio Lights", "🗑️", 20, function()
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj.Name == "StudioKeyLight" or obj.Name == "StudioFillLight" or obj.Name == "StudioBackLight" then
+            obj:Destroy()
+        end
+    end
+    Notify("🗑️ Cleared", "All studio lights removed", 2, TH.Bad)
+end)
+
+-- ═══════════════════════════════════
+-- 🎥 CAMERA TAB
+-- ═══════════════════════════════════
+local cm = Pages["Camera"]
+
+Section(cm, "FREECAM", 1)
+
+local setFreecam = Toggle(cm, "Freecam Mode", "🎥", 2, function(on)
+    Studio.FreecamOn = on
+    if on then
+        Studio.FreecamCF = Camera.CFrame
+        Camera.CameraType = Enum.CameraType.Scriptable
+        Notify("🎥 Freecam ON", IsMobile and "Use joystick" or "WASD QE to move", 3, TH.Accent)
+    else
+        Camera.CameraType = Enum.CameraType.Custom
+        Notify("🎥 Freecam OFF", "Back to default", 2, TH.Bad)
+    end
+end)
+
+MakeSlider(cm, "Freecam Speed", "🏎️", 0.1, 10, 1, 0.1, 3, function(v)
+    Studio.FreecamSpeed = v
+end)
+
+MakeSlider(cm, "Field of View", "🔭", 10, 120, 70, 1, 4, function(v)
+    Studio.CamFOV = v
+    Camera.FieldOfView = v
+end)
+
+Section(cm, "CAMERA SLOTS (Save/Load)", 6)
+
+for i = 1, 5 do
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 32)
+    row.BackgroundColor3 = TH.Card
+    row.BorderSizePixel = 0
+    row.LayoutOrder = 6 + i
+    row.Parent = cm
+    Corner(row, 8)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0, 60, 1, 0)
+    lbl.Position = UDim2.new(0, 8, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "📌 Slot "..i
+    lbl.Font = Enum.Font.GothamSemibold
+    lbl.TextSize = 10
+    lbl.TextColor3 = TH.Text
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+
+    local statusLbl = Instance.new("TextLabel")
+    statusLbl.Size = UDim2.new(0, 40, 1, 0)
+    statusLbl.Position = UDim2.new(0, 68, 0, 0)
+    statusLbl.BackgroundTransparency = 1
+    statusLbl.Text = "Empty"
+    statusLbl.Font = Enum.Font.Gotham
+    statusLbl.TextSize = 8
+    statusLbl.TextColor3 = TH.TextDim
+    statusLbl.TextXAlignment = Enum.TextXAlignment.Left
+    statusLbl.Parent = row
+
+    local saveBtn = Instance.new("TextButton")
+    saveBtn.Size = UDim2.new(0, 42, 0, 22)
+    saveBtn.Position = UDim2.new(1, -96, 0.5, -11)
+    saveBtn.BackgroundColor3 = TH.Green
+    saveBtn.BorderSizePixel = 0
+    saveBtn.Text = "Save"
+    saveBtn.Font = Enum.Font.GothamBold
+    saveBtn.TextSize = 9
+    saveBtn.TextColor3 = Color3.new(1, 1, 1)
+    saveBtn.AutoButtonColor = false
+    saveBtn.ZIndex = 2
+    saveBtn.Parent = row
+    Corner(saveBtn, 5)
+
+    local loadBtn = Instance.new("TextButton")
+    loadBtn.Size = UDim2.new(0, 42, 0, 22)
+    loadBtn.Position = UDim2.new(1, -48, 0.5, -11)
+    loadBtn.BackgroundColor3 = TH.Accent
+    loadBtn.BorderSizePixel = 0
+    loadBtn.Text = "Load"
+    loadBtn.Font = Enum.Font.GothamBold
+    loadBtn.TextSize = 9
+    loadBtn.TextColor3 = Color3.new(1, 1, 1)
+    loadBtn.AutoButtonColor = false
+    loadBtn.ZIndex = 2
+    loadBtn.Parent = row
+    Corner(loadBtn, 5)
+
+    saveBtn.MouseButton1Click:Connect(function()
+        Studio.CamSlots[i] = {cf = Camera.CFrame, fov = Camera.FieldOfView}
+        statusLbl.Text = "Saved"
+        statusLbl.TextColor3 = TH.Good
+        Notify("💾 Saved", "Camera slot "..i, 1.5, TH.Good)
+    end)
+
+    loadBtn.MouseButton1Click:Connect(function()
+        local slot = Studio.CamSlots[i]
+        if slot then
+            Camera.CameraType = Enum.CameraType.Scriptable
+            Studio.FreecamOn = true
+            setFreecam(true)
+            TweenService:Create(Camera, TweenInfo.new(Studio.CamSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+                CFrame = slot.cf,
+                FieldOfView = slot.fov
+            }):Play()
+            Notify("📌 Loaded", "Camera slot "..i, 1.5, TH.Accent)
+        else
+            Notify("❌ Empty", "Save first", 1.5, TH.Bad)
+        end
+    end)
+end
+
+Section(cm, "CAMERA MOVES", 13)
+
+MakeSlider(cm, "Transition Speed", "⏱️", 0.5, 10, 2, 0.5, 14, function(v)
+    Studio.CamSpeed = v
+end)
+
+local setOrbit = Toggle(cm, "Orbit Mode", "🔄", 15, function(on)
+    Studio.OrbitOn = on
+    if on then
+        Camera.CameraType = Enum.CameraType.Scriptable
+        Notify("🔄 Orbit ON", "Camera orbits around you", 2, TH.Accent)
+    else
+        Camera.CameraType = Enum.CameraType.Custom
+        Notify("🔄 Orbit OFF", "", 2, TH.Bad)
+    end
+end)
+
+MakeSlider(cm, "Orbit Speed", "🌀", 0.1, 5, 1, 0.1, 16, function(v) Studio.OrbitSpeed = v end)
+MakeSlider(cm, "Orbit Distance", "📐", 5, 60, 20, 1, 17, function(v) Studio.OrbitDist = v end)
+MakeSlider(cm, "Orbit Height", "📏", -10, 30, 5, 1, 18, function(v) Studio.OrbitHeight = v end)
+
+Section(cm, "QUICK ANGLES", 20)
+
+ActionBtn(cm, "Front Face", "😊", 21, function()
+    local root = GetRoot(); if not root then return end
+    Camera.CameraType = Enum.CameraType.Scriptable
+    Studio.FreecamOn = true; setFreecam(true)
+    local target = root.CFrame * CFrame.new(0, 1.5, 8)
+    TweenService:Create(Camera, TweenInfo.new(Studio.CamSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+        CFrame = CFrame.lookAt(target.Position, root.Position + Vector3.new(0, 1.5, 0))
+    }):Play()
+    Notify("😊 Front", "Facing camera", 1.5, TH.Accent)
+end)
+
+ActionBtn(cm, "Side Profile", "👤", 22, function()
+    local root = GetRoot(); if not root then return end
+    Camera.CameraType = Enum.CameraType.Scriptable
+    Studio.FreecamOn = true; setFreecam(true)
+    local target = root.CFrame * CFrame.new(10, 1, 0)
+    TweenService:Create(Camera, TweenInfo.new(Studio.CamSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+        CFrame = CFrame.lookAt(target.Position, root.Position + Vector3.new(0, 1, 0))
+    }):Play()
+    Notify("👤 Side", "Profile shot", 1.5, TH.Accent)
+end)
+
+ActionBtn(cm, "Low Angle (Epic)", "⬆️", 23, function()
+    local root = GetRoot(); if not root then return end
+    Camera.CameraType = Enum.CameraType.Scriptable
+    Studio.FreecamOn = true; setFreecam(true)
+    local target = root.CFrame * CFrame.new(3, -2, 8)
+    TweenService:Create(Camera, TweenInfo.new(Studio.CamSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+        CFrame = CFrame.lookAt(target.Position, root.Position + Vector3.new(0, 2, 0))
+    }):Play()
+    Notify("⬆️ Low Angle", "Epic hero shot", 1.5, TH.Accent)
+end)
+
+ActionBtn(cm, "Bird's Eye", "🦅", 24, function()
+    local root = GetRoot(); if not root then return end
+    Camera.CameraType = Enum.CameraType.Scriptable
+    Studio.FreecamOn = true; setFreecam(true)
+    local target = root.Position + Vector3.new(0, 30, 5)
+    TweenService:Create(Camera, TweenInfo.new(Studio.CamSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+        CFrame = CFrame.lookAt(target, root.Position)
+    }):Play()
+    Notify("🦅 Bird's Eye", "Top-down view", 1.5, TH.Accent)
+end)
+
+ActionBtn(cm, "Closeup Face", "🔍", 25, function()
+    local root = GetRoot(); if not root then return end
+    local head = GetChar():FindFirstChild("Head")
+    if not head then return end
+    Camera.CameraType = Enum.CameraType.Scriptable
+    Studio.FreecamOn = true; setFreecam(true)
+    local target = head.CFrame * CFrame.new(0, 0, 3)
+    TweenService:Create(Camera, TweenInfo.new(Studio.CamSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+        CFrame = CFrame.lookAt(target.Position, head.Position),
+        FieldOfView = 40
+    }):Play()
+    Notify("🔍 Closeup", "Face detail shot", 1.5, TH.Accent)
+end)
+
+ActionBtn(cm, "Over Shoulder", "🎯", 26, function()
+    local root = GetRoot(); if not root then return end
+    Camera.CameraType = Enum.CameraType.Scriptable
+    Studio.FreecamOn = true; setFreecam(true)
+    local target = root.CFrame * CFrame.new(2, 2, 3)
+    TweenService:Create(Camera, TweenInfo.new(Studio.CamSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {
+        CFrame = CFrame.lookAt(target.Position, (root.CFrame * CFrame.new(0, 1, -20)).Position)
+    }):Play()
+    Notify("🎯 Over Shoulder", "Third-person cinematic", 1.5, TH.Accent)
+end)
+
+ActionBtn(cm, "Dutch Angle", "📐", 27, function()
+    local root = GetRoot(); if not root then return end
+    Camera.CameraType = Enum.CameraType.Scriptable
+    Studio.FreecamOn = true; setFreecam(true)
+    local pos = root.CFrame * CFrame.new(5, 3, 8)
+    local lookAt = root.Position + Vector3.new(0, 1, 0)
+    local cf = CFrame.lookAt(pos.Position, lookAt) * CFrame.Angles(0, 0, math.rad(15))
+    TweenService:Create(Camera, TweenInfo.new(Studio.CamSpeed, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), {CFrame = cf}):Play()
+    Notify("📐 Dutch Angle", "Tilted dramatic", 1.5, TH.Accent)
+end)
+
+ActionBtn(cm, "Reset Camera", "🔄", 28, function()
+    Studio.FreecamOn = false
+    Studio.OrbitOn = false
+    setFreecam(false)
+    setOrbit(false)
+    Camera.CameraType = Enum.CameraType.Custom
+    Camera.FieldOfView = 70
+    Studio.CamFOV = 70
+    Notify("🔄 Reset", "Default camera", 2, TH.Good)
+end)
+
+-- ═══════════════════════════════════
+-- 🦾 POSE TAB (Limb Movement)
+-- ═══════════════════════════════════
+local ps = Pages["Pose"]
+
+Section(ps, "LIMB POSING", 1)
+
+local poseInfo = Instance.new("TextLabel")
+poseInfo.Size = UDim2.new(1, 0, 0, 28)
+poseInfo.BackgroundColor3 = TH.Card
+poseInfo.BorderSizePixel = 0
+poseInfo.LayoutOrder = 2
+poseInfo.Text = "  Adjust Motor6D joints via sliders"
+poseInfo.Font = Enum.Font.Gotham
+poseInfo.TextSize = 9
+poseInfo.TextColor3 = TH.TextDim
+poseInfo.TextXAlignment = Enum.TextXAlignment.Left
+poseInfo.Parent = ps
+Corner(poseInfo, 8)
+
+-- R15 joint names and their parent parts
+local R15Joints = {
+    {name = "Right Arm", joint = "RightShoulder", parent = "RightUpperArm", label = "💪 Right Arm"},
+    {name = "Left Arm", joint = "LeftShoulder", parent = "LeftUpperArm", label = "💪 Left Arm"},
+    {name = "Right Leg", joint = "RightHip", parent = "RightUpperLeg", label = "🦵 Right Leg"},
+    {name = "Left Leg", joint = "LeftHip", parent = "LeftUpperLeg", label = "🦵 Left Leg"},
+    {name = "Head", joint = "Neck", parent = "Head", label = "🗣️ Head"},
+    {name = "Torso", joint = "Waist", parent = "UpperTorso", label = "🫁 Torso"},
+    {name = "Right Elbow", joint = "RightElbow", parent = "RightLowerArm", label = "💪 R. Elbow"},
+    {name = "Left Elbow", joint = "LeftElbow", parent = "LeftLowerArm", label = "💪 L. Elbow"},
+    {name = "Right Knee", joint = "RightKnee", parent = "RightLowerLeg", label = "🦵 R. Knee"},
+    {name = "Left Knee", joint = "LeftKnee", parent = "LeftLowerLeg", label = "🦵 L. Knee"},
+}
+
+local function FindJoint(jointName)
+    local char = GetChar()
+    if not char then return nil end
+    for _, desc in pairs(char:GetDescendants()) do
+        if desc:IsA("Motor6D") and desc.Name == jointName then
+            return desc
+        end
+    end
+    return nil
+end
+
+local function SaveOrigC0(jointName)
+    if not Studio.OriginalC0[jointName] then
+        local joint = FindJoint(jointName)
+        if joint then
+            Studio.OriginalC0[jointName] = joint.C0
+        end
+    end
+end
+
+Toggle(ps, "Enable Pose Mode", "🎭", 3, function(on)
+    Studio.PoseMode = on
+    if on then
+        -- Stop default animate
+        local char = GetChar()
+        if char then
+            local anim = char:FindFirstChild("Animate")
+            if anim then anim.Disabled = true end
+            local hum = GetHum()
+            if hum then
+                local animator = hum:FindFirstChildOfClass("Animator")
+                if animator then
+                    for _, t in pairs(animator:GetPlayingAnimationTracks()) do
+                        t:Stop(0)
+                    end
+                end
+            end
+        end
+        -- Save all original C0s
+        Studio.OriginalC0 = {}
+        for _, jd in ipairs(R15Joints) do
+            SaveOrigC0(jd.joint)
+        end
+        Notify("🎭 Pose Mode ON", "Animations paused, adjust limbs!", 3, TH.Accent)
+    else
+        -- Restore
+        for jointName, origC0 in pairs(Studio.OriginalC0) do
+            local joint = FindJoint(jointName)
+            if joint then joint.C0 = origC0 end
+        end
+        local char = GetChar()
+        if char then
+            local anim = char:FindFirstChild("Animate")
+            if anim then anim.Disabled = false end
+        end
+        Notify("🎭 Pose Mode OFF", "Animations restored", 2, TH.Bad)
+    end
+end)
+
+local ord = 4
+for _, jd in ipairs(R15Joints) do
+    Section(ps, jd.label, ord)
+    ord = ord + 1
+
+    MakeSlider(ps, "Rotate X", "↕️", -180, 180, 0, 5, ord, function(v)
+        if not Studio.PoseMode then return end
+        SaveOrigC0(jd.joint)
+        local joint = FindJoint(jd.joint)
+        if joint and Studio.OriginalC0[jd.joint] then
+            local cur = Studio.PosedParts[jd.joint] or {x = 0, y = 0, z = 0}
+            cur.x = v
+            Studio.PosedParts[jd.joint] = cur
+            joint.C0 = Studio.OriginalC0[jd.joint] * CFrame.Angles(math.rad(cur.x), math.rad(cur.y), math.rad(cur.z))
+        end
+    end)
+    ord = ord + 1
+
+    MakeSlider(ps, "Rotate Y", "↔️", -180, 180, 0, 5, ord, function(v)
+        if not Studio.PoseMode then return end
+        SaveOrigC0(jd.joint)
+        local joint = FindJoint(jd.joint)
+        if joint and Studio.OriginalC0[jd.joint] then
+            local cur = Studio.PosedParts[jd.joint] or {x = 0, y = 0, z = 0}
+            cur.y = v
+            Studio.PosedParts[jd.joint] = cur
+            joint.C0 = Studio.OriginalC0[jd.joint] * CFrame.Angles(math.rad(cur.x), math.rad(cur.y), math.rad(cur.z))
+        end
+    end)
+    ord = ord + 1
+
+    MakeSlider(ps, "Rotate Z", "🔄", -180, 180, 0, 5, ord, function(v)
+        if not Studio.PoseMode then return end
+        SaveOrigC0(jd.joint)
+        local joint = FindJoint(jd.joint)
+        if joint and Studio.OriginalC0[jd.joint] then
+            local cur = Studio.PosedParts[jd.joint] or {x = 0, y = 0, z = 0}
+            cur.z = v
+            Studio.PosedParts[jd.joint] = cur
+            joint.C0 = Studio.OriginalC0[jd.joint] * CFrame.Angles(math.rad(cur.x), math.rad(cur.y), math.rad(cur.z))
+        end
+    end)
+    ord = ord + 1
+end
+
+ActionBtn(ps, "Reset All Poses", "🔄", ord, function()
+    for jointName, origC0 in pairs(Studio.OriginalC0) do
+        local joint = FindJoint(jointName)
+        if joint then joint.C0 = origC0 end
+    end
+    Studio.PosedParts = {}
+    Notify("🔄 Reset", "All poses cleared", 2, TH.Good)
+end)
+
+-- Quick pose presets
+ord = ord + 1
+Section(ps, "POSE PRESETS", ord)
+ord = ord + 1
+
+local PosePresets = {
+    {name = "T-Pose", emoji = "✝️", poses = {
+        RightShoulder = {x = 0, y = 0, z = -90},
+        LeftShoulder = {x = 0, y = 0, z = 90},
+    }},
+    {name = "Dab", emoji = "💃", poses = {
+        RightShoulder = {x = 0, y = 0, z = -150},
+        LeftShoulder = {x = -45, y = 0, z = 45},
+        Neck = {x = 0, y = 0, z = -30},
+    }},
+    {name = "Arms Crossed", emoji = "😤", poses = {
+        RightShoulder = {x = -30, y = -30, z = -45},
+        LeftShoulder = {x = -30, y = 30, z = 45},
+        RightElbow = {x = 0, y = 0, z = 90},
+        LeftElbow = {x = 0, y = 0, z = -90},
+    }},
+    {name = "Wave", emoji = "👋", poses = {
+        RightShoulder = {x = 0, y = 0, z = -150},
+        RightElbow = {x = 0, y = 0, z = -30},
+    }},
+    {name = "Sit", emoji = "🪑", poses = {
+        RightHip = {x = -90, y = 0, z = 0},
+        LeftHip = {x = -90, y = 0, z = 0},
+        RightKnee = {x = 90, y = 0, z = 0},
+        LeftKnee = {x = 90, y = 0, z = 0},
+    }},
+    {name = "Flex", emoji = "💪", poses = {
+        RightShoulder = {x = 0, y = 0, z = -90},
+        LeftShoulder = {x = 0, y = 0, z = 90},
+        RightElbow = {x = 0, y = -90, z = 0},
+        LeftElbow = {x = 0, y = 90, z = 0},
+    }},
+    {name = "Thinking", emoji = "🤔", poses = {
+        RightShoulder = {x = -60, y = 0, z = -20},
+        RightElbow = {x = 0, y = -120, z = 0},
+        Neck = {x = 10, y = -15, z = 5},
+    }},
+    {name = "Power Pose", emoji = "🦸", poses = {
+        RightShoulder = {x = 0, y = 0, z = -45},
+        LeftShoulder = {x = 0, y = 0, z = 45},
+        Waist = {x = -5, y = 0, z = 0},
+        RightHip = {x = 0, y = -15, z = 0},
+        LeftHip = {x = 0, y = 15, z = 0},
+    }},
+}
+
+for _, preset in ipairs(PosePresets) do
+    ActionBtn(ps, preset.name, preset.emoji, ord, function()
+        if not Studio.PoseMode then
+            Notify("⚠️ Warning", "Enable Pose Mode first!", 2, TH.Yellow)
+            return
+        end
+        -- Reset first
+        for jn, oc in pairs(Studio.OriginalC0) do
+            local j = FindJoint(jn)
+            if j then j.C0 = oc end
+        end
+        Studio.PosedParts = {}
+
+        -- Apply preset
+        for jointName, angles in pairs(preset.poses) do
+            SaveOrigC0(jointName)
+            local joint = FindJoint(jointName)
+            if joint and Studio.OriginalC0[jointName] then
+                Studio.PosedParts[jointName] = angles
+                joint.C0 = Studio.OriginalC0[jointName] * CFrame.Angles(math.rad(angles.x), math.rad(angles.y), math.rad(angles.z))
+            end
+        end
+        Notify(preset.emoji.." "..preset.name, "Pose applied!", 2, TH.Accent)
+    end)
+    ord = ord + 1
+end
+
+-- ═══════════════════════════════════
+-- 🖼️ OVERLAYS TAB
+-- ═══════════════════════════════════
+local ov = Pages["Over"]
+
+Section(ov, "RECORDING OVERLAYS", 1)
+
+Toggle(ov, "REC Indicator", "🔴", 2, function(on)
+    Studio.RecIndicator = on
+    if on then
+        local rec = Instance.new("Frame")
+        rec.Name = "RECIndicator"
+        rec.Size = UDim2.new(0, 80, 0, 28)
+        rec.Position = UDim2.new(0, 20, 0, 20)
+        rec.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+        rec.BackgroundTransparency = 0.3
+        rec.BorderSizePixel = 0
+        rec.ZIndex = 50
+        rec.Parent = Gui
+        Corner(rec, 6)
+
+        local dot = Instance.new("Frame")
+        dot.Size = UDim2.new(0, 10, 0, 10)
+        dot.Position = UDim2.new(0, 8, 0.5, -5)
+        dot.BackgroundColor3 = TH.Rec
+        dot.BorderSizePixel = 0
+        dot.ZIndex = 51
+        dot.Parent = rec
+        Corner(dot, 5)
+
+        local recTxt = Instance.new("TextLabel")
+        recTxt.Size = UDim2.new(1, -26, 1, 0)
+        recTxt.Position = UDim2.new(0, 22, 0, 0)
+        recTxt.BackgroundTransparency = 1
+        recTxt.Text = "REC"
+        recTxt.Font = Enum.Font.GothamBold
+        recTxt.TextSize = 14
+        recTxt.TextColor3 = TH.Rec
+        recTxt.TextXAlignment = Enum.TextXAlignment.Left
+        recTxt.ZIndex = 51
+        recTxt.Parent = rec
+
+        -- Pulse
+        task.spawn(function()
+            while rec.Parent do
+                TW(dot, {BackgroundTransparency = 0.8}, 0.6)
+                task.wait(0.6)
+                TW(dot, {BackgroundTransparency = 0}, 0.6)
+                task.wait(0.6)
+            end
+        end)
+
+        Notify("🔴 REC", "Recording indicator shown", 2, TH.Rec)
+    else
+        local rec = Gui:FindFirstChild("RECIndicator")
+        if rec then rec:Destroy() end
+        Notify("🔴 REC OFF", "", 2, TH.Bad)
+    end
+end)
+
+Toggle(ov, "Rule of Thirds", "📐", 3, function(on)
+    Studio.RuleOfThirds = on
+    if on then
+        local f = Instance.new("Frame")
+        f.Name = "ThirdsOverlay"
+        f.Size = UDim2.new(1, 0, 1, 0)
+        f.BackgroundTransparency = 1
+        f.ZIndex = 40
+        f.Parent = Gui
+
+        for i = 1, 2 do
+            local vLine = Instance.new("Frame")
+            vLine.Size = UDim2.new(0, 1, 1, 0)
+            vLine.Position = UDim2.new(i/3, 0, 0, 0)
+            vLine.BackgroundColor3 = Color3.new(1, 1, 1)
+            vLine.BackgroundTransparency = 0.6
+            vLine.BorderSizePixel = 0
+            vLine.ZIndex = 41
+            vLine.Parent = f
+
+            local hLine = Instance.new("Frame")
+            hLine.Size = UDim2.new(1, 0, 0, 1)
+            hLine.Position = UDim2.new(0, 0, i/3, 0)
+            hLine.BackgroundColor3 = Color3.new(1, 1, 1)
+            hLine.BackgroundTransparency = 0.6
+            hLine.BorderSizePixel = 0
+            hLine.ZIndex = 41
+            hLine.Parent = f
+        end
+
+        Studio.ThirdsFrame = f
+        Notify("📐 Thirds", "Grid overlay active", 2, TH.Accent)
+    else
+        if Studio.ThirdsFrame then Studio.ThirdsFrame:Destroy() end
+        Notify("📐 Thirds OFF", "", 2, TH.Bad)
+    end
+end)
+
+Toggle(ov, "Center Crosshair", "➕", 4, function(on)
+    Studio.CenterCross = on
+    if on then
+        local f = Instance.new("Frame")
+        f.Name = "CenterCross"
+        f.Size = UDim2.new(0, 30, 0, 30)
+        f.Position = UDim2.new(0.5, -15, 0.5, -15)
+        f.BackgroundTransparency = 1
+        f.ZIndex = 40
+        f.Parent = Gui
+
+        local h = Instance.new("Frame")
+        h.Size = UDim2.new(1, 0, 0, 1)
+        h.Position = UDim2.new(0, 0, 0.5, 0)
+        h.BackgroundColor3 = Color3.new(1, 1, 1)
+        h.BackgroundTransparency = 0.4
+        h.BorderSizePixel = 0
+        h.ZIndex = 41
+        h.Parent = f
+
+        local v = Instance.new("Frame")
+        v.Size = UDim2.new(0, 1, 1, 0)
+        v.Position = UDim2.new(0.5, 0, 0, 0)
+        v.BackgroundColor3 = Color3.new(1, 1, 1)
+        v.BackgroundTransparency = 0.4
+        v.BorderSizePixel = 0
+        v.ZIndex = 41
+        v.Parent = f
+
+        Studio.CrossFrame = f
+        Notify("➕ Crosshair", "Center guide active", 2, TH.Accent)
+    else
+        if Studio.CrossFrame then Studio.CrossFrame:Destroy() end
+        Notify("➕ Cross OFF", "", 2, TH.Bad)
+    end
+end)
+
+Toggle(ov, "Cinematic Bars", "🎬", 5, function(on)
+    if on then
+        local topBar = Instance.new("Frame")
+        topBar.Name = "CineTop"
+        topBar.Size = UDim2.new(1, 0, 0, 0)
+        topBar.Position = UDim2.new(0, 0, 0, 0)
+        topBar.BackgroundColor3 = Color3.new(0, 0, 0)
+        topBar.BorderSizePixel = 0
+        topBar.ZIndex = 45
+        topBar.Parent = Gui
+        TW(topBar, {Size = UDim2.new(1, 0, 0.12, 0)}, 0.8, Enum.EasingStyle.Quad)
+
+        local btmBar = Instance.new("Frame")
+        btmBar.Name = "CineBottom"
+        btmBar.Size = UDim2.new(1, 0, 0, 0)
+        btmBar.Position = UDim2.new(0, 0, 1, 0)
+        btmBar.AnchorPoint = Vector2.new(0, 1)
+        btmBar.BackgroundColor3 = Color3.new(0, 0, 0)
+        btmBar.BorderSizePixel = 0
+        btmBar.ZIndex = 45
+        btmBar.Parent = Gui
+        TW(btmBar, {Size = UDim2.new(1, 0, 0.12, 0)}, 0.8, Enum.EasingStyle.Quad)
+
+        Notify("🎬 Cinematic", "Letterbox bars active", 2, TH.Accent)
+    else
+        local t = Gui:FindFirstChild("CineTop")
+        local b = Gui:FindFirstChild("CineBottom")
+        if t then TW(t, {Size = UDim2.new(1, 0, 0, 0)}, 0.5); task.delay(0.55, function() t:Destroy() end) end
+        if b then TW(b, {Size = UDim2.new(1, 0, 0, 0)}, 0.5); task.delay(0.55, function() b:Destroy() end) end
+        Notify("🎬 Bars OFF", "", 2, TH.Bad)
+    end
+end)
+
+Toggle(ov, "Watermark", "©️", 6, function(on)
+    Studio.WatermarkOn = on
+    if on then
+        local wm = Instance.new("TextLabel")
+        wm.Name = "Watermark"
+        wm.Size = UDim2.new(0, 200, 0, 24)
+        wm.Position = UDim2.new(1, -210, 1, -34)
+        wm.BackgroundTransparency = 1
+        wm.Text = "© " .. LP.Name .. " | Studio Pro"
+        wm.Font = Enum.Font.GothamBold
+        wm.TextSize = 12
+        wm.TextColor3 = Color3.new(1, 1, 1)
+        wm.TextTransparency = 0.4
+        wm.TextXAlignment = Enum.TextXAlignment.Right
+        wm.ZIndex = 50
+        wm.Parent = Gui
+        Studio.Watermark = wm
+        Notify("©️ Watermark", "Your name shown", 2, TH.Accent)
+    else
+        if Studio.Watermark then Studio.Watermark:Destroy() end
+        Notify("©️ Watermark OFF", "", 2, TH.Bad)
+    end
+end)
+
+Section(ov, "SCENE CLEANUP", 8)
+
+Toggle(ov, "Hide Other Players", "👥", 9, function(on)
+    Studio.HidePlayers = on
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LP and player.Character then
+            for _, part in pairs(player.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Transparency = on and 1 or 0
+                elseif part:IsA("Decal") or part:IsA("Texture") then
+                    part.Transparency = on and 1 or 0
+                end
+            end
+        end
+    end
+    Notify(on and "👥 Players Hidden" or "👥 Players Visible", "", 2, on and TH.Accent or TH.Good)
+end)
+
+Toggle(ov, "Hide Nametags", "🏷️", 10, function(on)
+    Studio.NametagsHidden = on
+    for _, player in pairs(Players:GetPlayers()) do
+        if player.Character then
+            local head = player.Character:FindFirstChild("Head")
+            if head then
+                for _, bg in pairs(head:GetChildren()) do
+                    if bg:IsA("BillboardGui") then
+                        bg.Enabled = not on
+                    end
+                end
+            end
+        end
+    end
+    Notify(on and "🏷️ Tags Hidden" or "🏷️ Tags Shown", "", 2, on and TH.Accent or TH.Good)
+end)
+
+Toggle(ov, "Hide Game UI", "🖥️", 11, function(on)
+    Studio.HideUI = on
+    pcall(function()
+        StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, not on)
+    end)
+    Notify(on and "🖥️ UI Hidden" or "🖥️ UI Shown", "", 2, on and TH.Accent or TH.Good)
+end)
+
+-- ═══════════════════════════════════
+-- 🎬 SCENE TAB
+-- ═══════════════════════════════════
+local sc = Pages["Scene"]
+
+Section(sc, "SPAWN PROPS", 1)
+
+local function SpawnProp(name, size, color, material, shape)
+    local root = GetRoot()
+    if not root then return end
+    local part = Instance.new("Part")
+    part.Name = "StudioProp_"..name
+    part.Size = size
+    part.CFrame = root.CFrame * CFrame.new(0, size.Y/2, -10)
+    part.Anchored = true
+    part.Color = color
+    part.Material = material or Enum.Material.SmoothPlastic
+    if shape then part.Shape = shape end
+    part.Parent = workspace
+    Notify("📦 Spawned", name, 2, TH.Accent)
+end
+
+ActionBtn(sc, "Cube", "🟫", 2, function() SpawnProp("Cube", Vector3.new(6, 6, 6), Color3.fromRGB(120, 120, 120)) end)
+ActionBtn(sc, "Sphere", "⚪", 3, function() SpawnProp("Sphere", Vector3.new(6, 6, 6), Color3.fromRGB(200, 200, 200), Enum.Material.SmoothPlastic, Enum.PartType.Ball) end)
+ActionBtn(sc, "Cylinder", "🔵", 4, function() SpawnProp("Cylinder", Vector3.new(6, 6, 6), Color3.fromRGB(100, 150, 200), Enum.Material.SmoothPlastic, Enum.PartType.Cylinder) end)
+ActionBtn(sc, "Platform", "🟩", 5, function() SpawnProp("Platform", Vector3.new(30, 1, 30), Color3.fromRGB(80, 80, 85), Enum.Material.Concrete) end)
+ActionBtn(sc, "Wall", "🧱", 6, function() SpawnProp("Wall", Vector3.new(20, 12, 1), Color3.fromRGB(160, 140, 120), Enum.Material.Brick) end)
+ActionBtn(sc, "Neon Cube", "💜", 7, function() SpawnProp("NeonCube", Vector3.new(4, 4, 4), Color3.fromRGB(170, 0, 255), Enum.Material.Neon) end)
+ActionBtn(sc, "Glass Panel", "🪟", 8, function()
+    local root = GetRoot()
+    if not root then return end
+    local part = Instance.new("Part")
+    part.Name = "StudioProp_Glass"
+    part.Size = Vector3.new(15, 10, 0.5)
+    part.CFrame = root.CFrame * CFrame.new(0, 5, -8)
+    part.Anchored = true
+    part.Color = Color3.fromRGB(200, 220, 255)
+    part.Material = Enum.Material.Glass
+    part.Transparency = 0.5
+    part.Parent = workspace
+    Notify("🪟 Glass", "Spawned", 2, TH.Accent)
+end)
+
+ActionBtn(sc, "Mirror Floor", "🪩", 9, function()
+    local root = GetRoot()
+    if not root then return end
+    local part = Instance.new("Part")
+    part.Name = "StudioProp_Mirror"
+    part.Size = Vector3.new(50, 0.5, 50)
+    part.CFrame = root.CFrame * CFrame.new(0, -3, 0)
+    part.Anchored = true
+    part.Color = Color3.fromRGB(40, 40, 45)
+    part.Material = Enum.Material.Glass
+    part.Reflectance = 0.8
+    part.Parent = workspace
+    Notify("🪩 Mirror Floor", "Spawned", 2, TH.Accent)
+end)
+
+Section(sc, "CLEANUP", 11)
+
+ActionBtn(sc, "Remove All Props", "🗑️", 12, function()
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj.Name:sub(1, 11) == "StudioProp_" then obj:Destroy() end
+    end
+    Notify("🗑️ Cleared", "All props removed", 2, TH.Bad)
+end)
+
+ActionBtn(sc, "Remove Green Screen", "🗑️", 13, function()
+    if Studio.GreenScreen then Studio.GreenScreen:Destroy(); Studio.GreenScreen = nil end
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj.Name == "StudioGreenScreen" then obj:Destroy() end
+    end
+    Notify("🗑️ Cleared", "Green screen removed", 2, TH.Bad)
+end)
+
+ActionBtn(sc, "Remove Everything Studio", "💥", 14, function()
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj.Name:sub(1, 6) == "Studio" or obj.Name:sub(1, 11) == "StudioProp_" then
+            obj:Destroy()
+        end
+    end
+    Studio.GreenScreen = nil
+    -- Remove lights
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj.Name == "StudioKeyLight" or obj.Name == "StudioFillLight" or obj.Name == "StudioBackLight" then
+            obj:Destroy()
+        end
+    end
+    Notify("💥 Full Cleanup", "All studio objects removed", 2, TH.Bad)
+end)
+
+Section(sc, "ENVIRONMENT", 16)
+
+ActionBtn(sc, "Remove Skybox", "🌌", 17, function()
+    for _, child in pairs(Lighting:GetChildren()) do
+        if child:IsA("Sky") then child:Destroy() end
+    end
+    Notify("🌌 Skybox", "Removed", 2, TH.Accent)
+end)
+
+ActionBtn(sc, "Blank White Sky", "⬜", 18, function()
+    for _, child in pairs(Lighting:GetChildren()) do
+        if child:IsA("Sky") then child:Destroy() end
+    end
+    Lighting.Brightness = 3
+    Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+    Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+    Lighting.FogEnd = 1e6
+    Lighting.GlobalShadows = false
+    Notify("⬜ White Sky", "Clean background", 2, TH.Text)
+end)
+
+ActionBtn(sc, "Dark Studio", "⬛", 19, function()
+    Lighting.Brightness = 0
+    Lighting.Ambient = Color3.fromRGB(5, 5, 8)
+    Lighting.OutdoorAmbient = Color3.fromRGB(5, 5, 8)
+    Lighting.ClockTime = 0
+    Lighting.FogEnd = 200
+    Lighting.FogColor = Color3.fromRGB(5, 5, 8)
+    Lighting.GlobalShadows = false
+    Notify("⬛ Dark Studio", "Dark environment", 2, TH.TextDim)
+end)
+
+ActionBtn(sc, "Reset Lighting", "🔄", 20, function()
+    for k, v in pairs(OrigLighting) do
+        pcall(function() Lighting[k] = v end)
+    end
+    Notify("🔄 Reset", "Original lighting restored", 2, TH.Good)
+end)
+
+-- ═══════════════════════════════════
+-- ✨ SHADER PRESETS TAB
+-- ═══════════════════════════════════
+local sh = Pages["Shader"]
+
+Section(sh, "SHADER PRESETS", 1)
+
+local activePresetLbl = Instance.new("TextLabel")
+activePresetLbl.Size = UDim2.new(1, 0, 0, 24)
+activePresetLbl.BackgroundColor3 = TH.Card
+activePresetLbl.BorderSizePixel = 0
+activePresetLbl.LayoutOrder = 2
+activePresetLbl.Text = "  Active: None"
+activePresetLbl.Font = Enum.Font.GothamBold
+activePresetLbl.TextSize = 10
+activePresetLbl.TextColor3 = TH.Accent
+activePresetLbl.TextXAlignment = Enum.TextXAlignment.Left
+activePresetLbl.Parent = sh
+Corner(activePresetLbl, 6)
+
+local function GetOrCreate(cls, name, props)
+    local e = Lighting:FindFirstChild(name)
+    if e and e.ClassName == cls then
+        for k, v in pairs(props or {}) do pcall(function() e[k] = v end) end
+        return e
+    end
+    local o = Instance.new(cls); o.Name = name
+    for k, v in pairs(props or {}) do pcall(function() o[k] = v end) end
+    o.Parent = Lighting
+    return o
+end
+
+local function ClearShaderEffects()
+    for _, n in pairs({"SPBloom","SPBlur","SPCC","SPSunRays","SPDOF","SPAtmo"}) do
+        local o = Lighting:FindFirstChild(n)
+        if o then o:Destroy() end
+    end
+end
+
+local function ApplyShaderPreset(name, s)
+    ClearShaderEffects()
+    for k, v in pairs(OrigLighting) do pcall(function() Lighting[k] = v end) end
+
+    activePresetLbl.Text = "  Active: "..name
+
+    if s.Brightness then Lighting.Brightness = s.Brightness end
+    if s.ClockTime then Lighting.ClockTime = s.ClockTime end
+    if s.Exposure then Lighting.ExposureCompensation = s.Exposure end
+    if s.Ambient then Lighting.Ambient = s.Ambient end
+    if s.OutdoorAmbient then Lighting.OutdoorAmbient = s.OutdoorAmbient end
+    if s.GlobalShadows ~= nil then Lighting.GlobalShadows = s.GlobalShadows end
+    if s.ShadowSoftness then Lighting.ShadowSoftness = s.ShadowSoftness end
+    if s.FogStart then Lighting.FogStart = s.FogStart end
+    if s.FogEnd then Lighting.FogEnd = s.FogEnd end
+    if s.FogColor then Lighting.FogColor = s.FogColor end
+    if s.ColorShift_Top then Lighting.ColorShift_Top = s.ColorShift_Top end
+    if s.ColorShift_Bottom then Lighting.ColorShift_Bottom = s.ColorShift_Bottom end
+    if s.EnvDiffuse then Lighting.EnvironmentDiffuseScale = s.EnvDiffuse end
+    if s.EnvSpecular then Lighting.EnvironmentSpecularScale = s.EnvSpecular end
+
+    if s.Bloom then GetOrCreate("BloomEffect", "SPBloom", s.Bloom) end
+    if s.SunRays then GetOrCreate("SunRaysEffect", "SPSunRays", s.SunRays) end
+    if s.Blur then GetOrCreate("BlurEffect", "SPBlur", s.Blur) end
+    if s.CC then GetOrCreate("ColorCorrectionEffect", "SPCC", s.CC) end
+    if s.DOF then GetOrCreate("DepthOfFieldEffect", "SPDOF", s.DOF) end
+    if s.Atmo then GetOrCreate("Atmosphere", "SPAtmo", s.Atmo) end
+
+    Notify("✨ "..name, "Shader preset applied!", 2, TH.Accent)
+end
+
+local ShaderPresets = {
+    {name = "Cinematic", emoji = "🎬", desc = "Film-like warm tones", s = {
+        Brightness = 1.5, ClockTime = 15, Exposure = 0.3, GlobalShadows = true, ShadowSoftness = 0.3,
+        Ambient = Color3.fromRGB(40, 35, 30), OutdoorAmbient = Color3.fromRGB(120, 110, 95),
+        ColorShift_Top = Color3.fromRGB(255, 240, 210), EnvDiffuse = 0.7, EnvSpecular = 0.5,
+        Bloom = {Intensity = 0.4, Size = 30, Threshold = 0.9, Enabled = true},
+        SunRays = {Intensity = 0.12, Spread = 0.7, Enabled = true},
+        CC = {Brightness = 0.02, Contrast = 0.15, Saturation = -0.1, TintColor = Color3.fromRGB(255, 245, 230), Enabled = true},
+        DOF = {FarIntensity = 0.15, FocusDistance = 30, InFocusRadius = 50, NearIntensity = 0.2, Enabled = true},
+        Atmo = {Density = 0.25, Offset = 0.2, Glare = 0.15, Haze = 1.5, Color = Color3.fromRGB(210, 200, 180), Decay = Color3.fromRGB(100, 90, 70)},
+    }},
+    {name = "Golden Hour", emoji = "🌅", desc = "Warm sunset glow", s = {
+        Brightness = 2, ClockTime = 17.5, Exposure = 0.5, GlobalShadows = true, ShadowSoftness = 0.4,
+        Ambient = Color3.fromRGB(60, 40, 20), OutdoorAmbient = Color3.fromRGB(180, 130, 60),
+        ColorShift_Top = Color3.fromRGB(255, 200, 100), ColorShift_Bottom = Color3.fromRGB(200, 120, 50),
+        Bloom = {Intensity = 0.8, Size = 40, Threshold = 0.6, Enabled = true},
+        SunRays = {Intensity = 0.25, Spread = 0.9, Enabled = true},
+        CC = {Brightness = 0.05, Contrast = 0.1, Saturation = 0.2, TintColor = Color3.fromRGB(255, 220, 170), Enabled = true},
+        Atmo = {Density = 0.35, Offset = 0.3, Glare = 0.4, Haze = 3, Color = Color3.fromRGB(255, 200, 130), Decay = Color3.fromRGB(200, 130, 60)},
+    }},
+    {name = "Midnight", emoji = "🌙", desc = "Dark blue night", s = {
+        Brightness = 0.3, ClockTime = 0, Exposure = -0.3, GlobalShadows = true, ShadowSoftness = 0.8,
+        Ambient = Color3.fromRGB(15, 20, 40), OutdoorAmbient = Color3.fromRGB(20, 30, 60),
+        Bloom = {Intensity = 0.3, Size = 20, Threshold = 0.95, Enabled = true},
+        CC = {Brightness = -0.08, Contrast = 0.2, Saturation = -0.3, TintColor = Color3.fromRGB(180, 200, 255), Enabled = true},
+        Atmo = {Density = 0.4, Offset = 0.1, Glare = 0, Haze = 2, Color = Color3.fromRGB(30, 40, 80), Decay = Color3.fromRGB(15, 20, 50)},
+    }},
+    {name = "Horror", emoji = "👻", desc = "Dark desaturated eerie", s = {
+        Brightness = 0.2, ClockTime = 22, Exposure = -0.5, GlobalShadows = true, ShadowSoftness = 0.1,
+        Ambient = Color3.fromRGB(8, 8, 12), FogStart = 0, FogEnd = 200, FogColor = Color3.fromRGB(10, 10, 15),
+        CC = {Brightness = -0.12, Contrast = 0.35, Saturation = -0.7, TintColor = Color3.fromRGB(200, 210, 230), Enabled = true},
+        Atmo = {Density = 0.5, Offset = 0, Glare = 0, Haze = 5, Color = Color3.fromRGB(15, 15, 25), Decay = Color3.fromRGB(5, 5, 10)},
+    }},
+    {name = "Dream", emoji = "💭", desc = "Soft ethereal glow", s = {
+        Brightness = 2.5, ClockTime = 12, Exposure = 0.8, GlobalShadows = false,
+        Ambient = Color3.fromRGB(120, 100, 140),
+        Bloom = {Intensity = 1.5, Size = 56, Threshold = 0.4, Enabled = true},
+        CC = {Brightness = 0.1, Contrast = -0.1, Saturation = -0.2, TintColor = Color3.fromRGB(240, 225, 255), Enabled = true},
+        Blur = {Size = 6, Enabled = true},
+        Atmo = {Density = 0.2, Offset = 0.5, Glare = 0.3, Haze = 4, Color = Color3.fromRGB(200, 180, 230), Decay = Color3.fromRGB(150, 130, 180)},
+    }},
+    {name = "Neon", emoji = "💜", desc = "Vibrant cyberpunk", s = {
+        Brightness = 0.8, ClockTime = 21, Exposure = 0.2, GlobalShadows = true,
+        Ambient = Color3.fromRGB(20, 5, 30), ColorShift_Top = Color3.fromRGB(200, 50, 255),
+        Bloom = {Intensity = 1.2, Size = 35, Threshold = 0.5, Enabled = true},
+        CC = {Brightness = 0.05, Contrast = 0.3, Saturation = 0.6, TintColor = Color3.fromRGB(220, 180, 255), Enabled = true},
+        Atmo = {Density = 0.3, Offset = 0.15, Glare = 0.1, Haze = 2, Color = Color3.fromRGB(60, 20, 80), Decay = Color3.fromRGB(30, 10, 50)},
+    }},
+    {name = "Retro VHS", emoji = "📼", desc = "Vintage film look", s = {
+        Brightness = 1.2, ClockTime = 14, Exposure = 0.1, ShadowSoftness = 0.5,
+        CC = {Brightness = 0.03, Contrast = 0.25, Saturation = -0.4, TintColor = Color3.fromRGB(255, 230, 200), Enabled = true},
+        Bloom = {Intensity = 0.6, Size = 20, Threshold = 0.7, Enabled = true},
+        Blur = {Size = 2, Enabled = true},
+    }},
+    {name = "Underwater", emoji = "🌊", desc = "Deep ocean feel", s = {
+        Brightness = 0.6, ClockTime = 12, Exposure = -0.2,
+        Ambient = Color3.fromRGB(10, 30, 50), FogStart = 0, FogEnd = 300, FogColor = Color3.fromRGB(20, 60, 100),
+        CC = {Brightness = -0.05, Contrast = 0.1, Saturation = -0.2, TintColor = Color3.fromRGB(150, 210, 255), Enabled = true},
+        Blur = {Size = 3, Enabled = true},
+        Atmo = {Density = 0.5, Offset = 0, Glare = 0, Haze = 6, Color = Color3.fromRGB(30, 70, 120), Decay = Color3.fromRGB(10, 30, 60)},
+    }},
+    {name = "Sunrise", emoji = "🌄", desc = "Early morning warmth", s = {
+        Brightness = 1.8, ClockTime = 6, Exposure = 0.4, GlobalShadows = true, ShadowSoftness = 0.5,
+        ColorShift_Top = Color3.fromRGB(255, 180, 120),
+        Bloom = {Intensity = 0.6, Size = 35, Threshold = 0.7, Enabled = true},
+        SunRays = {Intensity = 0.2, Spread = 0.85, Enabled = true},
+        CC = {Brightness = 0.03, Contrast = 0.08, Saturation = 0.15, TintColor = Color3.fromRGB(255, 230, 200), Enabled = true},
+        Atmo = {Density = 0.3, Offset = 0.35, Glare = 0.3, Haze = 2.5, Color = Color3.fromRGB(230, 180, 140), Decay = Color3.fromRGB(180, 120, 80)},
+    }},
+    {name = "Arctic", emoji = "❄️", desc = "Cold icy tones", s = {
+        Brightness = 2, ClockTime = 12, Exposure = 0.3,
+        Ambient = Color3.fromRGB(80, 100, 120), FogStart = 50, FogEnd = 800, FogColor = Color3.fromRGB(220, 235, 255),
+        CC = {Brightness = 0.08, Contrast = 0.05, Saturation = -0.3, TintColor = Color3.fromRGB(210, 230, 255), Enabled = true},
+        Bloom = {Intensity = 0.5, Size = 30, Threshold = 0.75, Enabled = true},
+        Atmo = {Density = 0.35, Offset = 0.4, Glare = 0.2, Haze = 3, Color = Color3.fromRGB(200, 220, 245), Decay = Color3.fromRGB(160, 180, 210)},
+    }},
+    {name = "Noir", emoji = "🖤", desc = "Black & white film", s = {
+        Brightness = 1, ClockTime = 14,
+        CC = {Brightness = 0, Contrast = 0.4, Saturation = -1, TintColor = Color3.new(1,1,1), Enabled = true},
+        Bloom = {Intensity = 0.2, Size = 18, Threshold = 0.9, Enabled = true},
+    }},
+    {name = "Inferno", emoji = "🔥", desc = "Fiery hellscape", s = {
+        Brightness = 1.5, ClockTime = 19, Exposure = 0.2,
+        Ambient = Color3.fromRGB(50, 10, 0), ColorShift_Top = Color3.fromRGB(255, 100, 20),
+        FogStart = 0, FogEnd = 400, FogColor = Color3.fromRGB(60, 15, 5),
+        CC = {Brightness = 0.05, Contrast = 0.3, Saturation = 0.3, TintColor = Color3.fromRGB(255, 180, 120), Enabled = true},
+        Bloom = {Intensity = 1, Size = 40, Threshold = 0.5, Enabled = true},
+        SunRays = {Intensity = 0.15, Spread = 0.6, Enabled = true},
+        Atmo = {Density = 0.4, Offset = 0.1, Glare = 0.2, Haze = 4, Color = Color3.fromRGB(150, 50, 10), Decay = Color3.fromRGB(80, 20, 5)},
+    }},
+    {name = "Enchanted", emoji = "🧚", desc = "Magical forest", s = {
+        Brightness = 1.6, ClockTime = 16, Exposure = 0.3,
+        Ambient = Color3.fromRGB(20, 50, 30), ColorShift_Top = Color3.fromRGB(150, 255, 180),
+        Bloom = {Intensity = 0.7, Size = 32, Threshold = 0.65, Enabled = true},
+        SunRays = {Intensity = 0.18, Spread = 0.75, Enabled = true},
+        CC = {Brightness = 0.02, Contrast = 0.08, Saturation = 0.25, TintColor = Color3.fromRGB(220, 255, 230), Enabled = true},
+        Atmo = {Density = 0.3, Offset = 0.2, Glare = 0.15, Haze = 2, Color = Color3.fromRGB(120, 180, 130), Decay = Color3.fromRGB(60, 100, 70)},
+    }},
+    {name = "Sakura", emoji = "🌸", desc = "Soft pink blossom", s = {
+        Brightness = 1.8, ClockTime = 10, Exposure = 0.2,
+        Ambient = Color3.fromRGB(60, 40, 50), ColorShift_Top = Color3.fromRGB(255, 200, 220),
+        Bloom = {Intensity = 0.8, Size = 38, Threshold = 0.6, Enabled = true},
+        CC = {Brightness = 0.04, Contrast = 0.05, Saturation = 0.1, TintColor = Color3.fromRGB(255, 220, 235), Enabled = true},
+        Atmo = {Density = 0.2, Offset = 0.3, Glare = 0.2, Haze = 2, Color = Color3.fromRGB(230, 190, 210), Decay = Color3.fromRGB(180, 140, 160)},
+    }},
+}
+
+local sOrd = 3
+for i, p in ipairs(ShaderPresets) do
+    if i == 1 then Section(sh, "NATURE & TIME", sOrd); sOrd = sOrd + 1 end
+    if i == 4 then Section(sh, "MOOD & STYLE", sOrd); sOrd = sOrd + 1 end
+    if i == 8 then Section(sh, "ENVIRONMENTS", sOrd); sOrd = sOrd + 1 end
+    if i == 11 then Section(sh, "SPECIAL", sOrd); sOrd = sOrd + 1 end
+
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, 0, 0, 42)
+    b.BackgroundColor3 = TH.Card
+    b.BorderSizePixel = 0
+    b.LayoutOrder = sOrd
+    b.Text = ""
+    b.AutoButtonColor = false
+    b.Parent = sh
+    Corner(b, 9)
+
+    local emo = Instance.new("TextLabel")
+    emo.Size = UDim2.new(0, 26, 1, 0)
+    emo.Position = UDim2.new(0, 7, 0, 0)
+    emo.BackgroundTransparency = 1
+    emo.Text = p.emoji
+    emo.TextSize = 16
+    emo.Font = Enum.Font.SourceSans
+    emo.Parent = b
+
+    local nm = Instance.new("TextLabel")
+    nm.Size = UDim2.new(1, -44, 0, 16)
+    nm.Position = UDim2.new(0, 35, 0, 4)
+    nm.BackgroundTransparency = 1
+    nm.Text = p.name
+    nm.Font = Enum.Font.GothamBold
+    nm.TextSize = 11
+    nm.TextColor3 = TH.Text
+    nm.TextXAlignment = Enum.TextXAlignment.Left
+    nm.Parent = b
+
+    local desc = Instance.new("TextLabel")
+    desc.Size = UDim2.new(1, -44, 0, 12)
+    desc.Position = UDim2.new(0, 35, 0, 21)
+    desc.BackgroundTransparency = 1
+    desc.Text = p.desc
+    desc.Font = Enum.Font.Gotham
+    desc.TextSize = 8
+    desc.TextColor3 = TH.TextDim
+    desc.TextXAlignment = Enum.TextXAlignment.Left
+    desc.Parent = b
+
+    b.MouseEnter:Connect(function() TW(b, {BackgroundColor3 = TH.Accent}, 0.12); TW(nm, {TextColor3 = TH.TextAct}, 0.12); TW(desc, {TextColor3 = TH.TextAct}, 0.12) end)
+    b.MouseLeave:Connect(function() TW(b, {BackgroundColor3 = TH.Card}, 0.12); TW(nm, {TextColor3 = TH.Text}, 0.12); TW(desc, {TextColor3 = TH.TextDim}, 0.12) end)
+    b.MouseButton1Click:Connect(function() ApplyShaderPreset(p.name, p.s) end)
+
+    sOrd = sOrd + 1
+end
+
+Section(sh, "QUICK ACTIONS", sOrd)
+sOrd = sOrd + 1
+
+ActionBtn(sh, "Reset All Shaders", "🔄", sOrd, function()
+    ClearShaderEffects()
+    for k, v in pairs(OrigLighting) do pcall(function() Lighting[k] = v end) end
+    activePresetLbl.Text = "  Active: None"
+    Notify("🔄 Reset", "All shaders removed", 2, TH.Good)
+end)
+sOrd = sOrd + 1
+
+ActionBtn(sh, "Fullbright", "☀️", sOrd, function()
+    ClearShaderEffects()
+    Lighting.Brightness = 3; Lighting.ClockTime = 14; Lighting.FogEnd = 1e6
+    Lighting.GlobalShadows = false; Lighting.Ambient = Color3.fromRGB(200, 200, 200)
+    Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
+    activePresetLbl.Text = "  Active: Fullbright"
+    Notify("☀️ Fullbright", "Max visibility", 2, TH.Yellow)
+end)
+
+-- ═══════════════════════════════════
+-- HEARTBEAT (Freecam, Orbit)
+-- ═══════════════════════════════════
+RunService.RenderStepped:Connect(function(dt)
+    -- FREECAM
+    if Studio.FreecamOn and not Studio.OrbitOn then
+        local speed = Studio.FreecamSpeed * 60 * dt
+        local cf = Camera.CFrame
+        local move = Vector3.zero
+
+        if not IsMobile then
+            if UIS:IsKeyDown(Enum.KeyCode.W) then move = move + cf.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then move = move - cf.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then move = move - cf.RightVector end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then move = move + cf.RightVector end
+            if UIS:IsKeyDown(Enum.KeyCode.E) then move = move + Vector3.new(0, 1, 0) end
+            if UIS:IsKeyDown(Enum.KeyCode.Q) then move = move - Vector3.new(0, 1, 0) end
+
+            -- Speed boost
+            if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then
+                move = move * 3
+            end
+        end
+
+        if move.Magnitude > 0 then
+            Camera.CFrame = cf + move.Unit * speed
+        end
+    end
+
+    -- ORBIT
+    if Studio.OrbitOn then
+        local root = GetRoot()
+        if root then
+            Studio.OrbitAngle = Studio.OrbitAngle + Studio.OrbitSpeed * dt
+            local x = math.cos(Studio.OrbitAngle) * Studio.OrbitDist
+            local z = math.sin(Studio.OrbitAngle) * Studio.OrbitDist
+            local center = root.Position + Vector3.new(0, Studio.OrbitHeight, 0)
+            local camPos = center + Vector3.new(x, 0, z)
+            Camera.CFrame = CFrame.lookAt(camPos, center)
+        end
+    end
+end)
+
+-- ═══════════════════════════════════
+-- KEYBINDS
+-- ═══════════════════════════════════
+UIS.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if inp.KeyCode == Enum.KeyCode.RightControl or inp.KeyCode == Enum.KeyCode.Backquote then
+        Main.Visible = not Main.Visible
+    end
+end)
+
+-- ═══════════════════════════════════
+-- MINIMIZE & CLOSE
+-- ═══════════════════════════════════
+MinB.MouseButton1Click:Connect(function()
+    panelMin = not panelMin
+    TW(Main, {Size = UDim2.new(0, W, 0, panelMin and 48 or H)}, 0.35, Enum.EasingStyle.Back)
+    MinB.Text = panelMin and "+" or "—"
+    if panelMin then
+        ContentArea.Visible = false
+        TabFrame.Visible = false
+    else
+        task.delay(0.15, function()
+            ContentArea.Visible = true
+            TabFrame.Visible = true
+        end)
+    end
+end)
+
+ClsB.MouseButton1Click:Connect(function()
+    -- Cleanup
+    ClearShaderEffects()
+    for k, v in pairs(OrigLighting) do pcall(function() Lighting[k] = v end) end
+    if Studio.GreenScreen then Studio.GreenScreen:Destroy() end
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj.Name:sub(1, 6) == "Studio" or obj.Name:sub(1, 11) == "StudioProp_" then obj:Destroy() end
+    end
+    Camera.CameraType = Enum.CameraType.Custom
+    Camera.FieldOfView = 70
+    pcall(function() StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true) end)
+
+    -- Restore poses
+    if Studio.PoseMode then
+        for jn, oc in pairs(Studio.OriginalC0) do
+            local j = FindJoint(jn)
+            if j then j.C0 = oc end
+        end
+        local char = GetChar()
+        if char then
+            local anim = char:FindFirstChild("Animate")
+            if anim then anim.Disabled = false end
+        end
+    end
+
+    -- Remove overlays
+    for _, n in pairs({"RECIndicator","ThirdsOverlay","CenterCross","CineTop","CineBottom","Watermark"}) do
+        local o = Gui:FindFirstChild(n)
+        if o then o:Destroy() end
+    end
+
+    TW(Main, {Position = UDim2.new(0.5, -W/2, 1, 50)}, 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+    task.delay(0.55, function() Gui:Destroy() end)
+end)
+
+-- ═══════════════════════════════════
+-- MOBILE TOGGLE
+-- ═══════════════════════════════════
+if IsMobile then
+    local mob = Instance.new("TextButton")
+    mob.Size = UDim2.new(0, 40, 0, 40)
+    mob.Position = UDim2.new(1, -48, 0, 6)
+    mob.BackgroundColor3 = TH.Card
+    mob.BackgroundTransparency = 0.1
+    mob.Text = "🎬"
+    mob.Font = Enum.Font.GothamBold
+    mob.TextSize = 20
+    mob.TextColor3 = TH.Accent
+    mob.AutoButtonColor = false
+    mob.ZIndex = 100
+    mob.Parent = Gui
+    Corner(mob, 10)
+    Stroke(mob, 1, TH.Accent, 0.4)
+
+    local vis = true
+    mob.MouseButton1Click:Connect(function()
+        vis = not vis; Main.Visible = vis
+    end)
+end
+
+-- ═══════════════════════════════════
+-- INIT
+-- ═══════════════════════════════════
+SwitchTab("Screen")
+
+Main.Position = UDim2.new(0.5, -W/2, 1, 50)
+TW(Main, {Position = UDim2.new(0.5, -W/2, 0.5, -H/2)}, 0.7, Enum.EasingStyle.Back)
+
+task.delay(0.5, function() Notify("🎬 STUDIO PRO", "YouTuber toolkit loaded!", 4, TH.Accent) end)
+task.delay(1.5, function() Notify("💡 Tip", "6 tabs of production tools! ` to hide", 5, TH.AccDim) end)
+
+print("🎬 STUDIO PRO v1.0 — Loaded")
+print("Tabs: Green Screen | Camera | Pose | Overlays | Scene | Shaders")
+print("Full YouTuber production toolkit with 14 shader presets")
