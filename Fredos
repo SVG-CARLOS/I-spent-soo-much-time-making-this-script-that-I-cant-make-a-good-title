@@ -1,0 +1,1195 @@
+--[[
+	MANHUNT: THREE SHADOWS
+	StarterPlayerScripts > LocalScript
+	
+	All 3 mimic YOUR exact path with 3s delay.
+	FREDO - Scary Notes + Speed Surge
+	VEX - Flies, Dive Bomb + Sonic Screech
+	GRIMM - Bull Charge + Earthquake
+	They climb, they fly, they never stop.
+--]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+local Lighting = game:GetService("Lighting")
+
+local Player = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+local TAG_RANGE = 4.5
+local TAG_FREEZE = 2
+local TAG_IMMUNITY = 4
+local RECORD_RATE = 1/30
+local FALL_Y = -80
+local DELAY = 3
+
+local HUNTER_DATA = {
+	{
+		name="FREDO", title="The Mimic",
+		color=Color3.fromRGB(10,10,10), eye=Color3.fromRGB(255,0,0),
+		outline=Color3.fromRGB(220,0,0),
+		speed=0.95, liveBase=15, liveMax=23,
+		cd1=8, cd2=13,
+	},
+	{
+		name="VEX", title="The Airborne",
+		color=Color3.fromRGB(10,10,28), eye=Color3.fromRGB(0,150,255),
+		outline=Color3.fromRGB(0,120,255),
+		speed=0.93, liveBase=15.5, liveMax=22,
+		cd1=10, cd2=14, flies=true,
+	},
+	{
+		name="GRIMM", title="The Brute",
+		color=Color3.fromRGB(28,10,10), eye=Color3.fromRGB(255,150,0),
+		outline=Color3.fromRGB(255,120,0),
+		speed=0.92, liveBase=14, liveMax=25,
+		cd1=12, cd2=14,
+	},
+}
+
+-- scary note messages
+local SCARY_NOTES = {
+	"I was here before you.",
+	"You can't outrun yourself.",
+	"I know where you're going.",
+	"Look behind you.",
+	"We were always here.",
+	"Your footsteps echo... twice.",
+	"Do you hear breathing?",
+	"The shadows move with you.",
+	"You left the door open.",
+	"We remember everything.",
+	"This path looks familiar...",
+	"You've been here before.",
+	"Stop running. It's pointless.",
+	"Three shadows. One you.",
+	"Can you feel us getting closer?",
+	"We don't get tired.",
+	"Every step you take, we take.",
+	"The air is getting thinner.",
+	"Don't turn around.",
+	"We see through your eyes.",
+}
+
+local log = {}
+local logStart = 0
+local lastRec = 0
+local active = false
+local phase = "INIT"
+local hunters = {}
+local lastTagTime = -999
+local tagCount = 0
+local gui, timerLabel, distLabel, vignette, tagLabel
+local animT = 0
+local noteQueue = {}
+local activeNotes = {}
+
+local function pr()
+	local c = Player.Character
+	return c and c:FindFirstChild("HumanoidRootPart")
+end
+local function ph()
+	local c = Player.Character
+	return c and c:FindFirstChildOfClass("Humanoid")
+end
+local function dst(a,b)
+	return a and b and (a.Position-b.Position).Magnitude or math.huge
+end
+local function findSpawn()
+	for _,v in ipairs(workspace:GetDescendants()) do
+		if v:IsA("SpawnLocation") then return v.CFrame*CFrame.new(0,3,0) end
+	end
+	return CFrame.new(0,5,0)
+end
+
+-- ════════════════════
+-- SUBTLE LOG SYSTEM (top-left, small, fades)
+-- ════════════════════
+local logFrame
+
+local function createLogFrame()
+	if logFrame then logFrame:Destroy() end
+	logFrame = Instance.new("Frame", gui)
+	logFrame.Name = "LogFrame"
+	logFrame.Size = UDim2.new(0.28, 0, 0.35, 0)
+	logFrame.Position = UDim2.new(0.01, 0, 0.55, 0)
+	logFrame.BackgroundTransparency = 1
+	logFrame.ClipsDescendants = true
+
+	local layout = Instance.new("UIListLayout", logFrame)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+	layout.Padding = UDim.new(0, 2)
+end
+
+local logOrder = 0
+local function addLog(text, color)
+	if not logFrame then return end
+	logOrder = logOrder + 1
+
+	local lbl = Instance.new("TextLabel", logFrame)
+	lbl.Size = UDim2.new(1, 0, 0, 18)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = text
+	lbl.TextColor3 = color or Color3.fromRGB(200, 200, 200)
+	lbl.TextScaled = false
+	lbl.TextSize = 14
+	lbl.Font = Enum.Font.Gotham
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.TextTransparency = 0
+	lbl.TextStrokeTransparency = 0.7
+	lbl.LayoutOrder = logOrder
+
+	-- fade out after 3s
+	task.delay(3, function()
+		if lbl and lbl.Parent then
+			TweenService:Create(lbl, TweenInfo.new(1.5), {TextTransparency = 1}):Play()
+			Debris:AddItem(lbl, 1.6)
+		end
+	end)
+
+	-- limit entries
+	local children = logFrame:GetChildren()
+	local labels = {}
+	for _, c in ipairs(children) do
+		if c:IsA("TextLabel") then table.insert(labels, c) end
+	end
+	while #labels > 6 do
+		labels[1]:Destroy()
+		table.remove(labels, 1)
+	end
+end
+
+-- ════════════════════
+-- SCARY NOTES SYSTEM
+-- ════════════════════
+local function placeScaryNote(position, hunterData)
+	local note = Instance.new("Part")
+	note.Anchored = true
+	note.CanCollide = false
+	note.Size = Vector3.new(1.5, 2, 0.1)
+	note.CFrame = CFrame.new(position + Vector3.new(0, 2.5, 0))
+	note.Material = Enum.Material.SmoothPlastic
+	note.Color = Color3.fromRGB(220, 210, 180)
+	note.Transparency = 0.1
+	note.Parent = workspace
+
+	-- paper texture look
+	local sg = Instance.new("SurfaceGui", note)
+	sg.Face = Enum.NormalId.Front
+	sg.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	sg.PixelsPerStud = 80
+
+	local bg = Instance.new("Frame", sg)
+	bg.Size = UDim2.new(1, 0, 1, 0)
+	bg.BackgroundColor3 = Color3.fromRGB(235, 225, 200)
+	bg.BorderSizePixel = 0
+
+	local textLbl = Instance.new("TextLabel", bg)
+	textLbl.Size = UDim2.new(0.85, 0, 0.7, 0)
+	textLbl.Position = UDim2.new(0.075, 0, 0.1, 0)
+	textLbl.BackgroundTransparency = 1
+	textLbl.Text = SCARY_NOTES[math.random(#SCARY_NOTES)]
+	textLbl.TextColor3 = Color3.fromRGB(60, 10, 10)
+	textLbl.TextScaled = true
+	textLbl.Font = Enum.Font.Antique
+	textLbl.TextWrapped = true
+
+	-- signed by hunter
+	local sig = Instance.new("TextLabel", bg)
+	sig.Size = UDim2.new(0.8, 0, 0.15, 0)
+	sig.Position = UDim2.new(0.1, 0, 0.82, 0)
+	sig.BackgroundTransparency = 1
+	sig.Text = "- " .. hunterData.name
+	sig.TextColor3 = hunterData.eye
+	sig.TextScaled = true
+	sig.Font = Enum.Font.Creepster
+	sig.TextXAlignment = Enum.TextXAlignment.Right
+
+	-- back side
+	local sg2 = Instance.new("SurfaceGui", note)
+	sg2.Face = Enum.NormalId.Back
+	sg2.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	sg2.PixelsPerStud = 80
+
+	local bg2 = Instance.new("Frame", sg2)
+	bg2.Size = UDim2.new(1, 0, 1, 0)
+	bg2.BackgroundColor3 = Color3.fromRGB(235, 225, 200)
+	bg2.BorderSizePixel = 0
+
+	local backText = Instance.new("TextLabel", bg2)
+	backText.Size = UDim2.new(0.85, 0, 0.7, 0)
+	backText.Position = UDim2.new(0.075, 0, 0.15, 0)
+	backText.BackgroundTransparency = 1
+	backText.Text = SCARY_NOTES[math.random(#SCARY_NOTES)]
+	backText.TextColor3 = Color3.fromRGB(80, 10, 10)
+	backText.TextScaled = true
+	backText.Font = Enum.Font.Antique
+	backText.TextWrapped = true
+
+	-- subtle glow
+	local light = Instance.new("PointLight", note)
+	light.Color = hunterData.eye
+	light.Brightness = 1.5
+	light.Range = 10
+
+	-- float and rotate
+	task.spawn(function()
+		local startY = note.Position.Y
+		local t = 0
+		while note and note.Parent do
+			t = t + task.wait()
+			note.CFrame = CFrame.new(
+				note.Position.X,
+				startY + math.sin(t * 1.5) * 0.3,
+				note.Position.Z
+			) * CFrame.Angles(0, t * 0.5, 0)
+		end
+	end)
+
+	-- player pickup detection
+	task.spawn(function()
+		local lifeStart = tick()
+		local pickedUp = false
+		while tick() - lifeStart < 20 and not pickedUp do
+			local p = pr()
+			if p and (p.Position - note.Position).Magnitude < 6 then
+				pickedUp = true
+
+				-- show the note on screen briefly
+				if gui then
+					local noteUI = Instance.new("Frame", gui)
+					noteUI.Size = UDim2.new(0.25, 0, 0.18, 0)
+					noteUI.Position = UDim2.new(0.72, 0, 0.05, 0)
+					noteUI.BackgroundColor3 = Color3.fromRGB(235, 225, 200)
+					noteUI.BackgroundTransparency = 0.1
+					noteUI.ZIndex = 15
+					Instance.new("UICorner", noteUI).CornerRadius = UDim.new(0, 4)
+
+					local noteStroke = Instance.new("UIStroke", noteUI)
+					noteStroke.Color = hunterData.eye
+					noteStroke.Thickness = 1.5
+					noteStroke.Transparency = 0.3
+
+					local noteText = Instance.new("TextLabel", noteUI)
+					noteText.Size = UDim2.new(0.88, 0, 0.65, 0)
+					noteText.Position = UDim2.new(0.06, 0, 0.05, 0)
+					noteText.BackgroundTransparency = 1
+					noteText.Text = textLbl.Text
+					noteText.TextColor3 = Color3.fromRGB(50, 5, 5)
+					noteText.TextScaled = true
+					noteText.Font = Enum.Font.Antique
+					noteText.TextWrapped = true
+					noteText.ZIndex = 16
+
+					local noteSig = Instance.new("TextLabel", noteUI)
+					noteSig.Size = UDim2.new(0.8, 0, 0.2, 0)
+					noteSig.Position = UDim2.new(0.1, 0, 0.72, 0)
+					noteSig.BackgroundTransparency = 1
+					noteSig.Text = "- " .. hunterData.name
+					noteSig.TextColor3 = hunterData.eye
+					noteSig.TextScaled = true
+					noteSig.Font = Enum.Font.Creepster
+					noteSig.TextXAlignment = Enum.TextXAlignment.Right
+					noteSig.ZIndex = 16
+
+					-- fade in
+					noteUI.BackgroundTransparency = 1
+					TweenService:Create(noteUI, TweenInfo.new(0.4), {BackgroundTransparency = 0.1}):Play()
+
+					-- fade out after reading
+					task.delay(4, function()
+						if noteUI and noteUI.Parent then
+							TweenService:Create(noteUI, TweenInfo.new(1), {BackgroundTransparency = 1}):Play()
+							for _, c in ipairs(noteUI:GetDescendants()) do
+								if c:IsA("TextLabel") then
+									TweenService:Create(c, TweenInfo.new(1), {TextTransparency = 1}):Play()
+								end
+							end
+							Debris:AddItem(noteUI, 1.1)
+						end
+					end)
+				end
+
+				addLog("📜 Found note from " .. hunterData.name, hunterData.eye)
+
+				-- note vanishes with particle burst
+				light.Brightness = 5
+				TweenService:Create(note, TweenInfo.new(0.5), {Transparency = 1, Size = Vector3.new(0.1, 0.1, 0.1)}):Play()
+				Debris:AddItem(note, 0.6)
+			end
+			task.wait(0.1)
+		end
+
+		-- despawn if not picked up
+		if not pickedUp and note and note.Parent then
+			TweenService:Create(note, TweenInfo.new(1), {Transparency = 1}):Play()
+			Debris:AddItem(note, 1.1)
+		end
+	end)
+end
+
+-- ════════════════════
+-- BUILD HUNTER
+-- ════════════════════
+local function buildHunter(data, cf)
+	local m = Instance.new("Model"); m.Name = data.name
+	local parts = {
+		{"HumanoidRootPart",Vector3.new(2,2,1),1,true},
+		{"Head",Vector3.new(2,1,1),0,false},
+		{"Torso",Vector3.new(2,2,1),0,false},
+		{"Left Arm",Vector3.new(1,2,1),0,false},
+		{"Right Arm",Vector3.new(1,2,1),0,false},
+		{"Left Leg",Vector3.new(1,2,1),0,false},
+		{"Right Leg",Vector3.new(1,2,1),0,false},
+	}
+	local b = {}
+	for _,d in ipairs(parts) do
+		local p = Instance.new("Part")
+		p.Name=d[1]; p.Size=d[2]; p.Transparency=d[3]
+		p.Color=data.color; p.Material=Enum.Material.SmoothPlastic
+		p.CanCollide=d[4] or false; p.Anchored=false; p.Parent=m
+		b[d[1]] = p
+	end
+	b["HumanoidRootPart"].CFrame = cf
+	m.PrimaryPart = b["HumanoidRootPart"]
+
+	Instance.new("SpecialMesh",b["Head"]).MeshType=Enum.MeshType.Head
+	b["Head"]:FindFirstChild("Mesh").Scale=Vector3.new(1.25,1.25,1.25)
+
+	local jd = {
+		{"RootJoint","HumanoidRootPart","Torso",CFrame.new(),CFrame.new()},
+		{"Neck","Torso","Head",CFrame.new(0,1,0),CFrame.new(0,-.5,0)},
+		{"Left Shoulder","Torso","Left Arm",CFrame.new(-1.5,.5,0),CFrame.new(0,.5,0)},
+		{"Right Shoulder","Torso","Right Arm",CFrame.new(1.5,.5,0),CFrame.new(0,.5,0)},
+		{"Left Hip","Torso","Left Leg",CFrame.new(-.5,-1,0),CFrame.new(0,1,0)},
+		{"Right Hip","Torso","Right Leg",CFrame.new(.5,-1,0),CFrame.new(0,1,0)},
+	}
+	for _,j in ipairs(jd) do
+		local mt=Instance.new("Motor6D")
+		mt.Name=j[1]; mt.Part0=b[j[2]]; mt.Part1=b[j[3]]
+		mt.C0=j[4]; mt.C1=j[5]; mt.Parent=b[j[2]]
+	end
+
+	local h=Instance.new("Humanoid",m)
+	h.MaxHealth=math.huge; h.Health=math.huge; h.WalkSpeed=0
+	h.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
+	h.HipHeight=2; h.UseJumpPower=true; h.JumpPower=80
+
+	for _,off in ipairs({Vector3.new(-.35,.15,-.5),Vector3.new(.35,.15,-.5)}) do
+		local e=Instance.new("Part")
+		e.Size=Vector3.new(.3,.3,.15); e.Shape=Enum.PartType.Ball
+		e.Color=data.eye; e.Material=Enum.Material.Neon; e.CanCollide=false; e.Parent=m
+		local w=Instance.new("Weld",e); w.Part0=b["Head"]; w.Part1=e; w.C0=CFrame.new(off)
+		local l=Instance.new("PointLight",e); l.Color=data.eye; l.Brightness=4; l.Range=10
+	end
+
+	local aura=Instance.new("ParticleEmitter",b["Torso"])
+	aura.Color=ColorSequence.new(data.eye,Color3.new())
+	aura.Size=NumberSequence.new({NumberSequenceKeypoint.new(0,.3),NumberSequenceKeypoint.new(.5,2),NumberSequenceKeypoint.new(1,0)})
+	aura.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,.3),NumberSequenceKeypoint.new(1,1)})
+	aura.Lifetime=NumberRange.new(.5,1); aura.Rate=18
+	aura.Speed=NumberRange.new(1,3); aura.SpreadAngle=Vector2.new(180,180)
+
+	local hl=Instance.new("Highlight",m)
+	hl.FillColor=data.color; hl.FillTransparency=.6
+	hl.OutlineColor=data.outline; hl.OutlineTransparency=.2
+	hl.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop
+
+	local bb=Instance.new("BillboardGui",b["Head"])
+	bb.Size=UDim2.new(4,0,1.2,0); bb.StudsOffset=Vector3.new(0,2.5,0); bb.AlwaysOnTop=true
+
+	local nl=Instance.new("TextLabel",bb); nl.Name="N"
+	nl.Size=UDim2.new(1,0,.55,0); nl.BackgroundTransparency=1
+	nl.Text=data.name; nl.TextColor3=data.eye; nl.TextScaled=true; nl.Font=Enum.Font.Creepster
+
+	local sl=Instance.new("TextLabel",bb); sl.Name="S"
+	sl.Size=UDim2.new(1,0,.45,0); sl.Position=UDim2.new(0,0,.55,0)
+	sl.BackgroundTransparency=1; sl.Text=data.title
+	sl.TextColor3=Color3.fromRGB(150,150,150); sl.TextScaled=true
+	sl.Font=Enum.Font.Antique; sl.TextTransparency=.3
+
+	task.spawn(function()
+		local g={"F̷R̷E̷D̷O̷","█REDO","FR░DO","VE̷X̷","V░X","GR̸IMM","GRI░M"}
+		while nl and nl.Parent do
+			if math.random(1,6)==1 then
+				local o=nl.Text; nl.Text=g[math.random(#g)]
+				task.wait(.06); if nl.Parent then nl.Text=o end
+			end
+			task.wait(.3+math.random()*.3)
+		end
+	end)
+
+	if data.flies then
+		for _,side in ipairs({-1,1}) do
+			local wing=Instance.new("Attachment",b["Torso"])
+			wing.Position=Vector3.new(side*.8,.3,.4)
+			local wEm=Instance.new("ParticleEmitter",wing)
+			wEm.Color=ColorSequence.new(data.eye)
+			wEm.Size=NumberSequence.new({NumberSequenceKeypoint.new(0,1.5),NumberSequenceKeypoint.new(1,0)})
+			wEm.Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,.2),NumberSequenceKeypoint.new(1,1)})
+			wEm.Lifetime=NumberRange.new(.3,.6); wEm.Rate=40
+			wEm.Speed=NumberRange.new(1,3); wEm.SpreadAngle=Vector2.new(20,20)
+			wEm.EmissionDirection=side==1 and Enum.NormalId.Right or Enum.NormalId.Left
+		end
+	end
+
+	m.Parent=workspace
+	return m,h,b["HumanoidRootPart"]
+end
+
+-- ════════════════════
+-- ANIMATION
+-- ════════════════════
+local function animH(model,dt,moving,spd,flying)
+	if not model or not model.Parent then return end
+	animT=animT+dt
+	local torso=model:FindFirstChild("Torso"); if not torso then return end
+	local ls=torso:FindFirstChild("Left Shoulder")
+	local rs=torso:FindFirstChild("Right Shoulder")
+	local lh=torso:FindFirstChild("Left Hip")
+	local rh=torso:FindFirstChild("Right Hip")
+	local nk=torso:FindFirstChild("Neck")
+	local rj=model.PrimaryPart and model.PrimaryPart:FindFirstChild("RootJoint")
+	local t=animT+(model:GetAttribute("AO") or 0)
+
+	if flying then
+		if ls then ls.C0=CFrame.new(-1.5,.5,0)*CFrame.Angles(0,0,-1.2+math.sin(t*4)*.3) end
+		if rs then rs.C0=CFrame.new(1.5,.5,0)*CFrame.Angles(0,0,1.2-math.sin(t*4)*.3) end
+		if lh then lh.C0=CFrame.new(-.5,-1,0)*CFrame.Angles(.3,0,-.1) end
+		if rh then rh.C0=CFrame.new(.5,-1,0)*CFrame.Angles(.3,0,.1) end
+		if rj then rj.C0=CFrame.new(0,math.sin(t*3)*.15,0)*CFrame.Angles(.4,0,math.sin(t*2)*.1) end
+		if nk then nk.C0=CFrame.new(0,1,0)*CFrame.Angles(-.3,math.sin(t*.8)*.2,0) end
+	elseif moving and spd>1 then
+		local f=math.clamp(spd/16,.5,2.5)*8
+		if ls then ls.C0=CFrame.new(-1.5,.5,0)*CFrame.Angles(math.sin(t*f)*1.2,0,-.1) end
+		if rs then rs.C0=CFrame.new(1.5,.5,0)*CFrame.Angles(math.sin(t*f+math.pi)*1.2,0,.1) end
+		if lh then lh.C0=CFrame.new(-.5,-1,0)*CFrame.Angles(math.sin(t*f+math.pi)*.9,0,0) end
+		if rh then rh.C0=CFrame.new(.5,-1,0)*CFrame.Angles(math.sin(t*f)*.9,0,0) end
+		if rj then rj.C0=CFrame.new(0,math.sin(t*f*2)*.03,0)*CFrame.Angles(.2,0,0) end
+		if nk then nk.C0=CFrame.new(0,1,0)*CFrame.Angles(-.1,math.random(1,50)==1 and(math.random()-.5)*.5 or 0,0) end
+	else
+		if ls then ls.C0=CFrame.new(-1.5,.5,0)*CFrame.Angles(math.sin(t*1.5)*.1+.3,0,-.2) end
+		if rs then rs.C0=CFrame.new(1.5,.5,0)*CFrame.Angles(math.sin(t*1.5+.5)*.1+.3,0,.2) end
+		if lh then lh.C0=CFrame.new(-.5,-1,0) end
+		if rh then rh.C0=CFrame.new(.5,-1,0) end
+		if rj then rj.C0=CFrame.new(0,math.sin(t*1.5)*.05,0)*CFrame.Angles(.05,math.sin(t*.3)*.15,0) end
+		if nk then nk.C0=CFrame.new(0,1,0)*CFrame.Angles(math.sin(t*.3)*.15,math.sin(t*.5)*.3,0) end
+	end
+end
+
+-- ════════════════════
+-- MIMIC ENGINE
+-- ════════════════════
+local function getMimicCF(now, hu)
+	local ft=now-logStart-DELAY
+	if ft<0 then return nil,false end
+	local playback=ft*hu.data.speed
+
+	local boostEnd=hu.root:GetAttribute("BoostEnd")
+	local boostMult=hu.root:GetAttribute("BoostMult")
+	if boostEnd and boostMult and now<boostEnd then playback=ft*boostMult end
+
+	local n=#log
+	if n<2 then return nil,true end
+	if playback>=log[n].t then return nil,true end
+
+	local lo,hi=1,n
+	while lo<hi-1 do
+		local mid=math.floor((lo+hi)/2)
+		if log[mid].t<=playback then lo=mid else hi=mid end
+	end
+	local a,b=log[lo],log[hi]
+	local seg=b.t-a.t
+	local alpha=seg>0 and math.clamp((playback-a.t)/seg,0,1) or 0
+	return a.cf:Lerp(b.cf,alpha),false
+end
+
+-- ════════════════════
+-- SMART MOVEMENT
+-- ════════════════════
+local function smartMove(hu,targetPos,dt,now)
+	if not hu.root or not hu.humanoid then return end
+	local myPos=hu.root.Position
+	local dir=(targetPos-myPos)
+	if dir.Magnitude<1 then return end
+	dir=dir.Unit
+
+	if hu.liveStart==0 then hu.liveStart=now end
+	local lt=now-hu.liveStart
+	local spd=math.min(hu.data.liveBase+lt*.08,hu.data.liveMax)
+
+	local boostEnd=hu.root:GetAttribute("BoostEnd")
+	local boostMult=hu.root:GetAttribute("BoostMult")
+	if boostEnd and boostMult and now<boostEnd then spd=spd*boostMult end
+
+	hu.humanoid.WalkSpeed=spd
+
+	local rayF=workspace:Raycast(myPos,dir*4,RaycastParams.new())
+	if rayF then
+		local rayUp=workspace:Raycast(myPos+Vector3.new(0,6,0),dir*5,RaycastParams.new())
+		if not rayUp then
+			if hu.humanoid.FloorMaterial~=Enum.Material.Air then hu.humanoid.Jump=true end
+			hu.root.AssemblyLinearVelocity=hu.root.AssemblyLinearVelocity+Vector3.new(0,2,0)
+		else
+			local rightDir=Vector3.new(-dir.Z,0,dir.X)
+			hu.humanoid:MoveTo(myPos+rightDir*8+dir*4); return
+		end
+	end
+
+	if hu.data.flies then
+		local targetY=targetPos.Y+8
+		local yDiff=targetY-myPos.Y
+		local ff=hu.root:FindFirstChild("FlyForce")
+		if not ff then
+			ff=Instance.new("BodyVelocity"); ff.Name="FlyForce"
+			ff.MaxForce=Vector3.new(0,math.huge,0); ff.P=5000; ff.Parent=hu.root
+		end
+		ff.Velocity=Vector3.new(0,math.clamp(yDiff*3,-20,30),0)
+		hu.humanoid:MoveTo(Vector3.new(targetPos.X,myPos.Y,targetPos.Z))
+		local look=(targetPos-myPos)
+		if look.Magnitude>.5 then
+			look=Vector3.new(look.X,0,look.Z).Unit
+			hu.root.CFrame=hu.root.CFrame:Lerp(CFrame.new(myPos,myPos+look),dt*10)
+		end
+		return
+	end
+
+	hu.humanoid:MoveTo(targetPos)
+end
+
+local function checkFall(hu)
+	if hu.root and hu.root.Position.Y<FALL_Y then
+		local best=findSpawn()
+		for i=#log,math.max(1,#log-60),-1 do
+			if log[i].cf.Position.Y>FALL_Y+20 then best=log[i].cf; break end
+		end
+		hu.root.CFrame=best+Vector3.new(0,5,0)
+		hu.root.AssemblyLinearVelocity=Vector3.zero
+		hu.root.AssemblyAngularVelocity=Vector3.zero
+	end
+end
+
+local function ensureVisible(hu)
+	for _,p in ipairs(hu.model:GetDescendants()) do
+		if p:IsA("BasePart") and p.Name~="HumanoidRootPart" then
+			if p.Transparency>0 then p.Transparency=0 end
+		end
+		if p:IsA("Highlight") then p.Enabled=true end
+		if p:IsA("BillboardGui") then p.Enabled=true end
+		if p:IsA("ParticleEmitter") then p.Enabled=true end
+	end
+end
+
+-- ════════════════════
+-- ABILITIES
+-- ════════════════════
+
+-- FREDO: Scary Note
+local function fredoNote(hu)
+	local now=tick()
+	if now-hu.lastA1<hu.data.cd1 then return end
+	local p=pr(); if not p then return end
+	hu.lastA1=now
+
+	-- place note near player path
+	local vel=p.AssemblyLinearVelocity
+	local dir=vel.Magnitude>2 and vel.Unit or p.CFrame.LookVector
+	local notePos=p.Position+dir*math.random(8,18)+Vector3.new((math.random()-.5)*6,0,(math.random()-.5)*6)
+
+	placeScaryNote(notePos, hu.data)
+	addLog("📜 "..hu.data.name.." left a note nearby...", hu.data.eye)
+end
+
+-- FREDO: Surge
+local function fredoSurge(hu)
+	local now=tick()
+	if now-hu.lastA2<hu.data.cd2 then return end
+	hu.lastA2=now
+	hu.root:SetAttribute("BoostEnd",now+3)
+	hu.root:SetAttribute("BoostMult",1.6)
+
+	for i=1,4 do
+		local p=Instance.new("Part")
+		p.Anchored=true; p.CanCollide=false; p.Size=Vector3.new(2,2,2)
+		p.Shape=Enum.PartType.Ball
+		p.Position=hu.root.Position+Vector3.new((math.random()-.5)*3,math.random()*2,(math.random()-.5)*3)
+		p.Material=Enum.Material.Neon; p.Color=Color3.fromRGB(255,40,0); p.Transparency=.2
+		p.Parent=workspace
+		TweenService:Create(p,TweenInfo.new(.5),{Size=Vector3.new(5,5,5),Transparency=1}):Play()
+		Debris:AddItem(p,.6)
+	end
+	addLog("⚡ "..hu.data.name.." surges forward!", hu.data.eye)
+end
+
+-- VEX: Dive
+local function vexDive(hu)
+	local now=tick()
+	if now-hu.lastA1<hu.data.cd1 then return end
+	local p=pr(); if not p then return end
+	if dst(hu.root,p)<10 then return end
+	hu.lastA1=now
+
+	local abovePos=p.Position+Vector3.new(0,25,0)
+	hu.root.CFrame=CFrame.new(abovePos,p.Position)
+	hu.root.AssemblyLinearVelocity=Vector3.zero
+	hu.root:SetAttribute("BoostEnd",now+2.5)
+	hu.root:SetAttribute("BoostMult",1.8)
+
+	local ff=hu.root:FindFirstChild("FlyForce")
+	if ff then ff.Velocity=Vector3.new(0,-40,0) end
+
+	for i=1,5 do
+		local p2=Instance.new("Part")
+		p2.Anchored=true; p2.CanCollide=false; p2.Size=Vector3.new(1.5,1.5,1.5)
+		p2.Shape=Enum.PartType.Ball
+		p2.Position=abovePos+Vector3.new((math.random()-.5)*5,-(i*3),(math.random()-.5)*5)
+		p2.Material=Enum.Material.Neon; p2.Color=Color3.fromRGB(0,100,255); p2.Transparency=.3
+		p2.Parent=workspace
+		TweenService:Create(p2,TweenInfo.new(.8),{Transparency=1,Size=Vector3.new(4,4,4)}):Play()
+		Debris:AddItem(p2,1)
+	end
+
+	addLog("🦅 "..hu.data.name.." dives from above!", hu.data.eye)
+	task.delay(1.5,function()
+		if ff then ff.Velocity=Vector3.new(0,10,0) end
+	end)
+end
+
+-- VEX: Screech
+local function vexScreech(hu)
+	local now=tick()
+	if now-hu.lastA2<hu.data.cd2 then return end
+	local p=pr(); if not p then return end
+	if dst(hu.root,p)>35 then return end
+	hu.lastA2=now
+
+	local h=ph()
+	if h then
+		local ws=h.WalkSpeed
+		h.WalkSpeed=ws*.4
+		task.delay(1.5,function() if h then h.WalkSpeed=ws end end)
+	end
+
+	task.spawn(function()
+		local st=tick()
+		while tick()-st<1.2 do
+			local prog=1-(tick()-st)/1.2
+			local i=1.5*prog
+			Camera.CFrame=Camera.CFrame*CFrame.Angles(0,(math.random()-.5)*i*.3,0)*CFrame.new((math.random()-.5)*i,(math.random()-.5)*i,0)
+			task.wait()
+		end
+	end)
+
+	local ring=Instance.new("Part")
+	ring.Anchored=true; ring.CanCollide=false
+	ring.Size=Vector3.new(3,.3,3); ring.Shape=Enum.PartType.Cylinder
+	ring.CFrame=CFrame.new(hu.root.Position)*CFrame.Angles(0,0,math.rad(90))
+	ring.Material=Enum.Material.Neon; ring.Color=Color3.fromRGB(0,120,255)
+	ring.Transparency=.3; ring.Parent=workspace
+	TweenService:Create(ring,TweenInfo.new(.8),{Size=Vector3.new(50,.3,50),Transparency=1}):Play()
+	Debris:AddItem(ring,1)
+
+	addLog("🔊 "..hu.data.name.." screeches!", hu.data.eye)
+end
+
+-- GRIMM: Charge
+local function grimmCharge(hu)
+	local now=tick()
+	if now-hu.lastA1<hu.data.cd1 then return end
+	local p=pr(); if not p then return end
+	if dst(hu.root,p)<8 then return end
+	hu.lastA1=now
+
+	hu.root:SetAttribute("BoostEnd",now+2.5)
+	hu.root:SetAttribute("BoostMult",2.2)
+
+	for i=1,4 do
+		local p2=Instance.new("Part")
+		p2.Anchored=true; p2.CanCollide=false; p2.Size=Vector3.new(2,2,2)
+		p2.Shape=Enum.PartType.Ball
+		p2.Position=hu.root.Position+Vector3.new((math.random()-.5)*3,math.random()*2,(math.random()-.5)*3)
+		p2.Material=Enum.Material.Neon; p2.Color=Color3.fromRGB(255,100,0); p2.Transparency=.2
+		p2.Parent=workspace
+		TweenService:Create(p2,TweenInfo.new(.5),{Size=Vector3.new(5,5,5),Transparency=1}):Play()
+		Debris:AddItem(p2,.6)
+	end
+
+	addLog("🐂 "..hu.data.name.." charges!", hu.data.eye)
+
+	task.spawn(function()
+		local st=tick()
+		while tick()-st<.4 do
+			local i=.5*(1-(tick()-st)/.4)
+			Camera.CFrame=Camera.CFrame*CFrame.new((math.random()-.5)*i,(math.random()-.5)*i,0)
+			task.wait()
+		end
+	end)
+end
+
+-- GRIMM: Quake
+local function grimmQuake(hu)
+	local now=tick()
+	if now-hu.lastA2<hu.data.cd2 then return end
+	local p=pr(); if not p then return end
+	if dst(hu.root,p)>35 then return end
+	hu.lastA2=now
+
+	local crack=Instance.new("Part")
+	crack.Anchored=true; crack.CanCollide=false
+	crack.Size=Vector3.new(25,.2,25)
+	crack.Position=hu.root.Position-Vector3.new(0,2,0)
+	crack.Material=Enum.Material.Neon; crack.Color=Color3.fromRGB(255,80,0)
+	crack.Transparency=.3; crack.Shape=Enum.PartType.Cylinder
+	crack.CFrame=CFrame.new(crack.Position)*CFrame.Angles(0,0,math.rad(90))
+	crack.Parent=workspace
+	TweenService:Create(crack,TweenInfo.new(1.2),{Size=Vector3.new(45,.2,45),Transparency=1}):Play()
+	Debris:AddItem(crack,1.3)
+
+	local h=ph()
+	if h then
+		local ws=h.WalkSpeed
+		h.WalkSpeed=ws*.5
+		task.delay(1.8,function() if h then h.WalkSpeed=ws end end)
+	end
+
+	task.spawn(function()
+		local st=tick()
+		while tick()-st<.8 do
+			local i=1*(1-(tick()-st)/.8)
+			Camera.CFrame=Camera.CFrame*CFrame.new((math.random()-.5)*i,(math.random()-.5)*i,0)
+			task.wait()
+		end
+	end)
+
+	addLog("💥 "..hu.data.name.." quakes the ground!", hu.data.eye)
+end
+
+-- ════════════════════
+-- AI BRAINS
+-- ════════════════════
+local abilityMap={
+	{fredoNote, fredoSurge},
+	{vexDive, vexScreech},
+	{grimmCharge, grimmQuake},
+}
+
+local function hunterThink(hu,idx,now)
+	local p=pr(); if not p or not hu.root then return end
+	local d=dst(hu.root,p)
+	local chase=math.max(0,now-logStart-DELAY)
+	local desp=math.clamp(chase/15,0,1)
+	local r=math.random()
+	local a1,a2=abilityMap[idx][1],abilityMap[idx][2]
+
+	if d>35 then
+		if r<.5+desp*.3 then a1(hu) elseif r<.75 then a2(hu) end
+	elseif d>15 then
+		if r<.35+desp*.25 then a2(hu) elseif r<.6 then a1(hu) end
+	elseif d>TAG_RANGE+3 then
+		if r<.4+desp*.3 then a1(hu) end
+	end
+end
+
+-- ════════════════════
+-- UI
+-- ════════════════════
+local function buildUI()
+	if gui then gui:Destroy() end
+	gui=Instance.new("ScreenGui")
+	gui.Name="ManhuntUI"; gui.ResetOnSpawn=false; gui.IgnoreGuiInset=true
+	gui.Parent=Player:WaitForChild("PlayerGui")
+
+	timerLabel=Instance.new("TextLabel",gui)
+	timerLabel.Size=UDim2.new(.24,0,.045,0); timerLabel.Position=UDim2.new(.38,0,.04,0)
+	timerLabel.BackgroundColor3=Color3.fromRGB(15,10,10); timerLabel.BackgroundTransparency=.4
+	timerLabel.TextColor3=Color3.new(1,1,1); timerLabel.TextScaled=true
+	timerLabel.Font=Enum.Font.GothamBold; timerLabel.Text=""
+	Instance.new("UICorner",timerLabel).CornerRadius=UDim.new(0,8)
+	Instance.new("UIStroke",timerLabel).Color=Color3.fromRGB(150,0,0)
+
+	distLabel=Instance.new("TextLabel",gui)
+	distLabel.Size=UDim2.new(.25,0,.03,0); distLabel.Position=UDim2.new(.375,0,.09,0)
+	distLabel.BackgroundTransparency=1; distLabel.TextColor3=Color3.new(1,1,1)
+	distLabel.TextScaled=true; distLabel.Font=Enum.Font.GothamBold
+	distLabel.TextStrokeTransparency=.5; distLabel.Text=""
+
+	tagLabel=Instance.new("TextLabel",gui)
+	tagLabel.Size=UDim2.new(.12,0,.03,0); tagLabel.Position=UDim2.new(.44,0,.125,0)
+	tagLabel.BackgroundTransparency=1; tagLabel.TextColor3=Color3.fromRGB(255,80,80)
+	tagLabel.TextScaled=true; tagLabel.Font=Enum.Font.Creepster
+	tagLabel.TextStrokeTransparency=.5
+	tagLabel.Text=tagCount>0 and("TAGGED: "..tagCount) or ""
+
+	-- warning label (not used for abilities anymore, only critical warnings)
+	warningLabel=Instance.new("TextLabel",gui)
+	warningLabel.Size=UDim2.new(.4,0,.05,0); warningLabel.Position=UDim2.new(.3,0,.17,0)
+	warningLabel.BackgroundTransparency=1; warningLabel.TextColor3=Color3.fromRGB(255,60,60)
+	warningLabel.TextScaled=true; warningLabel.Font=Enum.Font.GothamBold
+	warningLabel.TextStrokeTransparency=.4; warningLabel.Text=""; warningLabel.TextTransparency=1
+
+	vignette=Instance.new("ImageLabel",gui)
+	vignette.Size=UDim2.new(1,0,1,0); vignette.BackgroundTransparency=1
+	vignette.Image="rbxassetid://1138256171"; vignette.ImageColor3=Color3.fromRGB(40,0,0)
+	vignette.ImageTransparency=.9; vignette.ScaleType=Enum.ScaleType.Stretch; vignette.ZIndex=10
+
+	createLogFrame()
+end
+
+local function showWarning(txt,dur)
+	if not warningLabel then return end
+	warningLabel.Text=txt
+	TweenService:Create(warningLabel,TweenInfo.new(.12),{TextTransparency=0}):Play()
+	task.delay(dur or 2,function()
+		if warningLabel then TweenService:Create(warningLabel,TweenInfo.new(.7),{TextTransparency=1}):Play() end
+	end)
+end
+
+-- ════════════════════
+-- CINEMATIC
+-- ════════════════════
+local function playCinematic()
+	phase="CINEMATIC"
+
+	local topBar=Instance.new("Frame",gui)
+	topBar.Size=UDim2.new(1,0,0,0); topBar.BackgroundColor3=Color3.new()
+	topBar.ZIndex=20; topBar.BorderSizePixel=0
+
+	local botBar=Instance.new("Frame",gui)
+	botBar.Size=UDim2.new(1,0,0,0); botBar.Position=UDim2.new(0,0,1,0)
+	botBar.BackgroundColor3=Color3.new(); botBar.ZIndex=20
+	botBar.BorderSizePixel=0; botBar.AnchorPoint=Vector2.new(0,1)
+
+	local barH=UDim2.new(1,0,.12,0)
+	TweenService:Create(topBar,TweenInfo.new(.7,Enum.EasingStyle.Quad),{Size=barH}):Play()
+	TweenService:Create(botBar,TweenInfo.new(.7,Enum.EasingStyle.Quad),{Size=barH}):Play()
+	task.wait(.8)
+
+	local titleLbl=Instance.new("TextLabel",gui)
+	titleLbl.Size=UDim2.new(.7,0,.07,0); titleLbl.Position=UDim2.new(.15,0,.15,0)
+	titleLbl.BackgroundTransparency=1; titleLbl.TextScaled=true
+	titleLbl.Font=Enum.Font.Creepster; titleLbl.ZIndex=21; titleLbl.TextTransparency=1
+
+	local subLbl=Instance.new("TextLabel",gui)
+	subLbl.Size=UDim2.new(.5,0,.04,0); subLbl.Position=UDim2.new(.25,0,.23,0)
+	subLbl.BackgroundTransparency=1; subLbl.TextScaled=true
+	subLbl.Font=Enum.Font.Antique; subLbl.ZIndex=21; subLbl.TextTransparency=1
+	subLbl.TextColor3=Color3.fromRGB(180,180,180)
+
+	local abilLbl=Instance.new("TextLabel",gui)
+	abilLbl.Size=UDim2.new(.4,0,.03,0); abilLbl.Position=UDim2.new(.3,0,.28,0)
+	abilLbl.BackgroundTransparency=1; abilLbl.TextScaled=true
+	abilLbl.Font=Enum.Font.GothamBold; abilLbl.ZIndex=21; abilLbl.TextTransparency=1
+
+	titleLbl.Text="M A N H U N T"; titleLbl.TextColor3=Color3.fromRGB(200,0,0)
+	TweenService:Create(titleLbl,TweenInfo.new(.8),{TextTransparency=0}):Play()
+	task.wait(1.5)
+	TweenService:Create(titleLbl,TweenInfo.new(.4),{TextTransparency=1}):Play()
+	task.wait(.5)
+
+	local origCam=Camera.CameraType
+	Camera.CameraType=Enum.CameraType.Scriptable
+
+	local abilities={
+		{"Scary Notes","Speed Surge"},
+		{"Dive Bomb","Sonic Screech"},
+		{"Bull Charge","Earthquake"},
+	}
+
+	for i,hu in ipairs(hunters) do
+		if not hu.root then continue end
+		local pos=hu.root.Position
+		TweenService:Create(Camera,TweenInfo.new(.7,Enum.EasingStyle.Quad,Enum.EasingDirection.InOut),{
+			CFrame=CFrame.new(pos+Vector3.new(5,3,7),pos+Vector3.new(0,1,0))
+		}):Play()
+		task.wait(.8)
+
+		titleLbl.Text=hu.data.name; titleLbl.TextColor3=hu.data.eye
+		subLbl.Text='"'..hu.data.title..'"'
+		abilLbl.Text="⚔ "..abilities[i][1].." | "..abilities[i][2]
+		abilLbl.TextColor3=hu.data.eye
+
+		TweenService:Create(titleLbl,TweenInfo.new(.3),{TextTransparency=0}):Play()
+		TweenService:Create(subLbl,TweenInfo.new(.3),{TextTransparency=0}):Play()
+
+		local showSt=tick()
+		while tick()-showSt<1.5 do animH(hu.model,RunService.Heartbeat:Wait(),false,0,false) end
+
+		TweenService:Create(abilLbl,TweenInfo.new(.3),{TextTransparency=0}):Play()
+		task.wait(1.2)
+
+		TweenService:Create(titleLbl,TweenInfo.new(.3),{TextTransparency=1}):Play()
+		TweenService:Create(subLbl,TweenInfo.new(.3),{TextTransparency=1}):Play()
+		TweenService:Create(abilLbl,TweenInfo.new(.3),{TextTransparency=1}):Play()
+		task.wait(.4)
+	end
+
+	titleLbl.Text="THEY MIMIC YOU."; titleLbl.TextColor3=Color3.fromRGB(255,0,0)
+	TweenService:Create(titleLbl,TweenInfo.new(.5),{TextTransparency=0}):Play()
+	task.wait(1)
+	titleLbl.Text="THEY NEVER STOP."
+	task.wait(1.2)
+	TweenService:Create(titleLbl,TweenInfo.new(.4),{TextTransparency=1}):Play()
+	task.wait(.5)
+
+	titleLbl:Destroy(); subLbl:Destroy(); abilLbl:Destroy()
+	Camera.CameraType=origCam
+
+	TweenService:Create(topBar,TweenInfo.new(.5,Enum.EasingStyle.Quad),{Size=UDim2.new(1,0,0,0)}):Play()
+	TweenService:Create(botBar,TweenInfo.new(.5,Enum.EasingStyle.Quad),{Size=UDim2.new(1,0,0,0)}):Play()
+	task.wait(.6); topBar:Destroy(); botBar:Destroy()
+end
+
+-- ════════════════════
+-- TAG
+-- ════════════════════
+local function onTag(name)
+	local now=tick()
+	if now-lastTagTime<TAG_IMMUNITY then return end
+	lastTagTime=now; tagCount=tagCount+1
+
+	local h=ph()
+	if h then
+		local ws,jp=h.WalkSpeed,h.JumpPower
+		h.WalkSpeed=0; h.JumpPower=0
+		task.delay(TAG_FREEZE,function()
+			if h then h.WalkSpeed=ws; h.JumpPower=jp end
+		end)
+	end
+
+	showWarning("💀 "..name.." TAGGED YOU! ("..tagCount..")",TAG_FREEZE)
+	addLog("💀 Tagged by "..name.."! (Total: "..tagCount..")", Color3.fromRGB(255,50,50))
+	if tagLabel then tagLabel.Text="TAGGED: "..tagCount end
+
+	if gui then
+		local fl=Instance.new("Frame",gui)
+		fl.Size=UDim2.new(1,0,1,0); fl.BackgroundColor3=Color3.fromRGB(180,0,0)
+		fl.ZIndex=50
+		TweenService:Create(fl,TweenInfo.new(TAG_FREEZE),{BackgroundTransparency=1}):Play()
+		Debris:AddItem(fl,TAG_FREEZE+.1)
+	end
+
+	task.spawn(function()
+		local st=tick()
+		while tick()-st<.8 do
+			local i=1.2*(1-(tick()-st)/.8)
+			Camera.CFrame=Camera.CFrame*CFrame.new((math.random()-.5)*i,(math.random()-.5)*i,0)
+			task.wait()
+		end
+	end)
+end
+
+-- ════════════════════
+-- ATMOSPHERE (lighter)
+-- ════════════════════
+local function setAtmos()
+	TweenService:Create(Lighting,TweenInfo.new(3),{
+		FogEnd=350, FogStart=50, FogColor=Color3.fromRGB(140,130,140),
+		Ambient=Color3.fromRGB(80,75,85), OutdoorAmbient=Color3.fromRGB(110,105,115),
+		Brightness=1.5, ClockTime=6,
+	}):Play()
+	local cc=Lighting:FindFirstChild("MCC")
+	if not cc then
+		cc=Instance.new("ColorCorrectionEffect")
+		cc.Name="MCC"; cc.Parent=Lighting
+	end
+	cc.Saturation=-.15; cc.Contrast=.08; cc.TintColor=Color3.fromRGB(240,235,245)
+end
+
+-- ════════════════════
+-- INIT
+-- ════════════════════
+local function init()
+	if not Player.Character then Player.CharacterAdded:Wait() end
+	task.wait(1)
+
+	active=false; log={}; logStart=tick(); lastRec=0
+	buildUI(); setAtmos()
+
+	local spawnCF=findSpawn()
+	hunters={}
+	for i,data in ipairs(HUNTER_DATA) do
+		local off=CFrame.new((i-2)*4,0,0)
+		local m,h,r=buildHunter(data,spawnCF*off)
+		m:SetAttribute("AO",i*1.7)
+
+		for _,p in ipairs(m:GetDescendants()) do
+			if p:IsA("BasePart") and p.Name~="HumanoidRootPart" then p.Transparency=.95 end
+		end
+
+		table.insert(hunters,{
+			model=m,humanoid=h,root=r,data=data,
+			lastA1=-999,lastA2=-999,lastThink=0,liveStart=0,
+		})
+	end
+
+	task.spawn(function()
+		for i=1,25 do
+			task.wait(.25)
+			for _,hu in ipairs(hunters) do
+				if not hu.model then continue end
+				for _,p in ipairs(hu.model:GetDescendants()) do
+					if p:IsA("BasePart") and p.Name~="HumanoidRootPart" then
+						p.Transparency=math.max(0,p.Transparency-.04)
+					end
+				end
+			end
+		end
+	end)
+
+	playCinematic()
+
+	phase="HEADSTART"; logStart=tick(); active=true
+	addLog("⏱️ 3 seconds head start. RUN!", Color3.fromRGB(255,255,100))
+end
+
+-- ════════════════════
+-- MAIN LOOP
+-- ════════════════════
+RunService.Heartbeat:Connect(function(dt)
+	if not active then return end
+	local p=pr(); if not p then return end
+	local now=tick()
+
+	if now-lastRec>=RECORD_RATE then
+		lastRec=now
+		table.insert(log,{t=now-logStart,cf=p.CFrame})
+	end
+
+	local elapsed=now-logStart
+	local anyChasing=elapsed>=DELAY
+
+	if not anyChasing then
+		local rem=math.ceil(DELAY-elapsed)
+		if timerLabel then
+			timerLabel.Text="HEAD START: "..rem
+			local u=elapsed/DELAY
+			timerLabel.TextColor3=Color3.fromRGB(255,255*(1-u),255*(1-u))
+		end
+		for _,hu in ipairs(hunters) do
+			if hu.root and p then
+				local look=(p.Position-hu.root.Position)
+				if look.Magnitude>.1 then
+					look=Vector3.new(look.X,0,look.Z).Unit
+					hu.root.CFrame=hu.root.CFrame:Lerp(CFrame.new(hu.root.Position,hu.root.Position+look),dt*6)
+				end
+			end
+			animH(hu.model,dt,false,0,false)
+			checkFall(hu)
+		end
+		return
+	end
+
+	if phase~="CHASE" then
+		phase="CHASE"
+		addLog("💀 They're moving. Your path is theirs.", Color3.fromRGB(255,80,80))
+	end
+
+	if timerLabel then
+		timerLabel.Text=string.format("CHASE: %.1fs",elapsed-DELAY)
+		timerLabel.TextColor3=Color3.fromRGB(255,0,0)
+	end
+
+	local closestD,closestN=math.huge,""
+
+	for i,hu in ipairs(hunters) do
+		if not hu.root or not hu.humanoid then continue end
+		checkFall(hu)
+
+		local moving=false
+		local flying=hu.data.flies or false
+
+		local mimicCF,goLive=getMimicCF(now,hu)
+
+		if mimicCF and not goLive then
+			if flying then
+				local flyCF=mimicCF+Vector3.new(0,8,0)
+				hu.root.CFrame=hu.root.CFrame:Lerp(flyCF,dt*20)
+				local ff=hu.root:FindFirstChild("FlyForce")
+				if not ff then
+					ff=Instance.new("BodyVelocity"); ff.Name="FlyForce"
+					ff.MaxForce=Vector3.new(0,math.huge,0); ff.P=5000; ff.Parent=hu.root
+				end
+				ff.Velocity=Vector3.new(0,math.clamp((flyCF.Position.Y-hu.root.Position.Y)*5,-20,30),0)
+				hu.humanoid.WalkSpeed=50
+				hu.humanoid:MoveTo(Vector3.new(mimicCF.Position.X,hu.root.Position.Y,mimicCF.Position.Z))
+			else
+				hu.root.CFrame=hu.root.CFrame:Lerp(mimicCF,dt*25)
+				hu.humanoid.WalkSpeed=50
+				hu.humanoid:MoveTo(mimicCF.Position)
+			end
+			moving=true
+		else
+			local target=p.Position
+			local pVel=p.AssemblyLinearVelocity
+			local pred=math.clamp(dst(hu.root,p)/(hu.data.liveBase+5)*.3,0,1)
+			target=target+pVel*pred
+			smartMove(hu,target,dt,now)
+			moving=true
+		end
+
+		animH(hu.model,dt,moving,hu.humanoid.WalkSpeed,flying and mimicCF~=nil)
+
+		if now-hu.lastThink>1.2 then
+			hu.lastThink=now
+			hunterThink(hu,i,now)
+		end
+
+		ensureVisible(hu)
+
+		local d=dst(hu.root,p)
+		if d<closestD then closestD=d; closestN=hu.data.name end
+		if d<=TAG_RANGE then onTag(hu.data.name) end
+	end
+
+	if distLabel then
+		distLabel.Text=string.format("%s: %.0f studs",closestN,closestD)
+		distLabel.TextColor3=closestD<20 and Color3.fromRGB(255,80,80) or Color3.fromRGB(220,220,220)
+	end
+
+	if vignette then
+		local t=1-math.clamp(closestD/60,0,1)
+		vignette.ImageTransparency=.92-t*.55
+		vignette.ImageColor3=Color3.fromRGB(40+t*100,0,0)
+	end
+
+	-- subtle fog shift only when very close
+	local fogTarget=350-(1-math.clamp(closestD/40,0,1))*80
+	Lighting.FogEnd=Lighting.FogEnd+(fogTarget-Lighting.FogEnd)*dt*2
+
+	local cc=Lighting:FindFirstChild("MCC")
+	if cc then
+		local t=1-math.clamp(closestD/40,0,1)
+		cc.Saturation=-.15-t*.2; cc.Contrast=.08+t*.15
+	end
+
+	if closestD<12 and warningLabel and warningLabel.TextTransparency>.5 then
+		local w={"CLOSE!","INCOMING!","THEY'RE ON YOU!","MOVE!"}
+		showWarning("⚠️ "..w[math.random(#w)],0.8)
+	end
+end)
+
+Player.CharacterAdded:Connect(function()
+	task.wait(2)
+	log={}; logStart=tick(); lastRec=0; lastTagTime=-999; active=false
+	buildUI()
+
+	local sp=findSpawn()
+	for i,hu in ipairs(hunters) do
+		if hu.root then
+			hu.root.CFrame=sp*CFrame.new((i-2)*4,0,0)
+			hu.root.AssemblyLinearVelocity=Vector3.zero
+			hu.root.AssemblyAngularVelocity=Vector3.zero
+			local ff=hu.root:FindFirstChild("FlyForce"); if ff then ff:Destroy() end
+		end
+		hu.liveStart=0; hu.lastA1=-999; hu.lastA2=-999
+		ensureVisible(hu)
+	end
+
+	active=true; phase="HEADSTART"
+	addLog("⏱️ They reset. 3 seconds. RUN!", Color3.fromRGB(255,255,100))
+end)
+
+init()
