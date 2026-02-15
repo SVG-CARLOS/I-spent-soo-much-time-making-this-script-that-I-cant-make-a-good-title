@@ -1,15 +1,14 @@
 --[[
-    ╔══════════════════════════════════════════════════════════════╗
-    ║           🤡 CLOWN MOVESET OVERRIDE SCRIPT 🤡               ║
-    ║        THE STRONGEST BATTLEGROUNDS - Custom Moveset          ║
-    ║                                                              ║
-    ║  Replaces Saitama/One Punch Man moveset with:                ║
-    ║  • Custom Clown Abilities (M1s, Skills, Ultimate)            ║
-    ║  • Custom Animations for EVERYTHING                          ║
-    ║  • Custom VFX & SFX                                          ║
-    ║  • Custom UI Icon (Clown Emoji)                              ║
-    ║  • Custom Ultimate Awakening Sequence                        ║
-    ╚══════════════════════════════════════════════════════════════╝
+╔══════════════════════════════════════════════════════════════════╗
+║              🤡 CLOWN MOVESET OVERRIDE V2 🤡                    ║
+║          THE STRONGEST BATTLEGROUNDS - Full Rework               ║
+║                                                                  ║
+║  • Procedural CFrame Animations (NO animation IDs needed)        ║
+║  • Tool-based ability system that replaces existing ones         ║
+║  • Custom UI overlay on the existing moveset bar                 ║
+║  • Full VFX, SFX, Camera Work                                   ║
+║  • Ultimate Awakening with cinematic sequence                    ║
+╚══════════════════════════════════════════════════════════════════╝
 ]]
 
 local Players = game:GetService("Players")
@@ -18,140 +17,106 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Debris = game:GetService("Debris")
-local StarterGui = game:GetService("StarterGui")
 local SoundService = game:GetService("SoundService")
-local Lighting = game:GetService("Lighting")
 
 local Player = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local Mouse = Player:GetMouse()
 
--- Wait for character
-local Character = Player.Character or Player.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-local Animator = Humanoid:WaitForChild("Animator")
+local Character, Humanoid, HumanoidRootPart, Torso, RightArm, LeftArm, RightLeg, LeftLeg, Head
+local RightShoulder, LeftShoulder, RightHip, LeftHip, Neck, RootJoint
 
--- ═══════════════════════════════════════════════════════════
--- CONFIGURATION TABLE
--- ═══════════════════════════════════════════════════════════
-local Config = {
-	-- Character Name Override
-	CharacterName = "🤡 THE CLOWN 🤡",
-	
-	-- Ability Names
-	Abilities = {
-		M1 = "Slapstick Combo",
-		Skill1 = "Pie to the Face",        -- [E] Stun + Damage
-		Skill2 = "Balloon Animal Barrage",  -- [R] Multi-hit projectile
-		Skill3 = "Honk Shockwave",          -- [T] AoE knockback
-		Skill4 = "Juggling Frenzy",         -- [F] Combo grab
-		Ultimate = "🎪 THE BIG TOP 🎪",     -- [G] Ultimate
-	},
-	
-	-- Cooldowns (seconds)
-	Cooldowns = {
-		Skill1 = 6,
-		Skill2 = 8,
-		Skill3 = 10,
-		Skill4 = 14,
-		Ultimate = 60,
-	},
-	
-	-- Damage Values
-	Damage = {
-		M1 = {8, 8, 10, 10, 15}, -- 5-hit combo
-		Skill1 = 25,
-		Skill2 = {5, 5, 5, 5, 5, 15}, -- 6 hits
-		Skill3 = 30,
-		Skill4 = {10, 10, 10, 10, 20}, -- grab combo
-		Ultimate = 100,
-		UltimateFinisher = 50,
-	},
-	
-	-- Colors
-	Colors = {
-		Primary = Color3.fromRGB(255, 50, 50),      -- Red
-		Secondary = Color3.fromRGB(255, 215, 0),     -- Gold
-		Tertiary = Color3.fromRGB(138, 43, 226),     -- Purple
-		UltAura = Color3.fromRGB(255, 0, 100),       -- Hot Pink
-		UltSecondary = Color3.fromRGB(0, 255, 255),  -- Cyan
-		HonkWave = Color3.fromRGB(255, 165, 0),      -- Orange
-		Balloon = Color3.fromRGB(255, 105, 180),     -- Pink
-		Pie = Color3.fromRGB(255, 255, 200),         -- Cream
-	},
-	
-	-- Ultimate meter
-	UltMeterMax = 100,
-	UltMeterGainPerHit = 5,
-	UltMeterGainPerSkill = 10,
-	
-	-- Animation IDs (Custom Animation IDs - Replace with your uploaded ones)
-	-- These are placeholder structures, you'd upload custom anims to Roblox
-	Animations = {
-		-- IDLE & MOVEMENT
-		Idle = "rbxassetid://0", -- Clown bouncy idle, slightly swaying
-		Walk = "rbxassetid://0", -- Exaggerated clown walk
-		Run = "rbxassetid://0",  -- Silly run with big strides
-		Jump = "rbxassetid://0", -- Dramatic jump with spread arms
-		Fall = "rbxassetid://0", -- Flailing fall
-		
-		-- M1 COMBO (5 hits)
-		M1_1 = "rbxassetid://0", -- Right slap
-		M1_2 = "rbxassetid://0", -- Left backhand
-		M1_3 = "rbxassetid://0", -- Overhead bonk
-		M1_4 = "rbxassetid://0", -- Spinning elbow
-		M1_5 = "rbxassetid://0", -- Big uppercut (launcher)
-		
-		-- SKILLS
-		Skill1_Windup = "rbxassetid://0",  -- Pull pie from behind back
-		Skill1_Throw = "rbxassetid://0",   -- Slam pie forward
-		
-		Skill2_Summon = "rbxassetid://0",  -- Twist balloon animals
-		Skill2_Launch = "rbxassetid://0",  -- Send them flying
-		
-		Skill3_Inhale = "rbxassetid://0",  -- Deep breath with puffed cheeks
-		Skill3_Honk = "rbxassetid://0",    -- MASSIVE honk release
-		
-		Skill4_Grab = "rbxassetid://0",    -- Lunge grab
-		Skill4_Juggle1 = "rbxassetid://0", -- Toss up
-		Skill4_Juggle2 = "rbxassetid://0", -- Catch and toss
-		Skill4_Juggle3 = "rbxassetid://0", -- Final slam
-		
-		-- ULTIMATE
-		Ult_Startup = "rbxassetid://0",   -- Dramatic bow
-		Ult_Transform = "rbxassetid://0", -- Awakening transformation
-		Ult_Idle = "rbxassetid://0",      -- Menacing float idle
-		Ult_Rush = "rbxassetid://0",      -- Teleport rush
-		Ult_Barrage = "rbxassetid://0",   -- Rapid hits
-		Ult_Finisher = "rbxassetid://0",  -- Giant mallet slam
-		
-		-- MISC
-		Taunt = "rbxassetid://0",  -- Honk nose + bow
-		Block = "rbxassetid://0",  -- Cross arms with oversized gloves
-		Dash = "rbxassetid://0",   -- Cartwheel dodge
-		Hit = "rbxassetid://0",    -- Exaggerated hit reaction
-		Death = "rbxassetid://0",  -- Dramatic death fall
-	},
-}
+-- Store original C0s for resetting
+local OriginalC0 = {}
 
 -- ═══════════════════════════════════════════════════════════
--- STATE MANAGEMENT
+-- WAIT FOR CHARACTER & CACHE EVERYTHING
+-- ═══════════════════════════════════════════════════════════
+local function CacheCharacter(char)
+	Character = char
+	Humanoid = char:WaitForChild("Humanoid")
+	HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
+	
+	-- R15 vs R6 detection
+	local isR6 = char:FindFirstChild("Torso") ~= nil
+	
+	if isR6 then
+		Torso = char:WaitForChild("Torso")
+		Head = char:WaitForChild("Head")
+		RightArm = char:WaitForChild("Right Arm")
+		LeftArm = char:WaitForChild("Left Arm")
+		RightLeg = char:WaitForChild("Right Leg")
+		LeftLeg = char:WaitForChild("Left Leg")
+		
+		RightShoulder = Torso:WaitForChild("Right Shoulder")
+		LeftShoulder = Torso:WaitForChild("Left Shoulder")
+		RightHip = Torso:WaitForChild("Right Hip")
+		LeftHip = Torso:WaitForChild("Left Hip")
+		Neck = Torso:WaitForChild("Neck")
+		RootJoint = HumanoidRootPart:WaitForChild("RootJoint")
+		
+		-- Save originals
+		OriginalC0.RightShoulder = RightShoulder.C0
+		OriginalC0.LeftShoulder = LeftShoulder.C0
+		OriginalC0.RightHip = RightHip.C0
+		OriginalC0.LeftHip = LeftHip.C0
+		OriginalC0.Neck = Neck.C0
+		OriginalC0.RootJoint = RootJoint.C0
+	else
+		-- R15
+		Torso = char:WaitForChild("UpperTorso", 3) or char:WaitForChild("Torso", 3)
+		Head = char:WaitForChild("Head")
+		
+		-- For R15 we find Motor6Ds differently
+		local function findMotor(parent, name)
+			for _, v in pairs(parent:GetDescendants()) do
+				if v:IsA("Motor6D") and v.Name == name then
+					return v
+				end
+			end
+			return nil
+		end
+		
+		-- Try to find R15 joints
+		RightShoulder = findMotor(char, "RightShoulder")
+		LeftShoulder = findMotor(char, "LeftShoulder")
+		RightHip = findMotor(char, "RightHip")
+		LeftHip = findMotor(char, "LeftHip")
+		Neck = findMotor(char, "Neck")
+		RootJoint = findMotor(char, "Root") or findMotor(char, "RootJoint")
+		
+		if RightShoulder then OriginalC0.RightShoulder = RightShoulder.C0 end
+		if LeftShoulder then OriginalC0.LeftShoulder = LeftShoulder.C0 end
+		if RightHip then OriginalC0.RightHip = RightHip.C0 end
+		if LeftHip then OriginalC0.LeftHip = LeftHip.C0 end
+		if Neck then OriginalC0.Neck = Neck.C0 end
+		if RootJoint then OriginalC0.RootJoint = RootJoint.C0 end
+	end
+end
+
+Character = Player.Character or Player.CharacterAdded:Wait()
+CacheCharacter(Character)
+
+-- ═══════════════════════════════════════════════════════════
+-- STATE
 -- ═══════════════════════════════════════════════════════════
 local State = {
 	M1Count = 0,
 	M1LastTime = 0,
-	M1ComboWindow = 0.8, -- seconds to continue combo
+	M1Window = 0.9,
 	
-	IsAttacking = false,
-	IsBlocking = false,
-	IsUsingSkill = false,
-	IsUltActive = false,
-	IsAwakened = false,
-	IsDashing = false,
+	Attacking = false,
+	Blocking = false,
+	UsingSkill = false,
+	Dashing = false,
+	UltActive = false,
+	Awakened = false,
+	Animating = false,
 	
 	UltMeter = 0,
+	UltMax = 100,
 	
-	CooldownTimers = {
+	Cooldowns = {
 		Skill1 = 0,
 		Skill2 = 0,
 		Skill3 = 0,
@@ -159,161 +124,853 @@ local State = {
 		Ultimate = 0,
 	},
 	
-	LoadedAnimations = {},
-	ActiveEffects = {},
+	CooldownDurations = {
+		Skill1 = 5,
+		Skill2 = 7,
+		Skill3 = 9,
+		Skill4 = 12,
+		Ultimate = 45,
+	},
+	
+	CurrentTweens = {},
 }
 
 -- ═══════════════════════════════════════════════════════════
--- UTILITY FUNCTIONS
+-- PROCEDURAL CFRAME ANIMATION ENGINE
 -- ═══════════════════════════════════════════════════════════
-local Util = {}
+local Anim = {}
 
-function Util.CreateAnimation(animId)
-	local anim = Instance.new("Animation")
-	anim.AnimationId = animId
-	return anim
+function Anim.StopAll()
+	for _, tween in pairs(State.CurrentTweens) do
+		if tween and tween.Cancel then
+			pcall(function() tween:Cancel() end)
+		end
+	end
+	State.CurrentTweens = {}
 end
 
-function Util.PlayAnimation(name, priority, speed, looped)
-	priority = priority or Enum.AnimationPriority.Action
-	speed = speed or 1
-	looped = looped or false
+function Anim.ResetPose(speed)
+	speed = speed or 0.2
+	Anim.StopAll()
 	
-	if State.LoadedAnimations[name] then
-		State.LoadedAnimations[name]:Stop()
-	end
+	local joints = {
+		{RightShoulder, "RightShoulder"},
+		{LeftShoulder, "LeftShoulder"},
+		{RightHip, "RightHip"},
+		{LeftHip, "LeftHip"},
+		{Neck, "Neck"},
+		{RootJoint, "RootJoint"},
+	}
 	
-	local animId = Config.Animations[name]
-	if not animId or animId == "rbxassetid://0" then
-		-- If no custom animation, we create procedural animation effects
-		return nil
-	end
-	
-	local anim = Util.CreateAnimation(animId)
-	local track = Animator:LoadAnimation(anim)
-	track.Priority = priority
-	track.Looped = looped
-	track:AdjustSpeed(speed)
-	track:Play()
-	
-	State.LoadedAnimations[name] = track
-	return track
-end
-
-function Util.StopAnimation(name)
-	if State.LoadedAnimations[name] then
-		State.LoadedAnimations[name]:Stop()
-		State.LoadedAnimations[name] = nil
+	for _, data in pairs(joints) do
+		local joint = data[1]
+		local name = data[2]
+		if joint and OriginalC0[name] then
+			local tw = TweenService:Create(joint, TweenInfo.new(speed, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				C0 = OriginalC0[name]
+			})
+			tw:Play()
+			table.insert(State.CurrentTweens, tw)
+		end
 	end
 end
 
-function Util.StopAllAnimations()
-	for name, track in pairs(State.LoadedAnimations) do
-		track:Stop()
-	end
-	State.LoadedAnimations = {}
-end
-
-function Util.IsOnCooldown(skillName)
-	return State.CooldownTimers[skillName] and State.CooldownTimers[skillName] > tick()
-end
-
-function Util.SetCooldown(skillName)
-	State.CooldownTimers[skillName] = tick() + Config.Cooldowns[skillName]
-end
-
-function Util.CanAct()
-	return not State.IsAttacking and not State.IsUsingSkill and not State.IsDashing
-end
-
-function Util.ShakeCamera(intensity, duration, frequency)
-	intensity = intensity or 1
-	duration = duration or 0.3
-	frequency = frequency or 0.02
+function Anim.TweenJoint(joint, goalC0, duration, style, direction)
+	if not joint then return nil end
+	style = style or Enum.EasingStyle.Quad
+	direction = direction or Enum.EasingDirection.Out
+	duration = duration or 0.2
 	
-	spawn(function()
-		local startTime = tick()
-		while tick() - startTime < duration do
-			local progress = 1 - ((tick() - startTime) / duration)
-			local offset = Vector3.new(
-				(math.random() - 0.5) * 2 * intensity * progress,
-				(math.random() - 0.5) * 2 * intensity * progress,
-				(math.random() - 0.5) * 2 * intensity * progress
+	local tw = TweenService:Create(joint, TweenInfo.new(duration, style, direction), {
+		C0 = goalC0
+	})
+	tw:Play()
+	table.insert(State.CurrentTweens, tw)
+	return tw
+end
+
+function Anim.TweenJointLoop(joint, goalC0, duration, style, direction)
+	if not joint then return nil end
+	style = style or Enum.EasingStyle.Sine
+	direction = direction or Enum.EasingDirection.InOut
+	
+	local tw = TweenService:Create(joint, TweenInfo.new(duration, style, direction, -1, true), {
+		C0 = goalC0
+	})
+	tw:Play()
+	table.insert(State.CurrentTweens, tw)
+	return tw
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- CLOWN IDLE ANIMATION (Bouncy & Playful)
+-- ═══════════════════════════════════════════════════════════
+local idleConnection = nil
+
+function Anim.StartClownIdle()
+	if State.Animating then return end
+	
+	-- Stop any existing idle
+	Anim.StopClownIdle()
+	
+	if not RootJoint then return end
+	
+	local t = 0
+	idleConnection = RunService.Heartbeat:Connect(function(dt)
+		if State.Animating or State.Attacking or State.UsingSkill then return end
+		t = t + dt
+		
+		-- Bouncy body sway
+		local bounce = math.sin(t * 3) * 0.05
+		local sway = math.sin(t * 1.5) * 0.08
+		local headBob = math.sin(t * 2) * 0.03
+		
+		if RootJoint and OriginalC0.RootJoint then
+			RootJoint.C0 = OriginalC0.RootJoint 
+				* CFrame.new(0, bounce, 0) 
+				* CFrame.Angles(0, sway, 0)
+		end
+		
+		if Neck and OriginalC0.Neck then
+			Neck.C0 = OriginalC0.Neck 
+				* CFrame.Angles(headBob, math.sin(t * 1.2) * 0.05, math.sin(t * 0.8) * 0.03)
+		end
+		
+		-- Arms slightly out and swaying like a clown
+		if RightShoulder and OriginalC0.RightShoulder then
+			RightShoulder.C0 = OriginalC0.RightShoulder 
+				* CFrame.Angles(
+					math.sin(t * 2) * 0.1, 
+					0, 
+					math.rad(15) + math.sin(t * 1.5) * 0.08
+				)
+		end
+		
+		if LeftShoulder and OriginalC0.LeftShoulder then
+			LeftShoulder.C0 = OriginalC0.LeftShoulder 
+				* CFrame.Angles(
+					math.sin(t * 2 + 1) * 0.1, 
+					0, 
+					math.rad(-15) + math.sin(t * 1.5 + 1) * -0.08
+				)
+		end
+		
+		-- Slight leg bounce
+		if RightHip and OriginalC0.RightHip then
+			RightHip.C0 = OriginalC0.RightHip 
+				* CFrame.Angles(math.sin(t * 3) * 0.02, 0, 0)
+		end
+		
+		if LeftHip and OriginalC0.LeftHip then
+			LeftHip.C0 = OriginalC0.LeftHip 
+				* CFrame.Angles(math.sin(t * 3 + math.pi) * 0.02, 0, 0)
+		end
+	end)
+end
+
+function Anim.StopClownIdle()
+	if idleConnection then
+		idleConnection:Disconnect()
+		idleConnection = nil
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- M1 COMBO ANIMATIONS (5 Hits - Pure CFrame)
+-- ═══════════════════════════════════════════════════════════
+
+-- Hit 1: Right Slap
+function Anim.M1_Hit1()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Wind up right arm back
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-30), math.rad(40), math.rad(20)),
+			0.06, Enum.EasingStyle.Back, Enum.EasingDirection.Out
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(0, math.rad(25), 0),
+			0.06
+		)
+	end
+	
+	wait(0.06)
+	
+	-- SLAP forward
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(20), math.rad(-60), math.rad(30)),
+			0.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(math.rad(5), math.rad(-30), 0),
+			0.06
+		)
+	end
+	if Neck and OriginalC0.Neck then
+		Anim.TweenJoint(Neck,
+			OriginalC0.Neck * CFrame.Angles(math.rad(-5), math.rad(-20), 0),
+			0.05
+		)
+	end
+	
+	wait(0.15)
+	State.Animating = false
+end
+
+-- Hit 2: Left Backhand
+function Anim.M1_Hit2()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Wind up left arm
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(-20), math.rad(-50), math.rad(-25)),
+			0.06, Enum.EasingStyle.Back
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(0, math.rad(-30), 0),
+			0.06
+		)
+	end
+	
+	wait(0.06)
+	
+	-- Backhand swing
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(30), math.rad(70), math.rad(-20)),
+			0.05
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(math.rad(5), math.rad(35), 0),
+			0.06
+		)
+	end
+	if Neck and OriginalC0.Neck then
+		Anim.TweenJoint(Neck,
+			OriginalC0.Neck * CFrame.Angles(math.rad(-5), math.rad(25), 0),
+			0.05
+		)
+	end
+	
+	wait(0.15)
+	State.Animating = false
+end
+
+-- Hit 3: Overhead Bonk
+function Anim.M1_Hit3()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Both arms up
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-170), 0, math.rad(15)),
+			0.08, Enum.EasingStyle.Back
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(-170), 0, math.rad(-15)),
+			0.08, Enum.EasingStyle.Back
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, 0.2, 0) * CFrame.Angles(math.rad(-10), 0, 0),
+			0.08
+		)
+	end
+	
+	wait(0.1)
+	
+	-- SLAM down
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(40), 0, math.rad(10)),
+			0.06, Enum.EasingStyle.Quad
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(40), 0, math.rad(-10)),
+			0.06, Enum.EasingStyle.Quad
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, -0.3, 0) * CFrame.Angles(math.rad(25), 0, 0),
+			0.06
+		)
+	end
+	if Neck and OriginalC0.Neck then
+		Anim.TweenJoint(Neck,
+			OriginalC0.Neck * CFrame.Angles(math.rad(15), 0, 0),
+			0.06
+		)
+	end
+	
+	wait(0.18)
+	State.Animating = false
+end
+
+-- Hit 4: Spinning Elbow
+function Anim.M1_Hit4()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Spin windup
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(0, math.rad(-60), 0),
+			0.06
+		)
+	end
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-90), math.rad(30), math.rad(40)),
+			0.06
+		)
+	end
+	
+	wait(0.06)
+	
+	-- Spin through with elbow
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(math.rad(8), math.rad(120), 0),
+			0.08, Enum.EasingStyle.Quad
+		)
+	end
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-80), math.rad(-50), math.rad(60)),
+			0.07
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(20), math.rad(20), math.rad(-30)),
+			0.07
+		)
+	end
+	
+	wait(0.18)
+	State.Animating = false
+end
+
+-- Hit 5: BIG Uppercut (Launcher)
+function Anim.M1_Hit5()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Crouch down wind up
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, -0.5, 0) * CFrame.Angles(math.rad(20), math.rad(-15), 0),
+			0.08
+		)
+	end
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(30), math.rad(30), math.rad(10)),
+			0.08
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(20), math.rad(-10), math.rad(-20)),
+			0.08
+		)
+	end
+	if RightHip and OriginalC0.RightHip then
+		Anim.TweenJoint(RightHip,
+			OriginalC0.RightHip * CFrame.Angles(math.rad(-20), 0, 0),
+			0.08
+		)
+	end
+	if LeftHip and OriginalC0.LeftHip then
+		Anim.TweenJoint(LeftHip,
+			OriginalC0.LeftHip * CFrame.Angles(math.rad(-25), 0, 0),
+			0.08
+		)
+	end
+	
+	wait(0.1)
+	
+	-- EXPLOSIVE UPPERCUT
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, 0.4, 0) * CFrame.Angles(math.rad(-15), math.rad(20), 0),
+			0.06, Enum.EasingStyle.Back, Enum.EasingDirection.Out
+		)
+	end
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-160), math.rad(-20), math.rad(25)),
+			0.06, Enum.EasingStyle.Back, Enum.EasingDirection.Out
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(30), 0, math.rad(-40)),
+			0.06
+		)
+	end
+	if Neck and OriginalC0.Neck then
+		Anim.TweenJoint(Neck,
+			OriginalC0.Neck * CFrame.Angles(math.rad(-20), math.rad(10), 0),
+			0.06
+		)
+	end
+	if RightHip and OriginalC0.RightHip then
+		Anim.TweenJoint(RightHip,
+			OriginalC0.RightHip * CFrame.Angles(math.rad(10), 0, 0),
+			0.06
+		)
+	end
+	if LeftHip and OriginalC0.LeftHip then
+		Anim.TweenJoint(LeftHip,
+			OriginalC0.LeftHip * CFrame.Angles(math.rad(-10), 0, math.rad(-5)),
+			0.06
+		)
+	end
+	
+	wait(0.25)
+	State.Animating = false
+end
+
+-- Skill Animations
+function Anim.PieWindup()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Reach behind back (pulling pie out)
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(30), math.rad(60), math.rad(-20)),
+			0.12, Enum.EasingStyle.Back
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(0, math.rad(30), 0),
+			0.12
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(15), 0, math.rad(-15)),
+			0.12
+		)
+	end
+end
+
+function Anim.PieThrow()
+	-- Forward throw
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-90), math.rad(-30), math.rad(10)),
+			0.06, Enum.EasingStyle.Quad
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(math.rad(10), math.rad(-40), 0),
+			0.06
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(30), math.rad(10), math.rad(-30)),
+			0.06
+		)
+	end
+end
+
+function Anim.BalloonTwist()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Both hands together twisting
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-60), math.rad(-40), math.rad(10)),
+			0.1
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(-60), math.rad(40), math.rad(-10)),
+			0.1
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(math.rad(-5), 0, 0),
+			0.1
+		)
+	end
+end
+
+function Anim.BalloonLaunch()
+	-- Dramatic push forward
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-100), math.rad(-10), math.rad(30)),
+			0.06, Enum.EasingStyle.Back
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(-100), math.rad(10), math.rad(-30)),
+			0.06, Enum.EasingStyle.Back
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(math.rad(15), 0, 0),
+			0.06
+		)
+	end
+end
+
+function Anim.HonkInhale()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Lean back, puff up
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, 0.2, 0) * CFrame.Angles(math.rad(-20), 0, 0),
+			0.15
+		)
+	end
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-30), 0, math.rad(50)),
+			0.15
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(-30), 0, math.rad(-50)),
+			0.15
+		)
+	end
+	if Neck and OriginalC0.Neck then
+		Anim.TweenJoint(Neck,
+			OriginalC0.Neck * CFrame.Angles(math.rad(-15), 0, 0),
+			0.15
+		)
+	end
+end
+
+function Anim.HonkRelease()
+	-- Massive forward push HONK
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, -0.3, 0) * CFrame.Angles(math.rad(30), 0, 0),
+			0.05, Enum.EasingStyle.Back
+		)
+	end
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(10), 0, math.rad(80)),
+			0.05, Enum.EasingStyle.Back
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(10), 0, math.rad(-80)),
+			0.05, Enum.EasingStyle.Back
+		)
+	end
+	if Neck and OriginalC0.Neck then
+		Anim.TweenJoint(Neck,
+			OriginalC0.Neck * CFrame.Angles(math.rad(20), 0, 0),
+			0.05
+		)
+	end
+end
+
+function Anim.GrabLunge()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Reaching grab
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-90), math.rad(-20), math.rad(10)),
+			0.08
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(-90), math.rad(20), math.rad(-10)),
+			0.08
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(math.rad(20), 0, 0),
+			0.08
+		)
+	end
+end
+
+function Anim.JuggleToss(side)
+	-- Alternating tosses
+	local angle = side == "right" and math.rad(30) or math.rad(-30)
+	
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(
+				math.rad(-140) + (side == "right" and math.rad(20) or 0),
+				angle,
+				math.rad(15)
+			),
+			0.08, Enum.EasingStyle.Back
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(
+				math.rad(-140) + (side == "left" and math.rad(20) or 0),
+				-angle,
+				math.rad(-15)
+			),
+			0.08, Enum.EasingStyle.Back
+		)
+	end
+end
+
+function Anim.JuggleSlam()
+	-- Big overhead slam
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, -0.5, 0) * CFrame.Angles(math.rad(35), 0, 0),
+			0.06, Enum.EasingStyle.Back
+		)
+	end
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(50), 0, math.rad(20)),
+			0.06, Enum.EasingStyle.Back
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(50), 0, math.rad(-20)),
+			0.06, Enum.EasingStyle.Back
+		)
+	end
+end
+
+-- ULTIMATE ANIMATIONS
+function Anim.UltBow()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Theatrical bow
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.Angles(math.rad(45), 0, 0),
+			0.3, Enum.EasingStyle.Sine
+		)
+	end
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(20), 0, math.rad(60)),
+			0.3, Enum.EasingStyle.Sine
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(20), 0, math.rad(-60)),
+			0.3, Enum.EasingStyle.Sine
+		)
+	end
+	if Neck and OriginalC0.Neck then
+		Anim.TweenJoint(Neck,
+			OriginalC0.Neck * CFrame.Angles(math.rad(20), 0, 0),
+			0.3
+		)
+	end
+end
+
+function Anim.UltTransform()
+	-- T-Pose power up
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, 1, 0) * CFrame.Angles(math.rad(-10), 0, 0),
+			0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out
+		)
+	end
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(0, 0, math.rad(90)),
+			0.15, Enum.EasingStyle.Back
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(0, 0, math.rad(-90)),
+			0.15, Enum.EasingStyle.Back
+		)
+	end
+	if Neck and OriginalC0.Neck then
+		Anim.TweenJoint(Neck,
+			OriginalC0.Neck * CFrame.Angles(math.rad(-25), 0, 0),
+			0.15
+		)
+	end
+end
+
+function Anim.UltBarrage()
+	-- Rapid alternating punches
+	State.Animating = true
+	for i = 1, 20 do
+		local side = i % 2 == 0
+		
+		if RightShoulder and OriginalC0.RightShoulder then
+			RightShoulder.C0 = OriginalC0.RightShoulder * CFrame.Angles(
+				math.rad(-90) + math.rad(math.random(-20, 20)),
+				math.rad(side and -30 or 10),
+				math.rad(math.random(-10, 10))
 			)
-			Camera.CFrame = Camera.CFrame * CFrame.new(offset)
-			wait(frequency)
 		end
-	end)
+		if LeftShoulder and OriginalC0.LeftShoulder then
+			LeftShoulder.C0 = OriginalC0.LeftShoulder * CFrame.Angles(
+				math.rad(-90) + math.rad(math.random(-20, 20)),
+				math.rad(side and -10 or 30),
+				math.rad(math.random(-10, 10))
+			)
+		end
+		if RootJoint and OriginalC0.RootJoint then
+			RootJoint.C0 = OriginalC0.RootJoint * CFrame.Angles(
+				math.rad(10),
+				math.rad(side and 15 or -15),
+				0
+			)
+		end
+		
+		wait(0.05)
+	end
 end
 
-function Util.SlowMotion(duration, timeScale)
-	-- Client-side slow-mo feel
+function Anim.UltMalletRaise()
+	-- Arms way up holding mallet
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-175), math.rad(-10), math.rad(15)),
+			0.15, Enum.EasingStyle.Back
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(-175), math.rad(10), math.rad(-15)),
+			0.15, Enum.EasingStyle.Back
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, 0.5, 0) * CFrame.Angles(math.rad(-15), 0, 0),
+			0.15
+		)
+	end
+end
+
+function Anim.UltMalletSlam()
+	-- Massive slam
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(60), 0, math.rad(10)),
+			0.04, Enum.EasingStyle.Quad
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(60), 0, math.rad(-10)),
+			0.04, Enum.EasingStyle.Quad
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, -0.8, 0) * CFrame.Angles(math.rad(40), 0, 0),
+			0.04
+		)
+	end
+	if Neck and OriginalC0.Neck then
+		Anim.TweenJoint(Neck,
+			OriginalC0.Neck * CFrame.Angles(math.rad(25), 0, 0),
+			0.04
+		)
+	end
+end
+
+function Anim.BlockPose()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Cross arms guard
+	if RightShoulder and OriginalC0.RightShoulder then
+		Anim.TweenJoint(RightShoulder,
+			OriginalC0.RightShoulder * CFrame.Angles(math.rad(-70), math.rad(-50), math.rad(15)),
+			0.1
+		)
+	end
+	if LeftShoulder and OriginalC0.LeftShoulder then
+		Anim.TweenJoint(LeftShoulder,
+			OriginalC0.LeftShoulder * CFrame.Angles(math.rad(-70), math.rad(50), math.rad(-15)),
+			0.1
+		)
+	end
+	if RootJoint and OriginalC0.RootJoint then
+		Anim.TweenJoint(RootJoint,
+			OriginalC0.RootJoint * CFrame.new(0, -0.15, 0) * CFrame.Angles(math.rad(8), 0, 0),
+			0.1
+		)
+	end
+end
+
+function Anim.DashCartwheel()
+	State.Animating = true
+	Anim.StopClownIdle()
+	
+	-- Quick cartwheel spin
 	spawn(function()
-		-- We can't actually change server time, but we can slow animations
-		-- and add a visual effect
-		local blur = Instance.new("BlurEffect")
-		blur.Size = 10
-		blur.Parent = Camera
+		local duration = 0.25
+		local start = tick()
+		while tick() - start < duration do
+			local progress = (tick() - start) / duration
+			local angle = progress * math.pi * 2
+			
+			if RootJoint and OriginalC0.RootJoint then
+				RootJoint.C0 = OriginalC0.RootJoint * CFrame.Angles(0, 0, angle)
+			end
+			
+			RunService.Heartbeat:Wait()
+		end
 		
-		wait(duration)
+		if RootJoint and OriginalC0.RootJoint then
+			RootJoint.C0 = OriginalC0.RootJoint
+		end
 		
-		local tween = TweenService:Create(blur, TweenInfo.new(0.3), {Size = 0})
-		tween:Play()
-		tween.Completed:Connect(function()
-			blur:Destroy()
-		end)
+		State.Animating = false
 	end)
-end
-
-function Util.GetNearestEnemy(range)
-	range = range or 20
-	local nearest = nil
-	local nearestDist = range
-	
-	for _, otherPlayer in pairs(Players:GetPlayers()) do
-		if otherPlayer ~= Player and otherPlayer.Character then
-			local otherRoot = otherPlayer.Character:FindFirstChild("HumanoidRootPart")
-			local otherHum = otherPlayer.Character:FindFirstChild("Humanoid")
-			if otherRoot and otherHum and otherHum.Health > 0 then
-				local dist = (HumanoidRootPart.Position - otherRoot.Position).Magnitude
-				if dist < nearestDist then
-					nearest = otherPlayer.Character
-					nearestDist = dist
-				end
-			end
-		end
-	end
-	
-	return nearest, nearestDist
-end
-
-function Util.GetEnemiesInRadius(position, radius)
-	local enemies = {}
-	for _, otherPlayer in pairs(Players:GetPlayers()) do
-		if otherPlayer ~= Player and otherPlayer.Character then
-			local otherRoot = otherPlayer.Character:FindFirstChild("HumanoidRootPart")
-			local otherHum = otherPlayer.Character:FindFirstChild("Humanoid")
-			if otherRoot and otherHum and otherHum.Health > 0 then
-				local dist = (position - otherRoot.Position).Magnitude
-				if dist <= radius then
-					table.insert(enemies, otherPlayer.Character)
-				end
-			end
-		end
-	end
-	return enemies
-end
-
-function Util.AddUltMeter(amount)
-	if State.IsUltActive then return end
-	State.UltMeter = math.min(State.UltMeter + amount, Config.UltMeterMax)
-	-- Update UI
-	if ClownUI and ClownUI.UltBar then
-		local fill = State.UltMeter / Config.UltMeterMax
-		TweenService:Create(ClownUI.UltBar.Fill, TweenInfo.new(0.2), {
-			Size = UDim2.new(fill, 0, 1, 0)
-		}):Play()
-	end
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -321,33 +978,20 @@ end
 -- ═══════════════════════════════════════════════════════════
 local VFX = {}
 
-function VFX.CreateParticleEmitter(parent, config)
-	local emitter = Instance.new("ParticleEmitter")
-	emitter.Color = ColorSequence.new(config.Color or Color3.new(1, 1, 1))
-	emitter.Size = config.Size or NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.5),
-		NumberSequenceKeypoint.new(1, 0)
-	})
-	emitter.Lifetime = config.Lifetime or NumberRange.new(0.5, 1)
-	emitter.Rate = config.Rate or 50
-	emitter.Speed = config.Speed or NumberRange.new(5, 10)
-	emitter.SpreadAngle = config.SpreadAngle or Vector2.new(360, 360)
-	emitter.Transparency = config.Transparency or NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0),
-		NumberSequenceKeypoint.new(1, 1)
-	})
-	emitter.RotSpeed = config.RotSpeed or NumberRange.new(-180, 180)
-	emitter.Rotation = config.Rotation or NumberRange.new(0, 360)
-	emitter.LightEmission = config.LightEmission or 0.5
-	emitter.Parent = parent
-	return emitter
-end
+local COLORS = {
+	Red = Color3.fromRGB(255, 50, 50),
+	Gold = Color3.fromRGB(255, 215, 0),
+	Purple = Color3.fromRGB(138, 43, 226),
+	HotPink = Color3.fromRGB(255, 0, 100),
+	Cyan = Color3.fromRGB(0, 255, 255),
+	Orange = Color3.fromRGB(255, 165, 0),
+	Pink = Color3.fromRGB(255, 105, 180),
+	Cream = Color3.fromRGB(255, 255, 200),
+	White = Color3.fromRGB(255, 255, 255),
+	Green = Color3.fromRGB(0, 255, 100),
+}
 
-function VFX.ImpactRing(position, color, size, duration)
-	color = color or Config.Colors.Primary
-	size = size or 20
-	duration = duration or 0.5
-	
+function VFX.Ring(pos, color, maxSize, dur)
 	local ring = Instance.new("Part")
 	ring.Anchored = true
 	ring.CanCollide = false
@@ -355,445 +999,175 @@ function VFX.ImpactRing(position, color, size, duration)
 	ring.Material = Enum.Material.Neon
 	ring.Color = color
 	ring.Shape = Enum.PartType.Cylinder
-	ring.Size = Vector3.new(0.2, 0.1, 0.1)
-	ring.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
-	ring.Parent = workspace
+	ring.Size = Vector3.new(0.15, 0.1, 0.1)
+	ring.CFrame = CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Parent = workspace.Terrain
 	
-	local tween = TweenService:Create(ring, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Size = Vector3.new(0.2, size, size),
+	TweenService:Create(ring, TweenInfo.new(dur or 0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.15, maxSize or 20, maxSize or 20),
 		Transparency = 1,
-	})
-	tween:Play()
+	}):Play()
 	
-	Debris:AddItem(ring, duration + 0.1)
-	return ring
+	Debris:AddItem(ring, (dur or 0.5) + 0.1)
 end
 
-function VFX.ImpactSphere(position, color, size, duration)
-	color = color or Config.Colors.Primary
-	size = size or 10
-	duration = duration or 0.4
-	
+function VFX.Sphere(pos, color, maxSize, dur)
 	local sphere = Instance.new("Part")
 	sphere.Anchored = true
 	sphere.CanCollide = false
-	sphere.Transparency = 0.5
+	sphere.Transparency = 0.4
 	sphere.Material = Enum.Material.ForceField
 	sphere.Color = color
 	sphere.Shape = Enum.PartType.Ball
-	sphere.Size = Vector3.new(1, 1, 1)
-	sphere.CFrame = CFrame.new(position)
-	sphere.Parent = workspace
+	sphere.Size = Vector3.new(0.5, 0.5, 0.5)
+	sphere.CFrame = CFrame.new(pos)
+	sphere.Parent = workspace.Terrain
 	
-	local tween = TweenService:Create(sphere, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		Size = Vector3.new(size, size, size),
+	TweenService:Create(sphere, TweenInfo.new(dur or 0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(maxSize or 10, maxSize or 10, maxSize or 10),
 		Transparency = 1,
-	})
-	tween:Play()
+	}):Play()
 	
-	Debris:AddItem(sphere, duration + 0.1)
-	return sphere
+	Debris:AddItem(sphere, (dur or 0.4) + 0.1)
 end
 
-function VFX.GroundCrack(position, color, range)
-	color = color or Config.Colors.Primary
-	range = range or 15
-	
-	-- Create radial crack lines
-	for i = 1, 12 do
-		local angle = (i / 12) * math.pi * 2
-		local length = range * (0.5 + math.random() * 0.5)
+function VFX.Crack(pos, color, range)
+	for i = 1, 10 do
+		local angle = (i / 10) * math.pi * 2 + math.random() * 0.3
+		local length = (range or 12) * (0.4 + math.random() * 0.6)
 		
 		local crack = Instance.new("Part")
 		crack.Anchored = true
 		crack.CanCollide = false
 		crack.Material = Enum.Material.Neon
 		crack.Color = color
-		crack.Size = Vector3.new(length, 0.1, 0.3 + math.random() * 0.3)
+		crack.Size = Vector3.new(length, 0.08, 0.2 + math.random() * 0.3)
 		
 		local dir = Vector3.new(math.cos(angle), 0, math.sin(angle))
-		crack.CFrame = CFrame.new(position + dir * length / 2, position + dir * length)
-		crack.Parent = workspace
-		
-		-- Animate appearance
+		crack.CFrame = CFrame.new(pos + dir * length / 2, pos + dir * length)
 		crack.Transparency = 1
-		TweenService:Create(crack, TweenInfo.new(0.1), {Transparency = 0}):Play()
+		crack.Parent = workspace.Terrain
 		
-		-- Fade out
+		TweenService:Create(crack, TweenInfo.new(0.08), {Transparency = 0}):Play()
+		
 		spawn(function()
-			wait(1)
-			local fadeTween = TweenService:Create(crack, TweenInfo.new(0.5), {Transparency = 1})
-			fadeTween:Play()
-			fadeTween.Completed:Connect(function()
-				crack:Destroy()
-			end)
+			wait(0.8)
+			TweenService:Create(crack, TweenInfo.new(0.5), {Transparency = 1}):Play()
 		end)
+		
+		Debris:AddItem(crack, 1.5)
 	end
 end
 
-function VFX.ScreenFlash(color, duration)
-	color = color or Color3.new(1, 1, 1)
-	duration = duration or 0.2
+function VFX.Flash(color, dur)
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.TintColor = color
+	cc.Brightness = 0.4
+	cc.Parent = Camera
 	
-	local flash = Instance.new("ColorCorrectionEffect")
-	flash.TintColor = color
-	flash.Brightness = 0.5
-	flash.Parent = Camera
-	
-	TweenService:Create(flash, TweenInfo.new(duration), {Brightness = 0}):Play()
-	Debris:AddItem(flash, duration + 0.1)
+	TweenService:Create(cc, TweenInfo.new(dur or 0.15), {Brightness = 0}):Play()
+	Debris:AddItem(cc, (dur or 0.15) + 0.05)
 end
 
-function VFX.CreateAura(character, color1, color2)
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then return end
-	
-	-- Main aura particles
-	local aura1 = VFX.CreateParticleEmitter(rootPart, {
-		Color = color1,
-		Size = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 2),
-			NumberSequenceKeypoint.new(0.5, 3),
-			NumberSequenceKeypoint.new(1, 0),
-		}),
-		Lifetime = NumberRange.new(0.5, 1.5),
-		Rate = 80,
-		Speed = NumberRange.new(3, 8),
-		SpreadAngle = Vector2.new(360, 360),
-		LightEmission = 1,
-	})
-	aura1.Name = "ClownAura1"
-	
-	-- Secondary sparkle particles
-	local aura2 = VFX.CreateParticleEmitter(rootPart, {
-		Color = color2,
-		Size = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.5),
-			NumberSequenceKeypoint.new(1, 0),
-		}),
-		Lifetime = NumberRange.new(0.3, 0.8),
-		Rate = 40,
-		Speed = NumberRange.new(5, 15),
-		SpreadAngle = Vector2.new(180, 180),
-		LightEmission = 1,
-	})
-	aura2.Name = "ClownAura2"
-	
-	-- Point light
-	local light = Instance.new("PointLight")
-	light.Color = color1
-	light.Brightness = 3
-	light.Range = 30
-	light.Name = "ClownAuraLight"
-	light.Parent = rootPart
-	
-	return {aura1, aura2, light}
-end
-
-function VFX.RemoveAura(character)
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then return end
-	
-	for _, child in pairs(rootPart:GetChildren()) do
-		if child.Name:find("ClownAura") then
-			if child:IsA("ParticleEmitter") then
-				child.Enabled = false
-				Debris:AddItem(child, 2)
-			else
-				child:Destroy()
-			end
-		end
-	end
-end
-
-function VFX.TrailEffect(part, color, lifetime)
-	local attachment0 = Instance.new("Attachment")
-	attachment0.Position = Vector3.new(0, 1, 0)
-	attachment0.Parent = part
-	
-	local attachment1 = Instance.new("Attachment")
-	attachment1.Position = Vector3.new(0, -1, 0)
-	attachment1.Parent = part
-	
-	local trail = Instance.new("Trail")
-	trail.Attachment0 = attachment0
-	trail.Attachment1 = attachment1
-	trail.Color = ColorSequence.new(color)
-	trail.Lifetime = lifetime or 0.3
-	trail.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	trail.LightEmission = 0.8
-	trail.MinLength = 0.1
-	trail.Parent = part
-	
-	return trail, attachment0, attachment1
-end
-
-function VFX.CreatePieProjectile(startPos, direction)
-	local pie = Instance.new("Part")
-	pie.Size = Vector3.new(3, 0.5, 3)
-	pie.Shape = Enum.PartType.Cylinder
-	pie.Material = Enum.Material.SmoothPlastic
-	pie.Color = Config.Colors.Pie
-	pie.Anchored = false
-	pie.CanCollide = false
-	pie.CFrame = CFrame.new(startPos, startPos + direction) * CFrame.Angles(0, 0, math.rad(90))
-	pie.Parent = workspace
-	
-	-- Cream top
-	local cream = Instance.new("Part")
-	cream.Size = Vector3.new(2.5, 0.8, 2.5)
-	cream.Shape = Enum.PartType.Ball
-	cream.Material = Enum.Material.SmoothPlastic
-	cream.Color = Color3.new(1, 1, 1)
-	cream.Anchored = false
-	cream.CanCollide = false
-	cream.Parent = workspace
-	
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = pie
-	weld.Part1 = cream
-	weld.Parent = pie
-	cream.CFrame = pie.CFrame * CFrame.new(0, 0.4, 0)
-	
-	-- Velocity
-	local bv = Instance.new("BodyVelocity")
-	bv.Velocity = direction.Unit * 120
-	bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-	bv.Parent = pie
-	
-	-- Spin
-	local spin = Instance.new("BodyAngularVelocity")
-	spin.AngularVelocity = Vector3.new(0, 20, 0)
-	spin.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-	spin.Parent = pie
-	
-	-- Trail
-	VFX.TrailEffect(pie, Config.Colors.Pie, 0.2)
-	
-	Debris:AddItem(pie, 3)
-	Debris:AddItem(cream, 3)
-	
-	return pie
-end
-
-function VFX.CreateBalloonAnimal(startPos, targetDir, color, delay)
+function VFX.Shake(intensity, dur)
 	spawn(function()
-		wait(delay or 0)
-		
-		local balloon = Instance.new("Part")
-		balloon.Size = Vector3.new(2, 2, 4)
-		balloon.Material = Enum.Material.SmoothPlastic
-		balloon.Color = color or Config.Colors.Balloon
-		balloon.Transparency = 0.2
-		balloon.Anchored = false
-		balloon.CanCollide = false
-		balloon.CFrame = CFrame.new(startPos, startPos + targetDir)
-		balloon.Parent = workspace
-		
-		-- Make it look like a balloon animal (rough dog shape using meshes)
-		local mesh = Instance.new("SpecialMesh")
-		mesh.MeshType = Enum.MeshType.Sphere
-		mesh.Scale = Vector3.new(1.5, 1, 2)
-		mesh.Parent = balloon
-		
-		-- Balloon squeak particles
-		VFX.CreateParticleEmitter(balloon, {
-			Color = color or Config.Colors.Balloon,
-			Size = NumberSequence.new({
-				NumberSequenceKeypoint.new(0, 1),
-				NumberSequenceKeypoint.new(1, 0),
-			}),
-			Lifetime = NumberRange.new(0.3, 0.5),
-			Rate = 20,
-			Speed = NumberRange.new(2, 5),
-			LightEmission = 0.8,
-		})
-		
-		-- Velocity
-		local bv = Instance.new("BodyVelocity")
-		bv.Velocity = targetDir.Unit * 80
-		bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-		bv.Parent = balloon
-		
-		-- Trail
-		VFX.TrailEffect(balloon, color or Config.Colors.Balloon, 0.3)
-		
-		-- Collision detection
-		balloon.Touched:Connect(function(hit)
-			local hitChar = hit.Parent
-			if hitChar and hitChar ~= Character and hitChar:FindFirstChild("Humanoid") then
-				-- Pop effect
-				VFX.ImpactSphere(balloon.Position, color or Config.Colors.Balloon, 5, 0.3)
-				VFX.ScreenFlash(color or Config.Colors.Balloon, 0.1)
-				
-				-- Pop sound
-				SFX.Play("BalloonPop", balloon.Position)
-				
-				balloon:Destroy()
-			end
-		end)
-		
-		Debris:AddItem(balloon, 2)
-	end)
-end
-
-function VFX.HonkShockwave(position)
-	-- Multiple expanding rings
-	for i = 1, 5 do
-		spawn(function()
-			wait(i * 0.05)
-			VFX.ImpactRing(position, Config.Colors.HonkWave, 30 + i * 5, 0.8)
-		end)
-	end
-	
-	-- Central sphere
-	VFX.ImpactSphere(position, Config.Colors.Secondary, 15, 0.5)
-	
-	-- Ground crack
-	VFX.GroundCrack(position, Config.Colors.HonkWave, 20)
-	
-	-- Screen effects
-	VFX.ScreenFlash(Config.Colors.HonkWave, 0.15)
-	Util.ShakeCamera(3, 0.5)
-	
-	-- Distortion wave (using atmosphere)
-	spawn(function()
-		local atmosphere = Instance.new("BloomEffect")
-		atmosphere.Intensity = 2
-		atmosphere.Size = 56
-		atmosphere.Threshold = 0.8
-		atmosphere.Parent = Camera
-		
-		TweenService:Create(atmosphere, TweenInfo.new(0.5), {
-			Intensity = 0,
-		}):Play()
-		
-		Debris:AddItem(atmosphere, 0.6)
-	end)
-end
-
-function VFX.JuggleEffect(targetRootPart)
-	-- Stars and sparkles around juggled target
-	local emitter = VFX.CreateParticleEmitter(targetRootPart, {
-		Color = Config.Colors.Secondary,
-		Size = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 1),
-			NumberSequenceKeypoint.new(0.5, 2),
-			NumberSequenceKeypoint.new(1, 0),
-		}),
-		Lifetime = NumberRange.new(0.5, 1),
-		Rate = 100,
-		Speed = NumberRange.new(5, 15),
-		SpreadAngle = Vector2.new(360, 360),
-		LightEmission = 1,
-	})
-	emitter.Name = "JuggleStars"
-	
-	return emitter
-end
-
-function VFX.UltimateTransformSequence()
-	spawn(function()
-		-- Phase 1: Dark screen
-		local darken = Instance.new("ColorCorrectionEffect")
-		darken.Brightness = -0.5
-		darken.Contrast = 0.3
-		darken.Saturation = -1
-		darken.Parent = Camera
-		
-		wait(0.3)
-		
-		-- Phase 2: Lightning-like flashes
-		for i = 1, 5 do
-			VFX.ScreenFlash(Config.Colors.UltAura, 0.05)
-			wait(0.1)
-		end
-		
-		-- Phase 3: Massive aura explosion
-		VFX.ImpactSphere(HumanoidRootPart.Position, Config.Colors.UltAura, 50, 1)
-		VFX.ImpactSphere(HumanoidRootPart.Position, Config.Colors.UltSecondary, 30, 0.8)
-		
-		for i = 1, 8 do
-			VFX.ImpactRing(HumanoidRootPart.Position + Vector3.new(0, i * 2 - 8, 0), 
-				Config.Colors.UltAura, 40, 0.6 + i * 0.05)
-		end
-		
-		-- Phase 4: Restore color but with dramatic lighting
-		TweenService:Create(darken, TweenInfo.new(0.5), {
-			Brightness = 0.1,
-			Saturation = 0.5,
-		}):Play()
-		
-		Util.ShakeCamera(5, 1)
-		
-		-- Ground devastation
-		VFX.GroundCrack(HumanoidRootPart.Position, Config.Colors.UltAura, 30)
-		
-		wait(2)
-		
-		-- Clean up if ult ends
-		if not State.IsAwakened then
-			TweenService:Create(darken, TweenInfo.new(0.5), {
-				Brightness = 0,
-				Saturation = 0,
-				Contrast = 0,
-			}):Play()
-			Debris:AddItem(darken, 0.6)
-		end
-	end)
-end
-
-function VFX.UltFinisherEffect(targetPos)
-	-- Giant mallet VFX
-	Util.ShakeCamera(8, 1.5)
-	VFX.ScreenFlash(Color3.new(1, 1, 1), 0.3)
-	
-	-- Multiple impact rings rising
-	for i = 1, 10 do
-		spawn(function()
-			wait(i * 0.03)
-			VFX.ImpactRing(targetPos + Vector3.new(0, i * 3, 0), Config.Colors.UltAura, 25, 0.5)
-		end)
-	end
-	
-	-- Massive crater effect
-	VFX.ImpactSphere(targetPos, Config.Colors.UltAura, 60, 1.5)
-	VFX.GroundCrack(targetPos, Config.Colors.UltAura, 40)
-	
-	-- Slow motion effect
-	Util.SlowMotion(0.5, 0.3)
-	
-	-- Debris chunks
-	for i = 1, 20 do
-		spawn(function()
-			local chunk = Instance.new("Part")
-			chunk.Size = Vector3.new(
-				math.random() * 3 + 1,
-				math.random() * 3 + 1,
-				math.random() * 3 + 1
+		local s = tick()
+		while tick() - s < (dur or 0.3) do
+			local p = 1 - ((tick() - s) / (dur or 0.3))
+			local offset = Vector3.new(
+				(math.random() - 0.5) * 2 * intensity * p,
+				(math.random() - 0.5) * 2 * intensity * p,
+				(math.random() - 0.5) * 2 * intensity * p
 			)
-			chunk.Material = Enum.Material.Slate
-			chunk.Color = Color3.fromRGB(100, 100, 100)
-			chunk.CFrame = CFrame.new(targetPos + Vector3.new(
-				(math.random() - 0.5) * 10,
-				math.random() * 2,
-				(math.random() - 0.5) * 10
-			))
-			chunk.Parent = workspace
-			
-			local dir = (chunk.Position - targetPos).Unit
-			chunk.Velocity = dir * 80 + Vector3.new(0, math.random(40, 80), 0)
-			chunk.RotVelocity = Vector3.new(
-				math.random(-10, 10),
-				math.random(-10, 10),
-				math.random(-10, 10)
-			)
-			
-			Debris:AddItem(chunk, 3)
-			
+			Camera.CFrame = Camera.CFrame * CFrame.new(offset)
+			RunService.RenderStepped:Wait()
+		end
+	end)
+end
+
+function VFX.SlowMo(dur)
+	spawn(function()
+		local blur = Instance.new("BlurEffect")
+		blur.Size = 8
+		blur.Parent = Camera
+		wait(dur or 0.4)
+		TweenService:Create(blur, TweenInfo.new(0.2), {Size = 0}):Play()
+		Debris:AddItem(blur, 0.3)
+	end)
+end
+
+function VFX.Afterimage(character, color, count)
+	spawn(function()
+		for i = 1, (count or 3) do
+			for _, part in pairs(character:GetChildren()) do
+				if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+					local clone = Instance.new("Part")
+					clone.Size = part.Size
+					clone.CFrame = part.CFrame
+					clone.Anchored = true
+					clone.CanCollide = false
+					clone.Material = Enum.Material.Neon
+					clone.Color = color
+					clone.Transparency = 0.5
+					clone.Parent = workspace.Terrain
+					
+					TweenService:Create(clone, TweenInfo.new(0.3), {
+						Transparency = 1,
+						Size = part.Size * 1.2,
+					}):Play()
+					
+					Debris:AddItem(clone, 0.35)
+				end
+			end
+			wait(0.04)
+		end
+	end)
+end
+
+function VFX.BeamLine(startPos, endPos, color, dur)
+	local dist = (endPos - startPos).Magnitude
+	local mid = (startPos + endPos) / 2
+	
+	local beam = Instance.new("Part")
+	beam.Anchored = true
+	beam.CanCollide = false
+	beam.Material = Enum.Material.Neon
+	beam.Color = color
+	beam.Size = Vector3.new(0.3, 0.3, dist)
+	beam.CFrame = CFrame.new(mid, endPos)
+	beam.Transparency = 0.2
+	beam.Parent = workspace.Terrain
+	
+	TweenService:Create(beam, TweenInfo.new(dur or 0.3), {
+		Transparency = 1,
+		Size = Vector3.new(0.05, 0.05, dist),
+	}):Play()
+	
+	Debris:AddItem(beam, (dur or 0.3) + 0.05)
+end
+
+function VFX.Debris(pos, count, color)
+	for i = 1, (count or 8) do
+		local chunk = Instance.new("Part")
+		chunk.Size = Vector3.new(
+			math.random() * 2 + 0.5,
+			math.random() * 2 + 0.5,
+			math.random() * 2 + 0.5
+		)
+		chunk.Material = Enum.Material.Slate
+		chunk.Color = color or Color3.fromRGB(80, 80, 80)
+		chunk.CFrame = CFrame.new(pos) * CFrame.Angles(math.random() * math.pi, math.random() * math.pi, 0)
+		chunk.Parent = workspace.Terrain
+		
+		chunk.Velocity = Vector3.new(
+			(math.random() - 0.5) * 80,
+			math.random(30, 70),
+			(math.random() - 0.5) * 80
+		)
+		chunk.RotVelocity = Vector3.new(math.random(-10, 10), math.random(-10, 10), math.random(-10, 10))
+		
+		Debris:AddItem(chunk, 3)
+		spawn(function()
 			wait(2)
 			if chunk.Parent then
 				TweenService:Create(chunk, TweenInfo.new(1), {Transparency = 1}):Play()
@@ -802,1335 +1176,1589 @@ function VFX.UltFinisherEffect(targetPos)
 	end
 end
 
--- ═══════════════════════════════════════════════════════════
--- SFX ENGINE  
--- ═══════════════════════════════════════════════════════════
-local SFX = {}
-
--- Sound IDs (replace with actual Roblox sound IDs)
-SFX.Sounds = {
-	Slap1 = "rbxassetid://5765826824",
-	Slap2 = "rbxassetid://5765826824",
-	HeavyHit = "rbxassetid://5765826824",
-	Honk = "rbxassetid://257001402",         -- Clown honk
-	HonkBig = "rbxassetid://257001402",
-	PieSplat = "rbxassetid://3362285462",
-	BalloonSqueak = "rbxassetid://292838651",
-	BalloonPop = "rbxassetid://3716104522",
-	DrumRoll = "rbxassetid://748668901",
-	Cymbal = "rbxassetid://748668901",
-	CircusMusic = "rbxassetid://1846248794",
-	Laugh = "rbxassetid://2919713060",
-	EvilLaugh = "rbxassetid://2919713060",
-	Transform = "rbxassetid://1837286840",
-	UltCharge = "rbxassetid://1837286840",
-	BigImpact = "rbxassetid://5765826824",
-	Whoosh = "rbxassetid://3360156657",
-	GrabSound = "rbxassetid://5765826824",
-	TossUp = "rbxassetid://3360156657",
-	MalletSlam = "rbxassetid://5765826824",
-}
-
-function SFX.Play(soundName, position, volume, pitch)
-	volume = volume or 1
-	pitch = pitch or 1
+function VFX.Aura(rootPart, color1, color2)
+	-- Orbiting neon orbs as aura
+	local auraFolder = Instance.new("Folder")
+	auraFolder.Name = "ClownAura"
+	auraFolder.Parent = rootPart
 	
-	local soundId = SFX.Sounds[soundName]
-	if not soundId then return end
-	
-	local sound = Instance.new("Sound")
-	sound.SoundId = soundId
-	sound.Volume = volume
-	sound.PlaybackSpeed = pitch
-	sound.RollOffMaxDistance = 100
-	
-	if position then
-		local part = Instance.new("Part")
-		part.Anchored = true
-		part.CanCollide = false
-		part.Transparency = 1
-		part.Size = Vector3.new(1, 1, 1)
-		part.Position = position
-		part.Parent = workspace
-		sound.Parent = part
-		Debris:AddItem(part, sound.TimeLength + 1)
-	else
-		sound.Parent = HumanoidRootPart
+	for i = 1, 6 do
+		local orb = Instance.new("Part")
+		orb.Size = Vector3.new(0.8, 0.8, 0.8)
+		orb.Shape = Enum.PartType.Ball
+		orb.Material = Enum.Material.Neon
+		orb.Color = i % 2 == 0 and color1 or color2
+		orb.Anchored = true
+		orb.CanCollide = false
+		orb.Transparency = 0.3
+		orb.Parent = auraFolder
+		
+		local light = Instance.new("PointLight")
+		light.Color = orb.Color
+		light.Brightness = 2
+		light.Range = 8
+		light.Parent = orb
 	end
 	
-	sound:Play()
-	Debris:AddItem(sound, sound.TimeLength + 1)
-	return sound
+	-- Aura glow on character
+	local mainLight = Instance.new("PointLight")
+	mainLight.Name = "ClownMainGlow"
+	mainLight.Color = color1
+	mainLight.Brightness = 3
+	mainLight.Range = 25
+	mainLight.Parent = rootPart
+	
+	return auraFolder
+end
+
+function VFX.UpdateAura(auraFolder, rootPart, t)
+	if not auraFolder or not auraFolder.Parent then return end
+	
+	local orbs = auraFolder:GetChildren()
+	for i, orb in ipairs(orbs) do
+		if orb:IsA("BasePart") then
+			local angle = (i / #orbs) * math.pi * 2 + t * 3
+			local height = math.sin(t * 4 + i) * 1.5
+			local radius = 3 + math.sin(t * 2 + i * 0.5) * 0.5
+			
+			orb.CFrame = CFrame.new(
+				rootPart.Position + Vector3.new(
+					math.cos(angle) * radius,
+					height,
+					math.sin(angle) * radius
+				)
+			)
+			
+			orb.Size = Vector3.new(
+				0.6 + math.sin(t * 5 + i) * 0.2,
+				0.6 + math.sin(t * 5 + i) * 0.2,
+				0.6 + math.sin(t * 5 + i) * 0.2
+			)
+		end
+	end
+end
+
+function VFX.RemoveAura(rootPart)
+	local aura = rootPart:FindFirstChild("ClownAura")
+	if aura then aura:Destroy() end
+	local glow = rootPart:FindFirstChild("ClownMainGlow")
+	if glow then glow:Destroy() end
 end
 
 -- ═══════════════════════════════════════════════════════════
--- COMBAT SYSTEM
+-- SFX
 -- ═══════════════════════════════════════════════════════════
-local Combat = {}
+local SFX = {}
 
--- M1 COMBO SYSTEM (5-hit Slapstick Combo)
-function Combat.M1Attack()
-	if not Util.CanAct() then return end
+function SFX.Play(id, parent, vol, pitch)
+	local s = Instance.new("Sound")
+	s.SoundId = id
+	s.Volume = vol or 1
+	s.PlaybackSpeed = pitch or 1
+	s.Parent = parent or HumanoidRootPart
+	s:Play()
+	Debris:AddItem(s, s.TimeLength / s.PlaybackSpeed + 0.5)
+	return s
+end
+
+-- Sound library
+SFX.Lib = {
+	Hit1 = "rbxassetid://5765826824",
+	Hit2 = "rbxassetid://3932505367",
+	HeavyHit = "rbxassetid://6579575873",
+	Whoosh = "rbxassetid://6579546553",
+	Honk = "rbxassetid://257001402",
+	Pop = "rbxassetid://3716104522",
+	Splat = "rbxassetid://3362285462",
+	Squeak = "rbxassetid://292838651",
+	Boom = "rbxassetid://6579575873",
+	Charge = "rbxassetid://1837286840",
+	Laugh = "rbxassetid://2919713060",
+}
+
+-- ═══════════════════════════════════════════════════════════
+-- HITBOX UTILITY
+-- ═══════════════════════════════════════════════════════════
+local function GetTarget(range)
+	range = range or 8
+	local closest, closestDist = nil, range
+	for _, p in pairs(Players:GetPlayers()) do
+		if p ~= Player and p.Character then
+			local root = p.Character:FindFirstChild("HumanoidRootPart")
+			local hum = p.Character:FindFirstChild("Humanoid")
+			if root and hum and hum.Health > 0 then
+				local d = (HumanoidRootPart.Position - root.Position).Magnitude
+				if d < closestDist then
+					closest = p.Character
+					closestDist = d
+				end
+			end
+		end
+	end
+	return closest, closestDist
+end
+
+local function GetTargetsInRadius(pos, radius)
+	local targets = {}
+	for _, p in pairs(Players:GetPlayers()) do
+		if p ~= Player and p.Character then
+			local root = p.Character:FindFirstChild("HumanoidRootPart")
+			local hum = p.Character:FindFirstChild("Humanoid")
+			if root and hum and hum.Health > 0 then
+				if (pos - root.Position).Magnitude <= radius then
+					table.insert(targets, p.Character)
+				end
+			end
+		end
+	end
+	return targets
+end
+
+local function FaceTarget(targetRoot)
+	if targetRoot and HumanoidRootPart then
+		local dir = (targetRoot.Position - HumanoidRootPart.Position) * Vector3.new(1, 0, 1)
+		if dir.Magnitude > 0.1 then
+			HumanoidRootPart.CFrame = CFrame.new(HumanoidRootPart.Position, HumanoidRootPart.Position + dir)
+		end
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- TOOL CREATION SYSTEM
+-- ═══════════════════════════════════════════════════════════
+local Tools = {}
+
+local function CreateToolBase(name, color, emoji)
+	local tool = Instance.new("Tool")
+	tool.Name = name
+	tool.CanBeDropped = false
+	tool.RequiresHandle = true
+	
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(0.1, 0.1, 0.1)
+	handle.Transparency = 1
+	handle.CanCollide = false
+	handle.Massless = true
+	handle.Parent = tool
+	
+	-- Visual indicator on the handle (small glowing orb)
+	local visual = Instance.new("Part")
+	visual.Name = "Visual"
+	visual.Size = Vector3.new(0.4, 0.4, 0.4)
+	visual.Shape = Enum.PartType.Ball
+	visual.Material = Enum.Material.Neon
+	visual.Color = color
+	visual.Transparency = 0.5
+	visual.CanCollide = false
+	visual.Massless = true
+	visual.Parent = handle
+	
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = handle
+	weld.Part1 = visual
+	weld.Parent = visual
+	visual.CFrame = handle.CFrame
+	
+	return tool
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- ABILITY FUNCTIONS
+-- ═══════════════════════════════════════════════════════════
+
+-- ██ M1 COMBO ██
+function Tools.M1Attack()
+	if State.Attacking or State.UsingSkill then return end
 	
 	local now = tick()
-	
-	-- Reset combo if window expired
-	if now - State.M1LastTime > State.M1ComboWindow then
+	if now - State.M1LastTime > State.M1Window then
 		State.M1Count = 0
 	end
 	
 	State.M1Count = State.M1Count + 1
 	if State.M1Count > 5 then State.M1Count = 1 end
 	State.M1LastTime = now
-	State.IsAttacking = true
+	State.Attacking = true
 	
-	local comboIndex = State.M1Count
-	local damage = Config.Damage.M1[comboIndex]
+	local target, dist = GetTarget(10)
 	
-	-- Play animation based on combo count
-	local animName = "M1_" .. comboIndex
-	local track = Util.PlayAnimation(animName, Enum.AnimationPriority.Action, 1.2)
+	if target then
+		FaceTarget(target:FindFirstChild("HumanoidRootPart"))
+	end
 	
-	-- Hit detection
-	local enemy, dist = Util.GetNearestEnemy(8)
+	local hitTarget = target and dist and dist <= 10
 	
-	-- Timing for each hit
-	local hitDelays = {0.1, 0.1, 0.15, 0.15, 0.2}
-	local hitDelay = hitDelays[comboIndex] or 0.1
+	local combo = State.M1Count
 	
-	spawn(function()
-		wait(hitDelay)
-		
-		if enemy then
-			local enemyRoot = enemy:FindFirstChild("HumanoidRootPart")
-			local enemyHum = enemy:FindFirstChild("Humanoid")
+	-- Play CFrame animation based on combo
+	if combo == 1 then
+		Anim.M1_Hit1()
+	elseif combo == 2 then
+		Anim.M1_Hit2()
+	elseif combo == 3 then
+		Anim.M1_Hit3()
+	elseif combo == 4 then
+		Anim.M1_Hit4()
+	elseif combo == 5 then
+		Anim.M1_Hit5()
+	end
+	
+	-- Hit VFX
+	if hitTarget then
+		local tRoot = target:FindFirstChild("HumanoidRootPart")
+		if tRoot then
+			local hitPos = tRoot.Position + (HumanoidRootPart.Position - tRoot.Position).Unit * 1.5
 			
-			if enemyRoot and enemyHum then
-				-- VFX per hit
-				if comboIndex <= 2 then
-					-- Light slaps
-					VFX.ImpactSphere(enemyRoot.Position, Config.Colors.Primary, 3, 0.2)
-					SFX.Play("Slap1", enemyRoot.Position, 0.8, 0.9 + math.random() * 0.2)
-					Util.ShakeCamera(0.3, 0.1)
-					
-				elseif comboIndex == 3 then
-					-- Overhead bonk
-					VFX.ImpactSphere(enemyRoot.Position, Config.Colors.Secondary, 5, 0.3)
-					VFX.ImpactRing(enemyRoot.Position, Config.Colors.Secondary, 8, 0.3)
-					SFX.Play("HeavyHit", enemyRoot.Position, 1, 0.8)
-					SFX.Play("Honk", enemyRoot.Position, 0.5, 1.5)
-					Util.ShakeCamera(0.8, 0.15)
-					
-				elseif comboIndex == 4 then
-					-- Spinning elbow
-					VFX.ImpactSphere(enemyRoot.Position, Config.Colors.Tertiary, 6, 0.3)
-					VFX.ImpactRing(enemyRoot.Position, Config.Colors.Tertiary, 10, 0.3)
-					SFX.Play("HeavyHit", enemyRoot.Position, 1.2, 0.7)
-					Util.ShakeCamera(1.2, 0.2)
-					
-				elseif comboIndex == 5 then
-					-- BIG UPPERCUT (launcher)
-					VFX.ImpactSphere(enemyRoot.Position, Config.Colors.Primary, 10, 0.5)
-					VFX.ImpactRing(enemyRoot.Position, Config.Colors.Primary, 15, 0.4)
-					VFX.ImpactRing(enemyRoot.Position + Vector3.new(0, 2, 0), Config.Colors.Secondary, 12, 0.35)
-					SFX.Play("HeavyHit", enemyRoot.Position, 1.5, 0.5)
-					SFX.Play("Honk", enemyRoot.Position, 1, 0.8)
-					Util.ShakeCamera(2, 0.3)
-					VFX.ScreenFlash(Config.Colors.Primary, 0.1)
-					
-					-- Knockback on final hit
-					-- Note: actual knockback would need server-side handling
-				end
-				
-				Util.AddUltMeter(Config.UltMeterGainPerHit)
+			if combo <= 2 then
+				VFX.Sphere(hitPos, COLORS.Red, 3, 0.2)
+				SFX.Play(SFX.Lib.Hit1, tRoot, 0.8, 0.9 + math.random() * 0.2)
+				VFX.Shake(0.3, 0.08)
+			elseif combo == 3 then
+				VFX.Sphere(hitPos, COLORS.Gold, 5, 0.3)
+				VFX.Ring(hitPos, COLORS.Gold, 8, 0.25)
+				SFX.Play(SFX.Lib.HeavyHit, tRoot, 1, 0.8)
+				SFX.Play(SFX.Lib.Honk, tRoot, 0.4, 1.5)
+				VFX.Shake(0.8, 0.12)
+			elseif combo == 4 then
+				VFX.Sphere(hitPos, COLORS.Purple, 6, 0.3)
+				VFX.Ring(hitPos, COLORS.Purple, 10, 0.3)
+				VFX.BeamLine(HumanoidRootPart.Position, tRoot.Position, COLORS.Purple, 0.2)
+				SFX.Play(SFX.Lib.HeavyHit, tRoot, 1.2, 0.7)
+				VFX.Shake(1.2, 0.15)
+			elseif combo == 5 then
+				-- BIG FINISHER
+				VFX.Sphere(hitPos, COLORS.Red, 12, 0.5)
+				VFX.Ring(hitPos, COLORS.Red, 18, 0.4)
+				VFX.Ring(hitPos + Vector3.new(0, 2, 0), COLORS.Gold, 14, 0.35)
+				VFX.Crack(hitPos, COLORS.Red, 10)
+				VFX.Flash(COLORS.Red, 0.1)
+				SFX.Play(SFX.Lib.HeavyHit, tRoot, 1.5, 0.5)
+				SFX.Play(SFX.Lib.Honk, tRoot, 0.8, 0.6)
+				SFX.Play(SFX.Lib.Boom, tRoot, 1, 0.7)
+				VFX.Shake(2.5, 0.3)
+				VFX.Afterimage(Character, COLORS.Red, 2)
 			end
+			
+			State.UltMeter = math.min(State.UltMeter + 4, State.UltMax)
 		end
-		
-		-- Recovery time per hit
-		local recoveryTimes = {0.25, 0.25, 0.3, 0.3, 0.5}
-		wait(recoveryTimes[comboIndex] or 0.3)
-		State.IsAttacking = false
-	end)
+	else
+		-- Whiff
+		SFX.Play(SFX.Lib.Whoosh, nil, 0.4, 1 + math.random() * 0.3)
+	end
+	
+	-- Recovery
+	local recoveries = {0.3, 0.3, 0.35, 0.35, 0.5}
+	wait(recoveries[combo] or 0.3)
+	
+	Anim.ResetPose(0.15)
+	State.Attacking = false
+	State.Animating = false
+	Anim.StartClownIdle()
 end
 
--- ═══════════════════════════════════════════════════════════
--- SKILL 1: PIE TO THE FACE [E]
--- ═══════════════════════════════════════════════════════════
-function Combat.Skill1_PieToTheFace()
-	if not Util.CanAct() then return end
-	if Util.IsOnCooldown("Skill1") then return end
+-- ██ SKILL 1: PIE TO THE FACE [E] ██
+function Tools.Skill1_Pie()
+	if State.UsingSkill or State.Attacking then return end
+	if State.Cooldowns.Skill1 > tick() then return end
 	
-	State.IsUsingSkill = true
-	Util.SetCooldown("Skill1")
+	State.UsingSkill = true
+	State.Cooldowns.Skill1 = tick() + State.CooldownDurations.Skill1
 	
-	-- Windup animation - pull pie from behind back
-	Util.PlayAnimation("Skill1_Windup", Enum.AnimationPriority.Action, 1)
-	SFX.Play("Whoosh", nil, 0.5)
+	-- Windup
+	Anim.PieWindup()
+	SFX.Play(SFX.Lib.Whoosh, nil, 0.5, 0.8)
+	wait(0.18)
 	
-	-- Small anticipation particles
-	spawn(function()
-		local hand = Character:FindFirstChild("RightHand") or Character:FindFirstChild("Right Arm")
-		if hand then
-			local sparkle = VFX.CreateParticleEmitter(hand, {
-				Color = Config.Colors.Pie,
-				Size = NumberSequence.new(0.5),
-				Rate = 30,
-				Speed = NumberRange.new(1, 3),
-				Lifetime = NumberRange.new(0.2, 0.4),
-				LightEmission = 0.8,
-			})
-			wait(0.3)
-			sparkle:Destroy()
-		end
-	end)
-	
-	wait(0.3)
-	
-	-- Throw animation
-	Util.PlayAnimation("Skill1_Throw", Enum.AnimationPriority.Action, 1.3)
+	-- Throw
+	Anim.PieThrow()
+	SFX.Play(SFX.Lib.Whoosh, nil, 1, 1.2)
 	
 	-- Create pie projectile
 	local startPos = HumanoidRootPart.Position + HumanoidRootPart.CFrame.LookVector * 3 + Vector3.new(0, 2, 0)
-	local direction = HumanoidRootPart.CFrame.LookVector
+	local dir = HumanoidRootPart.CFrame.LookVector
 	
-	local pie = VFX.CreatePieProjectile(startPos, direction)
-	SFX.Play("Whoosh", startPos, 1, 1.2)
+	-- Pie part
+	local pie = Instance.new("Part")
+	pie.Size = Vector3.new(2.5, 0.5, 2.5)
+	pie.Shape = Enum.PartType.Cylinder
+	pie.Material = Enum.Material.SmoothPlastic
+	pie.Color = COLORS.Cream
+	pie.Anchored = false
+	pie.CanCollide = false
+	pie.CFrame = CFrame.new(startPos, startPos + dir) * CFrame.Angles(0, 0, math.rad(90))
+	pie.Parent = workspace.Terrain
 	
-	-- Pie collision
-	pie.Touched:Connect(function(hit)
-		local hitChar = hit.Parent
+	-- Cream on top
+	local cream = Instance.new("Part")
+	cream.Size = Vector3.new(2, 1, 2)
+	cream.Shape = Enum.PartType.Ball
+	cream.Material = Enum.Material.SmoothPlastic
+	cream.Color = COLORS.White
+	cream.CanCollide = false
+	cream.Massless = true
+	cream.Parent = workspace.Terrain
+	
+	local creamWeld = Instance.new("WeldConstraint")
+	creamWeld.Part0 = pie
+	creamWeld.Part1 = cream
+	creamWeld.Parent = cream
+	cream.CFrame = pie.CFrame * CFrame.new(0, 0.5, 0)
+	
+	-- Velocity
+	local bv = Instance.new("BodyVelocity")
+	bv.Velocity = dir * 110
+	bv.MaxForce = Vector3.new(1e8, 1e8, 1e8)
+	bv.Parent = pie
+	
+	-- Spin
+	local spin = Instance.new("BodyAngularVelocity")
+	spin.AngularVelocity = Vector3.new(0, 25, 0)
+	spin.MaxTorque = Vector3.new(1e8, 1e8, 1e8)
+	spin.Parent = pie
+	
+	Debris:AddItem(pie, 2.5)
+	Debris:AddItem(cream, 2.5)
+	
+	-- Pie hit detection
+	local hit = false
+	pie.Touched:Connect(function(part)
+		if hit then return end
+		local hitChar = part.Parent
 		if hitChar and hitChar ~= Character and hitChar:FindFirstChild("Humanoid") then
-			-- SPLAT!
+			hit = true
 			local hitPos = pie.Position
 			
-			-- Cream explosion VFX
-			VFX.ImpactSphere(hitPos, Config.Colors.Pie, 8, 0.5)
-			VFX.ImpactSphere(hitPos, Color3.new(1, 1, 1), 6, 0.4)
+			-- SPLAT!!!
+			VFX.Sphere(hitPos, COLORS.Cream, 8, 0.5)
+			VFX.Sphere(hitPos, COLORS.White, 6, 0.4)
+			VFX.Ring(hitPos, COLORS.Gold, 10, 0.4)
 			
-			-- Cream splatter particles
-			for i = 1, 15 do
+			-- Cream splatter
+			for j = 1, 12 do
+				local splat = Instance.new("Part")
+				splat.Size = Vector3.new(math.random() * 1 + 0.3, math.random() * 1 + 0.3, math.random() * 1 + 0.3)
+				splat.Shape = Enum.PartType.Ball
+				splat.Material = Enum.Material.SmoothPlastic
+				splat.Color = j % 2 == 0 and COLORS.White or COLORS.Cream
+				splat.CFrame = CFrame.new(hitPos)
+				splat.CanCollide = true
+				splat.Parent = workspace.Terrain
+				splat.Velocity = Vector3.new(
+					(math.random() - 0.5) * 60,
+					math.random(10, 40),
+					(math.random() - 0.5) * 60
+				)
+				Debris:AddItem(splat, 2)
 				spawn(function()
-					local splat = Instance.new("Part")
-					splat.Size = Vector3.new(
-						math.random() * 1.5 + 0.5,
-						math.random() * 1.5 + 0.5,
-						math.random() * 1.5 + 0.5
-					)
-					splat.Shape = Enum.PartType.Ball
-					splat.Material = Enum.Material.SmoothPlastic
-					splat.Color = Color3.new(1, 1, 0.9)
-					splat.CFrame = CFrame.new(hitPos)
-					splat.Parent = workspace
-					
-					local dir = Vector3.new(
-						(math.random() - 0.5) * 2,
-						math.random() * 0.5 + 0.3,
-						(math.random() - 0.5) * 2
-					).Unit
-					splat.Velocity = dir * math.random(20, 50)
-					
-					Debris:AddItem(splat, 2)
-					wait(1)
+					wait(1.5)
 					if splat.Parent then
-						TweenService:Create(splat, TweenInfo.new(1), {Transparency = 1}):Play()
+						TweenService:Create(splat, TweenInfo.new(0.5), {Transparency = 1}):Play()
 					end
 				end)
 			end
 			
-			SFX.Play("PieSplat", hitPos, 1.5, 0.8 + math.random() * 0.4)
-			SFX.Play("Honk", hitPos, 0.8, 1.5)
-			Util.ShakeCamera(2, 0.3)
-			VFX.ScreenFlash(Config.Colors.Pie, 0.1)
+			SFX.Play(SFX.Lib.Splat, nil, 1.5, 0.8 + math.random() * 0.4)
+			SFX.Play(SFX.Lib.Honk, nil, 0.6, 1.3)
+			VFX.Shake(2, 0.3)
+			VFX.Flash(COLORS.Cream, 0.1)
 			
-			Util.AddUltMeter(Config.UltMeterGainPerSkill)
+			State.UltMeter = math.min(State.UltMeter + 8, State.UltMax)
 			
 			pie:Destroy()
+			cream:Destroy()
 		end
 	end)
 	
-	wait(0.4)
-	State.IsUsingSkill = false
+	wait(0.3)
+	Anim.ResetPose(0.2)
+	State.UsingSkill = false
+	State.Animating = false
+	Anim.StartClownIdle()
 end
 
--- ═══════════════════════════════════════════════════════════
--- SKILL 2: BALLOON ANIMAL BARRAGE [R]
--- ═══════════════════════════════════════════════════════════
-function Combat.Skill2_BalloonAnimalBarrage()
-	if not Util.CanAct() then return end
-	if Util.IsOnCooldown("Skill2") then return end
+-- ██ SKILL 2: BALLOON ANIMAL BARRAGE [R] ██
+function Tools.Skill2_Balloons()
+	if State.UsingSkill or State.Attacking then return end
+	if State.Cooldowns.Skill2 > tick() then return end
 	
-	State.IsUsingSkill = true
-	Util.SetCooldown("Skill2")
+	State.UsingSkill = true
+	State.Cooldowns.Skill2 = tick() + State.CooldownDurations.Skill2
 	
-	-- Summon animation - twisting balloon
-	Util.PlayAnimation("Skill2_Summon", Enum.AnimationPriority.Action, 1)
+	-- Twist animation
+	Anim.BalloonTwist()
+	SFX.Play(SFX.Lib.Squeak, nil, 0.6, 1)
+	SFX.Play(SFX.Lib.Squeak, nil, 0.4, 1.3)
+	wait(0.3)
+	SFX.Play(SFX.Lib.Squeak, nil, 0.5, 0.8)
+	wait(0.15)
 	
-	-- Balloon squeak sounds during windup
-	for i = 1, 3 do
+	-- Launch
+	Anim.BalloonLaunch()
+	SFX.Play(SFX.Lib.Whoosh, nil, 1, 0.8)
+	
+	local baseDir = HumanoidRootPart.CFrame.LookVector
+	local startPos = HumanoidRootPart.Position + baseDir * 2 + Vector3.new(0, 3, 0)
+	
+	local balloonColors = {
+		COLORS.Pink, COLORS.Cyan, COLORS.Gold,
+		COLORS.Green, COLORS.Orange, COLORS.Purple,
+	}
+	
+	for i = 1, 6 do
 		spawn(function()
-			wait(i * 0.1)
-			SFX.Play("BalloonSqueak", nil, 0.6, 0.8 + i * 0.2)
+			wait((i - 1) * 0.07)
+			
+			local spread = ((i - 3.5) / 6) * math.rad(35)
+			local dir = (CFrame.Angles(0, spread, 0) * CFrame.new(0, 0, -1)).Position
+			dir = (CFrame.new(Vector3.new(), baseDir) * CFrame.new(dir)).Position.Unit
+			
+			local balloon = Instance.new("Part")
+			balloon.Size = Vector3.new(1.5, 1.5, 3)
+			balloon.Material = Enum.Material.SmoothPlastic
+			balloon.Color = balloonColors[i]
+			balloon.Transparency = 0.15
+			balloon.CanCollide = false
+			balloon.Anchored = false
+			balloon.CFrame = CFrame.new(startPos + Vector3.new((math.random() - 0.5) * 2, (math.random() - 0.5), 0), startPos + dir * 10)
+			balloon.Parent = workspace.Terrain
+			
+			local mesh = Instance.new("SpecialMesh")
+			mesh.MeshType = Enum.MeshType.Sphere
+			mesh.Scale = Vector3.new(1, 0.8, 1.8)
+			mesh.Parent = balloon
+			
+			-- Glow
+			local glow = Instance.new("PointLight")
+			glow.Color = balloonColors[i]
+			glow.Brightness = 2
+			glow.Range = 6
+			glow.Parent = balloon
+			
+			-- Velocity
+			local bv = Instance.new("BodyVelocity")
+			bv.Velocity = dir * 85
+			bv.MaxForce = Vector3.new(1e8, 1e8, 1e8)
+			bv.Parent = balloon
+			
+			Debris:AddItem(balloon, 2)
+			
+			local popped = false
+			balloon.Touched:Connect(function(part)
+				if popped then return end
+				local hitChar = part.Parent
+				if hitChar and hitChar ~= Character and hitChar:FindFirstChild("Humanoid") then
+					popped = true
+					
+					VFX.Sphere(balloon.Position, balloonColors[i], 5, 0.25)
+					VFX.Ring(balloon.Position, balloonColors[i], 7, 0.2)
+					SFX.Play(SFX.Lib.Pop, balloon, 1, 0.8 + math.random() * 0.4)
+					VFX.Shake(0.4, 0.06)
+					
+					balloon:Destroy()
+				end
+			end)
 		end)
 	end
 	
-	wait(0.4)
+	State.UltMeter = math.min(State.UltMeter + 8, State.UltMax)
 	
-	-- Launch animation
-	Util.PlayAnimation("Skill2_Launch", Enum.AnimationPriority.Action, 1.2)
-	SFX.Play("Whoosh", nil, 1, 0.8)
-	
-	-- Fire 6 balloon animals in a spread pattern
-	local balloonColors = {
-		Color3.fromRGB(255, 105, 180), -- Pink
-		Color3.fromRGB(0, 255, 255),   -- Cyan
-		Color3.fromRGB(255, 255, 0),   -- Yellow
-		Color3.fromRGB(0, 255, 0),     -- Green
-		Color3.fromRGB(255, 165, 0),   -- Orange
-		Color3.fromRGB(138, 43, 226),  -- Purple
-	}
-	
-	local baseDir = HumanoidRootPart.CFrame.LookVector
-	local startPos = HumanoidRootPart.Position + baseDir * 3 + Vector3.new(0, 3, 0)
-	
-	for i = 1, 6 do
-		local angle = ((i - 3.5) / 6) * math.rad(40) -- Spread angle
-		local dir = CFrame.Angles(0, angle, 0):VectorToWorldSpace(baseDir)
-		
-		-- Stagger the launches slightly
-		VFX.CreateBalloonAnimal(
-			startPos + Vector3.new((math.random() - 0.5) * 2, (math.random() - 0.5) * 2, 0),
-			dir,
-			balloonColors[i],
-			(i - 1) * 0.08
-		)
-	end
-	
-	Util.AddUltMeter(Config.UltMeterGainPerSkill)
-	
-	wait(0.6)
-	State.IsUsingSkill = false
+	wait(0.5)
+	Anim.ResetPose(0.2)
+	State.UsingSkill = false
+	State.Animating = false
+	Anim.StartClownIdle()
 end
 
--- ═══════════════════════════════════════════════════════════
--- SKILL 3: HONK SHOCKWAVE [T]
--- ═══════════════════════════════════════════════════════════
-function Combat.Skill3_HonkShockwave()
-	if not Util.CanAct() then return end
-	if Util.IsOnCooldown("Skill3") then return end
+-- ██ SKILL 3: HONK SHOCKWAVE [T] ██
+function Tools.Skill3_Honk()
+	if State.UsingSkill or State.Attacking then return end
+	if State.Cooldowns.Skill3 > tick() then return end
 	
-	State.IsUsingSkill = true
-	Util.SetCooldown("Skill3")
+	State.UsingSkill = true
+	State.Cooldowns.Skill3 = tick() + State.CooldownDurations.Skill3
 	
-	-- Inhale animation - puff up cheeks
-	Util.PlayAnimation("Skill3_Inhale", Enum.AnimationPriority.Action, 0.8)
+	-- Inhale charge
+	Anim.HonkInhale()
+	SFX.Play(SFX.Lib.Charge, nil, 0.8, 1.5)
 	
-	-- Charging effect - particles pulling inward
-	local chargeEmitter = VFX.CreateParticleEmitter(HumanoidRootPart, {
-		Color = Config.Colors.HonkWave,
-		Size = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 2),
-			NumberSequenceKeypoint.new(1, 0),
-		}),
-		Lifetime = NumberRange.new(0.3, 0.6),
-		Rate = 100,
-		Speed = NumberRange.new(-20, -10), -- Pull inward
-		SpreadAngle = Vector2.new(360, 360),
-		LightEmission = 1,
-	})
-	
-	-- Growing energy sphere
+	-- Charge sphere growing
 	local chargeSphere = Instance.new("Part")
 	chargeSphere.Anchored = true
 	chargeSphere.CanCollide = false
 	chargeSphere.Transparency = 0.5
 	chargeSphere.Material = Enum.Material.ForceField
-	chargeSphere.Color = Config.Colors.HonkWave
+	chargeSphere.Color = COLORS.Orange
 	chargeSphere.Shape = Enum.PartType.Ball
 	chargeSphere.Size = Vector3.new(1, 1, 1)
 	chargeSphere.CFrame = CFrame.new(HumanoidRootPart.Position)
-	chargeSphere.Parent = workspace
+	chargeSphere.Parent = workspace.Terrain
 	
-	-- Grow charge sphere
-	local chargeTween = TweenService:Create(chargeSphere, TweenInfo.new(0.6), {
-		Size = Vector3.new(8, 8, 8),
+	TweenService:Create(chargeSphere, TweenInfo.new(0.5), {
+		Size = Vector3.new(6, 6, 6),
 		Transparency = 0.3,
-	})
-	chargeTween:Play()
+	}):Play()
 	
-	-- Drum roll during charge
-	SFX.Play("DrumRoll", nil, 0.8)
-	
-	-- Small camera shake during charge
+	-- Charge shake
 	spawn(function()
-		for i = 1, 6 do
-			Util.ShakeCamera(0.3 + i * 0.1, 0.08)
+		for j = 1, 5 do
+			VFX.Shake(0.2 + j * 0.1, 0.06)
 			wait(0.1)
 		end
 	end)
 	
-	wait(0.7)
+	wait(0.6)
 	
-	-- HONK!!! - Release
-	Util.PlayAnimation("Skill3_Honk", Enum.AnimationPriority.Action, 1.5)
-	
-	chargeEmitter:Destroy()
+	-- RELEASE THE HONK
+	Anim.HonkRelease()
 	chargeSphere:Destroy()
 	
-	-- Play the HONK
-	SFX.Play("HonkBig", HumanoidRootPart.Position, 2, 0.6)
-	SFX.Play("BigImpact", HumanoidRootPart.Position, 1.5, 0.5)
-	SFX.Play("Cymbal", HumanoidRootPart.Position, 1, 1)
+	-- THE HONK
+	SFX.Play(SFX.Lib.Honk, nil, 2.5, 0.4)
+	SFX.Play(SFX.Lib.Boom, nil, 2, 0.5)
 	
-	-- MASSIVE shockwave VFX
-	VFX.HonkShockwave(HumanoidRootPart.Position)
+	local pos = HumanoidRootPart.Position
 	
-	-- Hit all enemies in radius
-	local enemies = Util.GetEnemiesInRadius(HumanoidRootPart.Position, 25)
-	for _, enemy in pairs(enemies) do
-		local enemyRoot = enemy:FindFirstChild("HumanoidRootPart")
-		if enemyRoot then
-			-- Knockback direction
-			local knockDir = (enemyRoot.Position - HumanoidRootPart.Position).Unit
-			-- VFX on hit enemies
-			VFX.ImpactSphere(enemyRoot.Position, Config.Colors.HonkWave, 5, 0.3)
+	-- Multiple expanding rings
+	for j = 1, 6 do
+		spawn(function()
+			wait(j * 0.04)
+			VFX.Ring(pos + Vector3.new(0, (j - 3) * 1.5, 0), COLORS.Orange, 30 + j * 4, 0.7)
+		end)
+	end
+	
+	VFX.Sphere(pos, COLORS.Gold, 20, 0.5)
+	VFX.Sphere(pos, COLORS.Orange, 15, 0.4)
+	VFX.Crack(pos, COLORS.Orange, 18)
+	VFX.Flash(COLORS.Orange, 0.15)
+	VFX.Shake(4, 0.5)
+	VFX.Debris(pos, 10, COLORS.Orange)
+	
+	-- Hit all nearby
+	local targets = GetTargetsInRadius(pos, 22)
+	for _, t in pairs(targets) do
+		local tRoot = t:FindFirstChild("HumanoidRootPart")
+		if tRoot then
+			VFX.Sphere(tRoot.Position, COLORS.Orange, 5, 0.3)
+			VFX.BeamLine(pos, tRoot.Position, COLORS.Gold, 0.3)
 		end
 	end
 	
-	Util.AddUltMeter(Config.UltMeterGainPerSkill * 1.5)
+	State.UltMeter = math.min(State.UltMeter + 12, State.UltMax)
 	
-	wait(0.5)
-	State.IsUsingSkill = false
+	wait(0.4)
+	Anim.ResetPose(0.25)
+	State.UsingSkill = false
+	State.Animating = false
+	Anim.StartClownIdle()
 end
 
--- ═══════════════════════════════════════════════════════════
--- SKILL 4: JUGGLING FRENZY [F]
--- ═══════════════════════════════════════════════════════════
-function Combat.Skill4_JugglingFrenzy()
-	if not Util.CanAct() then return end
-	if Util.IsOnCooldown("Skill4") then return end
+-- ██ SKILL 4: JUGGLING FRENZY [F] ██
+function Tools.Skill4_Juggle()
+	if State.UsingSkill or State.Attacking then return end
+	if State.Cooldowns.Skill4 > tick() then return end
 	
-	local enemy, dist = Util.GetNearestEnemy(12)
-	if not enemy then return end
+	local target, dist = GetTarget(14)
+	if not target then return end
 	
-	State.IsUsingSkill = true
-	Util.SetCooldown("Skill4")
+	State.UsingSkill = true
+	State.Cooldowns.Skill4 = tick() + State.CooldownDurations.Skill4
 	
-	local enemyRoot = enemy:FindFirstChild("HumanoidRootPart")
-	local enemyHum = enemy:FindFirstChild("Humanoid")
-	if not enemyRoot or not enemyHum then
-		State.IsUsingSkill = false
+	local tRoot = target:FindFirstChild("HumanoidRootPart")
+	if not tRoot then
+		State.UsingSkill = false
 		return
 	end
 	
-	-- Lunge grab animation
-	Util.PlayAnimation("Skill4_Grab", Enum.AnimationPriority.Action, 1.3)
-	SFX.Play("GrabSound", nil, 1)
-	SFX.Play("Laugh", nil, 0.6, 1.2)
+	FaceTarget(tRoot)
 	
-	-- Dash forward to grab
-	local dashDir = (enemyRoot.Position - HumanoidRootPart.Position).Unit
+	-- Grab lunge
+	Anim.GrabLunge()
+	SFX.Play(SFX.Lib.Whoosh, nil, 1, 0.8)
+	SFX.Play(SFX.Lib.Laugh, nil, 0.5, 1.2)
 	
-	-- Quick dash VFX
-	VFX.ImpactRing(HumanoidRootPart.Position, Config.Colors.Primary, 8, 0.3)
+	VFX.Ring(HumanoidRootPart.Position, COLORS.Gold, 8, 0.3)
+	VFX.Afterimage(Character, COLORS.Gold, 2)
 	
 	wait(0.15)
 	
-	-- Grab confirmed - juggling sequence
-	local juggleEmitter = VFX.JuggleEffect(enemyRoot)
-	
-	-- JUGGLE HIT 1 - Toss up
-	Util.PlayAnimation("Skill4_Juggle1", Enum.AnimationPriority.Action, 1.2)
-	SFX.Play("TossUp", enemyRoot.Position, 1, 1)
-	VFX.ImpactSphere(enemyRoot.Position, Config.Colors.Secondary, 5, 0.3)
-	SFX.Play("BalloonSqueak", enemyRoot.Position, 0.5, 1.5)
-	Util.ShakeCamera(0.5, 0.1)
-	
-	wait(0.35)
-	
-	-- JUGGLE HIT 2 - Catch and bonk
-	Util.PlayAnimation("Skill4_Juggle2", Enum.AnimationPriority.Action, 1.3)
-	VFX.ImpactSphere(enemyRoot.Position + Vector3.new(0, 5, 0), Config.Colors.Primary, 6, 0.3)
-	SFX.Play("Slap1", enemyRoot.Position, 1, 0.8)
-	SFX.Play("Honk", enemyRoot.Position, 0.5, 2)
-	Util.ShakeCamera(0.8, 0.1)
-	
-	wait(0.3)
-	
-	-- JUGGLE HIT 3 - Toss again
-	SFX.Play("TossUp", enemyRoot.Position, 1, 1.2)
-	VFX.ImpactSphere(enemyRoot.Position + Vector3.new(0, 8, 0), Config.Colors.Tertiary, 5, 0.3)
-	Util.ShakeCamera(0.5, 0.1)
-	
-	wait(0.3)
-	
-	-- JUGGLE HIT 4 - Spinning catch
-	VFX.ImpactSphere(enemyRoot.Position + Vector3.new(0, 3, 0), Config.Colors.Secondary, 7, 0.3)
-	VFX.ImpactRing(enemyRoot.Position, Config.Colors.Primary, 10, 0.3)
-	SFX.Play("Slap2", enemyRoot.Position, 1.2, 0.7)
-	Util.ShakeCamera(1, 0.15)
-	
-	wait(0.3)
-	
-	-- JUGGLE HIT 5 - FINAL SLAM
-	Util.PlayAnimation("Skill4_Juggle3", Enum.AnimationPriority.Action, 1)
-	
-	-- Drum roll before slam
-	SFX.Play("DrumRoll", nil, 0.5, 2)
-	wait(0.2)
-	
-	-- SLAM!
-	SFX.Play("MalletSlam", enemyRoot.Position, 1.5, 0.6)
-	SFX.Play("BigImpact", enemyRoot.Position, 1.5, 0.7)
-	SFX.Play("Cymbal", enemyRoot.Position, 1, 1)
-	
-	VFX.ImpactSphere(enemyRoot.Position, Config.Colors.Primary, 15, 0.5)
-	VFX.ImpactRing(enemyRoot.Position, Config.Colors.Secondary, 20, 0.4)
-	VFX.GroundCrack(enemyRoot.Position, Config.Colors.Primary, 15)
-	VFX.ScreenFlash(Config.Colors.Secondary, 0.15)
-	Util.ShakeCamera(3, 0.4)
-	
-	-- Clean up juggle effect
-	if juggleEmitter then
-		juggleEmitter.Enabled = false
-		Debris:AddItem(juggleEmitter, 1)
+	-- Stars around target
+	local stars = {}
+	for j = 1, 4 do
+		local star = Instance.new("Part")
+		star.Size = Vector3.new(0.8, 0.1, 0.8)
+		star.Material = Enum.Material.Neon
+		star.Color = COLORS.Gold
+		star.Anchored = true
+		star.CanCollide = false
+		star.Parent = workspace.Terrain
+		table.insert(stars, star)
 	end
 	
-	Util.AddUltMeter(Config.UltMeterGainPerSkill * 2)
+	-- Juggle sequence - 5 tosses
+	local sides = {"right", "left", "right", "left", "slam"}
+	local juggleColors = {COLORS.Gold, COLORS.Pink, COLORS.Cyan, COLORS.Purple, COLORS.Red}
 	
-	wait(0.5)
-	State.IsUsingSkill = false
+	for j = 1, 5 do
+		if j < 5 then
+			Anim.JuggleToss(sides[j])
+			
+			-- Update star positions
+			for si, star in pairs(stars) do
+				if tRoot and tRoot.Parent then
+					local a = (si / 4) * math.pi * 2 + j * 1.5
+					star.CFrame = CFrame.new(
+						tRoot.Position + Vector3.new(
+							math.cos(a) * 2.5,
+							math.sin(j * 2 + si) * 2,
+							math.sin(a) * 2.5
+						)
+					)
+				end
+			end
+			
+			VFX.Sphere(tRoot.Position + Vector3.new(0, j * 2, 0), juggleColors[j], 4 + j, 0.25)
+			SFX.Play(SFX.Lib.Hit1, tRoot, 0.8, 0.7 + j * 0.15)
+			if j % 2 == 0 then
+				SFX.Play(SFX.Lib.Honk, tRoot, 0.3, 1 + j * 0.2)
+			end
+			VFX.Shake(0.5 + j * 0.2, 0.08)
+			
+			wait(0.22)
+		else
+			-- FINAL SLAM
+			Anim.JuggleSlam()
+			wait(0.08)
+			
+			SFX.Play(SFX.Lib.HeavyHit, tRoot, 2, 0.5)
+			SFX.Play(SFX.Lib.Boom, tRoot, 1.5, 0.6)
+			SFX.Play(SFX.Lib.Honk, tRoot, 1, 0.5)
+			
+			VFX.Sphere(tRoot.Position, COLORS.Red, 15, 0.5)
+			VFX.Ring(tRoot.Position, COLORS.Gold, 20, 0.4)
+			VFX.Ring(tRoot.Position + Vector3.new(0, 1, 0), COLORS.Red, 16, 0.35)
+			VFX.Crack(tRoot.Position, COLORS.Red, 15)
+			VFX.Flash(COLORS.Gold, 0.15)
+			VFX.Shake(3.5, 0.4)
+			VFX.Debris(tRoot.Position, 8)
+		end
+	end
+	
+	-- Clean up stars
+	for _, star in pairs(stars) do
+		TweenService:Create(star, TweenInfo.new(0.3), {Transparency = 1}):Play()
+		Debris:AddItem(star, 0.35)
+	end
+	
+	State.UltMeter = math.min(State.UltMeter + 15, State.UltMax)
+	
+	wait(0.3)
+	Anim.ResetPose(0.25)
+	State.UsingSkill = false
+	State.Animating = false
+	Anim.StartClownIdle()
 end
 
 -- ═══════════════════════════════════════════════════════════
--- ULTIMATE: THE BIG TOP [G]
+-- ██ ULTIMATE: 🎪 THE BIG TOP 🎪 [G] ██
 -- ═══════════════════════════════════════════════════════════
-function Combat.Ultimate_TheBigTop()
-	if State.IsUltActive then return end
-	if not Util.CanAct() then return end
-	if State.UltMeter < Config.UltMeterMax then return end
-	if Util.IsOnCooldown("Ultimate") then return end
+function Tools.Ultimate()
+	if State.UltActive then return end
+	if State.UsingSkill or State.Attacking then return end
+	if State.UltMeter < State.UltMax then return end
+	if State.Cooldowns.Ultimate > tick() then return end
 	
-	State.IsUltActive = true
-	State.IsUsingSkill = true
+	State.UltActive = true
+	State.UsingSkill = true
 	State.UltMeter = 0
-	Util.SetCooldown("Ultimate")
+	State.Cooldowns.Ultimate = tick() + State.CooldownDurations.Ultimate
 	
-	-- ═══════════ PHASE 1: DRAMATIC BOW ═══════════
-	Util.StopAllAnimations()
-	Util.PlayAnimation("Ult_Startup", Enum.AnimationPriority.Action4, 0.8)
-	
-	-- Time freeze effect
-	SFX.Play("DrumRoll", nil, 1.5, 0.5)
+	-- ═══ PHASE 1: THEATRICAL BOW ═══
+	Anim.UltBow()
+	SFX.Play(SFX.Lib.Charge, nil, 1.5, 0.5)
 	
 	-- Darken screen
-	local colorCorrection = Instance.new("ColorCorrectionEffect")
-	colorCorrection.Brightness = 0
-	colorCorrection.Saturation = 0
-	colorCorrection.Parent = Camera
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.Brightness = 0
+	cc.Saturation = 0
+	cc.Contrast = 0
+	cc.Parent = Camera
 	
-	TweenService:Create(colorCorrection, TweenInfo.new(0.5), {
+	TweenService:Create(cc, TweenInfo.new(0.4), {
 		Brightness = -0.5,
-		Saturation = -0.8,
+		Saturation = -0.7,
+		Contrast = 0.2,
 	}):Play()
 	
-	-- Spotlight on character
-	local spotlight = Instance.new("SpotLight")
-	spotlight.Brightness = 10
-	spotlight.Range = 60
-	spotlight.Angle = 45
-	spotlight.Color = Config.Colors.UltAura
-	spotlight.Face = Enum.NormalId.Bottom
-	
+	-- Spotlight
 	local spotPart = Instance.new("Part")
 	spotPart.Anchored = true
 	spotPart.CanCollide = false
 	spotPart.Transparency = 1
-	spotPart.Position = HumanoidRootPart.Position + Vector3.new(0, 30, 0)
-	spotPart.Parent = workspace
+	spotPart.Position = HumanoidRootPart.Position + Vector3.new(0, 25, 0)
+	spotPart.Parent = workspace.Terrain
+	
+	local spotlight = Instance.new("SpotLight")
+	spotlight.Brightness = 8
+	spotlight.Range = 50
+	spotlight.Angle = 40
+	spotlight.Color = COLORS.HotPink
+	spotlight.Face = Enum.NormalId.Bottom
 	spotlight.Parent = spotPart
 	
-	wait(1)
+	wait(0.8)
 	
-	-- ═══════════ PHASE 2: TRANSFORMATION ═══════════
-	Util.PlayAnimation("Ult_Transform", Enum.AnimationPriority.Action4, 1)
+	-- ═══ PHASE 2: AWAKENING TRANSFORMATION ═══
+	Anim.UltTransform()
+	SFX.Play(SFX.Lib.Laugh, nil, 2, 0.6)
+	SFX.Play(SFX.Lib.Boom, nil, 2, 0.3)
 	
-	-- Evil laugh
-	SFX.Play("EvilLaugh", nil, 2, 0.7)
-	SFX.Play("Transform", nil, 1.5, 0.8)
+	-- Massive VFX explosion
+	VFX.Sphere(HumanoidRootPart.Position, COLORS.HotPink, 40, 0.8)
+	VFX.Sphere(HumanoidRootPart.Position, COLORS.Cyan, 25, 0.6)
 	
-	-- Transformation VFX
-	VFX.UltimateTransformSequence()
+	for j = 1, 8 do
+		spawn(function()
+			wait(j * 0.03)
+			VFX.Ring(HumanoidRootPart.Position + Vector3.new(0, j * 2 - 8, 0), COLORS.HotPink, 35, 0.5 + j * 0.04)
+		end)
+	end
 	
-	wait(0.5)
+	VFX.Crack(HumanoidRootPart.Position, COLORS.HotPink, 25)
+	VFX.Flash(COLORS.HotPink, 0.2)
+	VFX.Shake(5, 1)
+	VFX.Debris(HumanoidRootPart.Position, 15, COLORS.Purple)
+	
+	-- Lightning bolts
+	for j = 1, 8 do
+		local angle = (j / 8) * math.pi * 2
+		local endPos = HumanoidRootPart.Position + Vector3.new(math.cos(angle) * 15, 20, math.sin(angle) * 15)
+		VFX.BeamLine(HumanoidRootPart.Position, endPos, COLORS.Cyan, 0.5)
+	end
 	
 	-- Create awakened aura
-	State.IsAwakened = true
-	local auraEffects = VFX.CreateAura(Character, Config.Colors.UltAura, Config.Colors.UltSecondary)
+	State.Awakened = true
+	local auraFolder = VFX.Aura(HumanoidRootPart, COLORS.HotPink, COLORS.Cyan)
 	
-	-- Color correction for awakened state
-	TweenService:Create(colorCorrection, TweenInfo.new(0.3), {
+	-- Aura update connection
+	local auraT = 0
+	local auraConn = RunService.Heartbeat:Connect(function(dt)
+		auraT = auraT + dt
+		VFX.UpdateAura(auraFolder, HumanoidRootPart, auraT)
+	end)
+	
+	-- Restore visuals but dramatic
+	TweenService:Create(cc, TweenInfo.new(0.3), {
 		Brightness = 0.05,
-		Saturation = 0.8,
-		Contrast = 0.2,
+		Saturation = 0.6,
+		Contrast = 0.15,
 	}):Play()
 	
-	-- Awakened idle
-	Util.PlayAnimation("Ult_Idle", Enum.AnimationPriority.Idle, 1, true)
-	
-	-- Circus music starts
-	local circusMusic = SFX.Play("CircusMusic", nil, 0.8, 1)
+	-- Show ult text
+	spawn(function()
+		Tools.ShowUltText("🎪 THE BIG TOP 🎪")
+	end)
 	
 	wait(0.5)
 	
-	-- ═══════════ PHASE 3: THE RAMPAGE ═══════════
-	-- Menacing text
-	spawn(function()
-		Combat.ShowUltText("🎪 THE BIG TOP 🎪")
-	end)
-	
-	-- Auto-target nearest enemy
-	local target, targetDist = Util.GetNearestEnemy(50)
+	-- ═══ PHASE 3: SEEK AND DESTROY ═══
+	local target, tdist = GetTarget(60)
 	
 	if target then
-		local targetRoot = target:FindFirstChild("HumanoidRootPart")
+		local tRoot = target:FindFirstChild("HumanoidRootPart")
 		
-		if targetRoot then
-			-- ═══ RUSH PHASE ═══
-			-- Teleport behind, then barrage
+		if tRoot then
+			-- Teleport behind
+			VFX.Sphere(HumanoidRootPart.Position, COLORS.HotPink, 8, 0.3)
+			SFX.Play(SFX.Lib.Whoosh, nil, 1.5, 0.5)
+			VFX.Afterimage(Character, COLORS.HotPink, 3)
 			
-			-- Teleport VFX at current position
-			VFX.ImpactSphere(HumanoidRootPart.Position, Config.Colors.UltAura, 10, 0.3)
-			SFX.Play("Whoosh", nil, 1.5, 0.5)
+			wait(0.08)
 			
-			-- "Nothing personnel kid" moment
+			-- Appear behind
+			local behindPos = tRoot.Position - tRoot.CFrame.LookVector * 4
+			HumanoidRootPart.CFrame = CFrame.new(behindPos, tRoot.Position)
+			
+			VFX.Sphere(HumanoidRootPart.Position, COLORS.Cyan, 6, 0.2)
+			SFX.Play(SFX.Lib.Honk, nil, 0.5, 0.3) -- Deep menacing honk
+			
 			wait(0.1)
 			
-			-- Appear behind target
-			VFX.ImpactSphere(targetRoot.Position - targetRoot.CFrame.LookVector * 3, Config.Colors.UltSecondary, 8, 0.3)
-			SFX.Play("Honk", targetRoot.Position, 0.5, 0.5) -- Deep menacing honk
+			-- ═══ BARRAGE ═══
+			Anim.UltBarrage()
 			
-			Util.PlayAnimation("Ult_Rush", Enum.AnimationPriority.Action4, 1.5)
-			
-			wait(0.15)
-			
-			-- ═══ BARRAGE PHASE ═══
-			Util.PlayAnimation("Ult_Barrage", Enum.AnimationPriority.Action4, 2)
-			
-			-- Rapid 20-hit barrage
-			for i = 1, 20 do
+			-- 20 rapid hits with VFX
+			for j = 1, 20 do
 				spawn(function()
-					wait(i * 0.06)
+					wait(j * 0.05)
+					if not tRoot or not tRoot.Parent then return end
 					
-					if not targetRoot or not targetRoot.Parent then return end
-					
-					-- Alternate VFX colors
-					local color = i % 2 == 0 and Config.Colors.UltAura or Config.Colors.UltSecondary
-					local hitPos = targetRoot.Position + Vector3.new(
+					local color = j % 3 == 0 and COLORS.Cyan or (j % 2 == 0 and COLORS.HotPink or COLORS.Purple)
+					local hitPos = tRoot.Position + Vector3.new(
 						(math.random() - 0.5) * 3,
 						(math.random() - 0.5) * 3,
 						(math.random() - 0.5) * 3
 					)
 					
-					VFX.ImpactSphere(hitPos, color, 4 + math.random() * 2, 0.15)
+					VFX.Sphere(hitPos, color, 3 + math.random() * 2, 0.12)
 					
-					if i % 3 == 0 then
-						VFX.ImpactRing(hitPos, color, 8, 0.2)
-						SFX.Play("Honk", hitPos, 0.3, 1 + math.random() * 1)
+					if j % 3 == 0 then
+						VFX.Ring(hitPos, color, 7, 0.15)
+						SFX.Play(SFX.Lib.Honk, tRoot, 0.2, 0.8 + math.random() * 1.2)
 					end
 					
-					SFX.Play("Slap1", hitPos, 0.4, 0.8 + math.random() * 0.4)
-					Util.ShakeCamera(0.5 + (i / 20), 0.04)
+					if j % 5 == 0 then
+						VFX.BeamLine(HumanoidRootPart.Position, hitPos, color, 0.1)
+					end
+					
+					SFX.Play(SFX.Lib.Hit1, tRoot, 0.3 + (j / 20) * 0.3, 0.7 + math.random() * 0.6)
+					VFX.Shake(0.3 + (j / 20) * 0.5, 0.03)
 				end)
 			end
 			
-			wait(1.3) -- Wait for barrage to finish
+			wait(1.1)
 			
-			-- ═══ FINISHER PHASE: GIANT MALLET SLAM ═══
+			-- ═══ PHASE 4: GIANT MALLET FINISHER ═══
+			VFX.SlowMo(0.4)
+			SFX.Play(SFX.Lib.Charge, nil, 1, 2)
 			
-			-- Dramatic pause
-			Util.SlowMotion(0.3, 0.2)
-			SFX.Play("DrumRoll", nil, 1, 1.5)
+			-- Mallet raise animation
+			Anim.UltMalletRaise()
 			
-			-- Jump up
-			wait(0.3)
+			wait(0.25)
 			
-			-- Create giant mallet visual
-			local mallet = Instance.new("Part")
-			mallet.Size = Vector3.new(6, 20, 6)
-			mallet.Material = Enum.Material.SmoothPlastic
-			mallet.Color = Config.Colors.Primary
-			mallet.Anchored = true
-			mallet.CanCollide = false
-			mallet.CFrame = CFrame.new(
-				targetRoot.Position + Vector3.new(0, 30, 0)
-			)
-			mallet.Parent = workspace
+			-- Create giant mallet
+			local malletHandle = Instance.new("Part")
+			malletHandle.Size = Vector3.new(1.5, 18, 1.5)
+			malletHandle.Material = Enum.Material.SmoothPlastic
+			malletHandle.Color = COLORS.Red
+			malletHandle.Anchored = true
+			malletHandle.CanCollide = false
+			malletHandle.CFrame = CFrame.new(tRoot.Position + Vector3.new(0, 30, 0))
+			malletHandle.Parent = workspace.Terrain
 			
-			-- Mallet head
 			local malletHead = Instance.new("Part")
-			malletHead.Size = Vector3.new(12, 8, 12)
+			malletHead.Size = Vector3.new(10, 7, 10)
 			malletHead.Material = Enum.Material.SmoothPlastic
-			malletHead.Color = Config.Colors.Secondary
+			malletHead.Color = COLORS.Gold
 			malletHead.Anchored = true
 			malletHead.CanCollide = false
-			malletHead.CFrame = mallet.CFrame * CFrame.new(0, -14, 0)
-			malletHead.Parent = workspace
+			malletHead.CFrame = malletHandle.CFrame * CFrame.new(0, -12, 0)
+			malletHead.Parent = workspace.Terrain
 			
-			-- Stars on mallet
-			local starEmitter = VFX.CreateParticleEmitter(malletHead, {
-				Color = Config.Colors.UltSecondary,
-				Size = NumberSequence.new(1.5),
-				Rate = 50,
-				Speed = NumberRange.new(2, 5),
-				Lifetime = NumberRange.new(0.3, 0.6),
-				LightEmission = 1,
-			})
+			-- Mallet glow
+			local malletGlow = Instance.new("PointLight")
+			malletGlow.Color = COLORS.HotPink
+			malletGlow.Brightness = 5
+			malletGlow.Range = 35
+			malletGlow.Parent = malletHead
 			
-			-- Glow
-			local malletLight = Instance.new("PointLight")
-			malletLight.Color = Config.Colors.UltAura
-			malletLight.Brightness = 5
-			malletLight.Range = 40
-			malletLight.Parent = malletHead
+			-- Stars orbiting mallet
+			for j = 1, 4 do
+				local star = Instance.new("Part")
+				star.Size = Vector3.new(1, 1, 1)
+				star.Shape = Enum.PartType.Ball
+				star.Material = Enum.Material.Neon
+				star.Color = COLORS.Cyan
+				star.Anchored = true
+				star.CanCollide = false
+				star.Parent = workspace.Terrain
+				
+				local a = (j / 4) * math.pi * 2
+				star.CFrame = CFrame.new(malletHead.Position + Vector3.new(math.cos(a) * 5, 0, math.sin(a) * 5))
+				
+				Debris:AddItem(star, 1.5)
+			end
 			
-			-- Trail on mallet
-			VFX.TrailEffect(malletHead, Config.Colors.UltAura, 0.4)
+			wait(0.2)
 			
-			-- SLAM DOWN
-			Util.PlayAnimation("Ult_Finisher", Enum.AnimationPriority.Action4, 1)
-			SFX.Play("Whoosh", nil, 2, 0.3)
+			-- SLAM ANIMATION
+			Anim.UltMalletSlam()
+			SFX.Play(SFX.Lib.Whoosh, nil, 2.5, 0.3)
 			
-			local slamTarget = targetRoot.Position + Vector3.new(0, 2, 0)
-			local slamTween = TweenService:Create(mallet, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-				CFrame = CFrame.new(slamTarget + Vector3.new(0, 10, 0))
-			})
-			local headSlamTween = TweenService:Create(malletHead, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-				CFrame = CFrame.new(slamTarget + Vector3.new(0, -4, 0))
-			})
-			slamTween:Play()
-			headSlamTween:Play()
+			local slamTarget = tRoot.Position
 			
-			wait(0.3)
+			-- Mallet comes down
+			TweenService:Create(malletHandle, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+				CFrame = CFrame.new(slamTarget + Vector3.new(0, 9, 0))
+			}):Play()
+			TweenService:Create(malletHead, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+				CFrame = CFrame.new(slamTarget + Vector3.new(0, -2, 0))
+			}):Play()
 			
-			-- IMPACT!!!
-			SFX.Play("MalletSlam", slamTarget, 3, 0.4)
-			SFX.Play("BigImpact", slamTarget, 3, 0.3)
-			SFX.Play("HonkBig", slamTarget, 2, 0.3)
-			SFX.Play("Cymbal", slamTarget, 2, 0.8)
+			wait(0.22)
 			
-			VFX.UltFinisherEffect(slamTarget)
+			-- ═══ MASSIVE IMPACT ═══
+			SFX.Play(SFX.Lib.HeavyHit, nil, 3, 0.3)
+			SFX.Play(SFX.Lib.Boom, nil, 3, 0.2)
+			SFX.Play(SFX.Lib.Honk, nil, 3, 0.2)
 			
-			-- Destroy mallet with explosion
+			VFX.Flash(Color3.new(1, 1, 1), 0.3)
+			VFX.Shake(10, 1.5)
+			
+			-- Rising rings
+			for j = 1, 12 do
+				spawn(function()
+					wait(j * 0.025)
+					VFX.Ring(slamTarget + Vector3.new(0, j * 2.5, 0), 
+						j % 2 == 0 and COLORS.HotPink or COLORS.Cyan, 25, 0.4 + j * 0.02)
+				end)
+			end
+			
+			-- Massive impact sphere
+			VFX.Sphere(slamTarget, COLORS.HotPink, 50, 1.2)
+			VFX.Sphere(slamTarget, COLORS.Cyan, 35, 1)
+			VFX.Sphere(slamTarget, COLORS.Gold, 25, 0.8)
+			
+			-- Giant crater
+			VFX.Crack(slamTarget, COLORS.HotPink, 35)
+			
+			-- Debris everywhere
+			VFX.Debris(slamTarget, 25, nil)
+			
+			-- Lightning from impact point
+			for j = 1, 12 do
+				local a = (j / 12) * math.pi * 2
+				local endP = slamTarget + Vector3.new(math.cos(a) * 20, math.random(5, 15), math.sin(a) * 20)
+				VFX.BeamLine(slamTarget, endP, COLORS.Cyan, 0.4)
+			end
+			
+			-- Mallet shatters
 			spawn(function()
-				wait(0.5)
+				wait(0.4)
+				VFX.Sphere(malletHead.Position, COLORS.Gold, 18, 0.4)
 				
-				VFX.ImpactSphere(malletHead.Position, Config.Colors.Secondary, 20, 0.5)
-				
-				-- Mallet breaks into pieces
-				for i = 1, 10 do
+				-- Shatter pieces
+				for j = 1, 15 do
 					local piece = Instance.new("Part")
 					piece.Size = Vector3.new(
-						math.random() * 3 + 1,
-						math.random() * 3 + 1,
-						math.random() * 3 + 1
+						math.random() * 2.5 + 0.5,
+						math.random() * 2.5 + 0.5,
+						math.random() * 2.5 + 0.5
 					)
 					piece.Material = Enum.Material.SmoothPlastic
-					piece.Color = i % 2 == 0 and Config.Colors.Primary or Config.Colors.Secondary
-					piece.CFrame = CFrame.new(malletHead.Position)
-					piece.Parent = workspace
-					
+					piece.Color = j % 3 == 0 and COLORS.Red or (j % 2 == 0 and COLORS.Gold or COLORS.HotPink)
+					piece.CFrame = CFrame.new(malletHead.Position) * CFrame.Angles(math.random() * 6, math.random() * 6, 0)
+					piece.Parent = workspace.Terrain
 					piece.Velocity = Vector3.new(
 						(math.random() - 0.5) * 100,
-						math.random(30, 80),
+						math.random(40, 90),
 						(math.random() - 0.5) * 100
 					)
-					piece.RotVelocity = Vector3.new(
-						math.random(-15, 15),
-						math.random(-15, 15),
-						math.random(-15, 15)
-					)
+					piece.RotVelocity = Vector3.new(math.random(-12, 12), math.random(-12, 12), math.random(-12, 12))
+					
+					-- Glow on pieces
+					local pLight = Instance.new("PointLight")
+					pLight.Color = piece.Color
+					pLight.Brightness = 2
+					pLight.Range = 5
+					pLight.Parent = piece
 					
 					Debris:AddItem(piece, 3)
+					spawn(function()
+						wait(2)
+						if piece.Parent then
+							TweenService:Create(piece, TweenInfo.new(1), {Transparency = 1}):Play()
+						end
+					end)
 				end
 				
-				mallet:Destroy()
+				SFX.Play(SFX.Lib.Pop, nil, 2, 0.5)
+				malletHandle:Destroy()
 				malletHead:Destroy()
 			end)
 		end
 	end
 	
-	-- ═══════════ PHASE 4: COOL DOWN ═══════════
+	-- ═══ PHASE 5: COOL DOWN ═══
 	wait(2)
 	
-	-- Awakened state wears off
-	State.IsAwakened = false
+	State.Awakened = false
 	
 	-- Remove aura
-	VFX.RemoveAura(Character)
+	if auraConn then auraConn:Disconnect() end
+	VFX.RemoveAura(HumanoidRootPart)
 	
 	-- Remove spotlight
-	spotPart:Destroy()
-	
-	-- Stop circus music
-	if circusMusic then
-		TweenService:Create(circusMusic, TweenInfo.new(1), {Volume = 0}):Play()
-		Debris:AddItem(circusMusic, 1.1)
-	end
+	if spotPart and spotPart.Parent then spotPart:Destroy() end
 	
 	-- Restore visuals
-	TweenService:Create(colorCorrection, TweenInfo.new(1), {
+	TweenService:Create(cc, TweenInfo.new(0.8), {
 		Brightness = 0,
 		Saturation = 0,
 		Contrast = 0,
 	}):Play()
-	Debris:AddItem(colorCorrection, 1.1)
+	Debris:AddItem(cc, 0.9)
 	
-	-- Victory bow
-	Util.PlayAnimation("Taunt", Enum.AnimationPriority.Action, 0.8)
-	SFX.Play("Laugh", nil, 1, 1)
+	-- Victory pose
+	Anim.ResetPose(0.3)
+	wait(0.1)
+	
+	-- Bow
+	Anim.UltBow()
+	SFX.Play(SFX.Lib.Laugh, nil, 1, 0.9)
 	
 	wait(1)
 	
-	State.IsUltActive = false
-	State.IsUsingSkill = false
+	Anim.ResetPose(0.3)
+	State.UltActive = false
+	State.UsingSkill = false
+	State.Animating = false
+	Anim.StartClownIdle()
 end
 
--- Ultimate text display
-function Combat.ShowUltText(text)
-	-- Create dramatic text on screen
-	local screenGui = Player:FindFirstChild("PlayerGui")
-	if not screenGui then return end
+-- Ultimate text
+function Tools.ShowUltText(text)
+	local pg = Player:FindFirstChild("PlayerGui")
+	if not pg then return end
 	
-	local ultGui = Instance.new("ScreenGui")
-	ultGui.Name = "UltText"
-	ultGui.Parent = screenGui
+	local sg = Instance.new("ScreenGui")
+	sg.Name = "UltTextGui"
+	sg.Parent = pg
 	
-	local textLabel = Instance.new("TextLabel")
-	textLabel.Size = UDim2.new(1, 0, 0.3, 0)
-	textLabel.Position = UDim2.new(0, 0, 0.35, 0)
-	textLabel.BackgroundTransparency = 1
-	textLabel.Text = text
-	textLabel.TextColor3 = Config.Colors.UltAura
-	textLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-	textLabel.TextStrokeTransparency = 0
-	textLabel.Font = Enum.Font.GothamBlack
-	textLabel.TextSize = 0
-	textLabel.TextTransparency = 0
-	textLabel.Parent = ultGui
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0.25, 0)
+	label.Position = UDim2.new(0, 0, 0.38, 0)
+	label.BackgroundTransparency = 1
+	label.Text = text
+	label.TextColor3 = COLORS.HotPink
+	label.TextStrokeColor3 = Color3.new(0, 0, 0)
+	label.TextStrokeTransparency = 0
+	label.Font = Enum.Font.GothamBlack
+	label.TextSize = 0
+	label.TextTransparency = 0
+	label.Parent = sg
 	
-	-- Dramatic scale in
-	TweenService:Create(textLabel, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+	-- Scale in
+	TweenService:Create(label, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
 		TextSize = 72,
 	}):Play()
 	
+	-- Color cycle
+	spawn(function()
+		local colors = {COLORS.HotPink, COLORS.Cyan, COLORS.Gold, COLORS.Purple}
+		for j = 1, 8 do
+			wait(0.2)
+			if label.Parent then
+				TweenService:Create(label, TweenInfo.new(0.2), {
+					TextColor3 = colors[(j % #colors) + 1]
+				}):Play()
+			end
+		end
+	end)
+	
 	wait(2)
 	
-	-- Fade out
-	TweenService:Create(textLabel, TweenInfo.new(0.5), {
+	TweenService:Create(label, TweenInfo.new(0.4), {
 		TextTransparency = 1,
 		TextStrokeTransparency = 1,
+		TextSize = 100,
 	}):Play()
 	
-	Debris:AddItem(ultGui, 3)
+	Debris:AddItem(sg, 2.5)
 end
 
--- ═══════════════════════════════════════════════════════════
--- DASH SYSTEM
--- ═══════════════════════════════════════════════════════════
-function Combat.Dash()
-	if State.IsDashing then return end
-	if State.IsUsingSkill then return end
+-- ██ DASH [Q] ██
+function Tools.Dash()
+	if State.Dashing then return end
+	if State.UsingSkill then return end
 	
-	State.IsDashing = true
+	State.Dashing = true
 	
-	-- Cartwheel animation
-	Util.PlayAnimation("Dash", Enum.AnimationPriority.Action2, 1.5)
+	Anim.DashCartwheel()
 	
-	-- Dash direction
 	local moveDir = Humanoid.MoveDirection
 	if moveDir.Magnitude < 0.1 then
 		moveDir = HumanoidRootPart.CFrame.LookVector
 	end
 	
-	-- Afterimage trail
-	spawn(function()
-		for i = 1, 3 do
-			local afterimage = Instance.new("Part")
-			afterimage.Size = Vector3.new(3, 5, 2)
-			afterimage.Anchored = true
-			afterimage.CanCollide = false
-			afterimage.Transparency = 0.5
-			afterimage.Material = Enum.Material.ForceField
-			afterimage.Color = Config.Colors.Tertiary
-			afterimage.CFrame = HumanoidRootPart.CFrame
-			afterimage.Parent = workspace
-			
-			TweenService:Create(afterimage, TweenInfo.new(0.3), {
-				Transparency = 1,
-				Size = Vector3.new(4, 6, 3),
-			}):Play()
-			
-			Debris:AddItem(afterimage, 0.4)
-			wait(0.05)
-		end
-	end)
+	VFX.Afterimage(Character, COLORS.Purple, 3)
+	VFX.Ring(HumanoidRootPart.Position, COLORS.Purple, 8, 0.25)
+	SFX.Play(SFX.Lib.Whoosh, nil, 0.8, 1.3)
 	
-	-- Dash ring
-	VFX.ImpactRing(HumanoidRootPart.Position, Config.Colors.Tertiary, 8, 0.3)
-	SFX.Play("Whoosh", nil, 0.8, 1.2)
-	
-	-- Apply dash velocity
-	local dashVelocity = Instance.new("BodyVelocity")
-	dashVelocity.Velocity = moveDir * 80
-	dashVelocity.MaxForce = Vector3.new(math.huge, 0, math.huge)
-	dashVelocity.Parent = HumanoidRootPart
-	
-	Debris:AddItem(dashVelocity, 0.2)
+	local bv = Instance.new("BodyVelocity")
+	bv.Velocity = moveDir * 85
+	bv.MaxForce = Vector3.new(1e8, 0, 1e8)
+	bv.Parent = HumanoidRootPart
+	Debris:AddItem(bv, 0.2)
 	
 	wait(0.3)
-	State.IsDashing = false
+	State.Dashing = false
 end
 
--- ═══════════════════════════════════════════════════════════
--- BLOCK SYSTEM
--- ═══════════════════════════════════════════════════════════
-function Combat.StartBlock()
-	if State.IsUsingSkill or State.IsAttacking then return end
+-- ██ BLOCK ██
+function Tools.StartBlock()
+	if State.UsingSkill or State.Attacking then return end
+	State.Blocking = true
+	Anim.BlockPose()
 	
-	State.IsBlocking = true
-	Util.PlayAnimation("Block", Enum.AnimationPriority.Action, 1, true)
-	
-	-- Block visual
-	local blockSphere = Instance.new("Part")
-	blockSphere.Name = "ClownBlockShield"
-	blockSphere.Anchored = false
-	blockSphere.CanCollide = false
-	blockSphere.Transparency = 0.6
-	blockSphere.Material = Enum.Material.ForceField
-	blockSphere.Color = Config.Colors.Secondary
-	blockSphere.Shape = Enum.PartType.Ball
-	blockSphere.Size = Vector3.new(8, 8, 8)
-	blockSphere.Parent = workspace
+	-- Block shield visual
+	local shield = Instance.new("Part")
+	shield.Name = "ClownShield"
+	shield.Shape = Enum.PartType.Ball
+	shield.Size = Vector3.new(7, 7, 7)
+	shield.Material = Enum.Material.ForceField
+	shield.Color = COLORS.Gold
+	shield.Transparency = 0.6
+	shield.Anchored = false
+	shield.CanCollide = false
+	shield.Massless = true
+	shield.Parent = workspace.Terrain
 	
 	local weld = Instance.new("WeldConstraint")
 	weld.Part0 = HumanoidRootPart
-	weld.Part1 = blockSphere
-	weld.Parent = blockSphere
-	blockSphere.CFrame = HumanoidRootPart.CFrame
+	weld.Part1 = shield
+	weld.Parent = shield
+	shield.CFrame = HumanoidRootPart.CFrame
 	
-	-- Pulsing effect
+	-- Pulse
 	spawn(function()
-		while State.IsBlocking and blockSphere.Parent do
-			TweenService:Create(blockSphere, TweenInfo.new(0.5), {
+		while State.Blocking and shield.Parent do
+			TweenService:Create(shield, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
 				Transparency = 0.4,
-				Size = Vector3.new(9, 9, 9),
+				Size = Vector3.new(8, 8, 8),
 			}):Play()
-			wait(0.5)
-			if not State.IsBlocking then break end
-			TweenService:Create(blockSphere, TweenInfo.new(0.5), {
+			wait(0.4)
+			if not State.Blocking then break end
+			TweenService:Create(shield, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
 				Transparency = 0.7,
-				Size = Vector3.new(7, 7, 7),
+				Size = Vector3.new(6.5, 6.5, 6.5),
 			}):Play()
-			wait(0.5)
+			wait(0.4)
 		end
 	end)
 end
 
-function Combat.StopBlock()
-	State.IsBlocking = false
-	Util.StopAnimation("Block")
+function Tools.StopBlock()
+	State.Blocking = false
 	
-	-- Remove block shield
-	for _, obj in pairs(workspace:GetChildren()) do
-		if obj.Name == "ClownBlockShield" then
-			TweenService:Create(obj, TweenInfo.new(0.2), {Transparency = 1}):Play()
-			Debris:AddItem(obj, 0.3)
+	for _, obj in pairs(workspace.Terrain:GetChildren()) do
+		if obj.Name == "ClownShield" then
+			TweenService:Create(obj, TweenInfo.new(0.15), {Transparency = 1}):Play()
+			Debris:AddItem(obj, 0.2)
+		end
+	end
+	
+	Anim.ResetPose(0.15)
+	State.Animating = false
+	Anim.StartClownIdle()
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- TOOL CREATION & BACKPACK REPLACEMENT
+-- ═══════════════════════════════════════════════════════════
+local function ClearExistingTools()
+	-- Remove existing tools from backpack and character
+	local backpack = Player:FindFirstChild("Backpack")
+	if backpack then
+		for _, item in pairs(backpack:GetChildren()) do
+			if item:IsA("Tool") then
+				item:Destroy()
+			end
+		end
+	end
+	
+	if Character then
+		for _, item in pairs(Character:GetChildren()) do
+			if item:IsA("Tool") then
+				item:Destroy()
+			end
 		end
 	end
 end
 
--- ═══════════════════════════════════════════════════════════
--- UI SYSTEM
--- ═══════════════════════════════════════════════════════════
-ClownUI = {}
+local function CreateClownTools()
+	local backpack = Player:WaitForChild("Backpack")
+	
+	-- Wait a moment for existing tools to load then replace
+	wait(1)
+	ClearExistingTools()
+	wait(0.5)
+	
+	-- Tool 1: Pie to the Face
+	local pieTool = CreateToolBase("🥧 Pie to the Face", COLORS.Cream, "🥧")
+	pieTool.ToolTip = "[E] Throw a cream pie - Stun & Damage"
+	pieTool.Parent = backpack
+	
+	pieTool.Activated:Connect(function()
+		Tools.Skill1_Pie()
+	end)
+	
+	-- Tool 2: Balloon Animal Barrage
+	local balloonTool = CreateToolBase("🎈 Balloon Barrage", COLORS.Pink, "🎈")
+	balloonTool.ToolTip = "[R] Launch 6 balloon animals"
+	balloonTool.Parent = backpack
+	
+	balloonTool.Activated:Connect(function()
+		Tools.Skill2_Balloons()
+	end)
+	
+	-- Tool 3: Honk Shockwave
+	local honkTool = CreateToolBase("📯 Honk Shockwave", COLORS.Orange, "📯")
+	honkTool.ToolTip = "[T] Devastating AoE shockwave"
+	honkTool.Parent = backpack
+	
+	honkTool.Activated:Connect(function()
+		Tools.Skill3_Honk()
+	end)
+	
+	-- Tool 4: Juggling Frenzy
+	local juggleTool = CreateToolBase("🤹 Juggling Frenzy", COLORS.Gold, "🤹")
+	juggleTool.ToolTip = "[F] Grab and juggle your enemy"
+	juggleTool.Parent = backpack
+	
+	juggleTool.Activated:Connect(function()
+		Tools.Skill4_Juggle()
+	end)
+	
+	-- Tool 5: Ultimate
+	local ultTool = CreateToolBase("🎪 THE BIG TOP", COLORS.HotPink, "🎪")
+	ultTool.ToolTip = "[G] ULTIMATE - Requires full meter"
+	ultTool.Parent = backpack
+	
+	ultTool.Activated:Connect(function()
+		Tools.Ultimate()
+	end)
+end
 
-function ClownUI.Create()
-	local playerGui = Player:WaitForChild("PlayerGui")
+-- ═══════════════════════════════════════════════════════════
+-- UI SYSTEM (Custom Overlay)
+-- ═══════════════════════════════════════════════════════════
+local UI = {}
+
+function UI.Create()
+	local pg = Player:WaitForChild("PlayerGui")
 	
-	-- Main UI Container
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "ClownMovesetUI"
-	screenGui.ResetOnSpawn = false
-	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	screenGui.Parent = playerGui
+	-- Destroy old if exists
+	local old = pg:FindFirstChild("ClownOverlayUI")
+	if old then old:Destroy() end
 	
-	-- ═══ MOVESET SCROLLBAR / ABILITY BAR ═══
-	local abilityBar = Instance.new("Frame")
-	abilityBar.Name = "AbilityBar"
-	abilityBar.Size = UDim2.new(0, 500, 0, 70)
-	abilityBar.Position = UDim2.new(0.5, -250, 1, -100)
-	abilityBar.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-	abilityBar.BackgroundTransparency = 0.3
-	abilityBar.Parent = screenGui
+	local sg = Instance.new("ScreenGui")
+	sg.Name = "ClownOverlayUI"
+	sg.ResetOnSpawn = false
+	sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	sg.DisplayOrder = 100 -- On top
+	sg.Parent = pg
 	
-	local abilityBarCorner = Instance.new("UICorner")
-	abilityBarCorner.CornerRadius = UDim.new(0, 12)
-	abilityBarCorner.Parent = abilityBar
+	-- ═══ MAIN ABILITY BAR ═══
+	local bar = Instance.new("Frame")
+	bar.Name = "AbilityBar"
+	bar.Size = UDim2.new(0, 460, 0, 65)
+	bar.Position = UDim2.new(0.5, -230, 1, -90)
+	bar.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+	bar.BackgroundTransparency = 0.25
+	bar.Parent = sg
 	
-	local abilityBarStroke = Instance.new("UIStroke")
-	abilityBarStroke.Color = Config.Colors.UltAura
-	abilityBarStroke.Thickness = 2
-	abilityBarStroke.Transparency = 0.3
-	abilityBarStroke.Parent = abilityBar
+	Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 12)
 	
-	local abilityLayout = Instance.new("UIListLayout")
-	abilityLayout.FillDirection = Enum.FillDirection.Horizontal
-	abilityLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	abilityLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-	abilityLayout.Padding = UDim.new(0, 8)
-	abilityLayout.Parent = abilityBar
+	local barStroke = Instance.new("UIStroke")
+	barStroke.Color = COLORS.HotPink
+	barStroke.Thickness = 2
+	barStroke.Transparency = 0.4
+	barStroke.Parent = bar
 	
-	-- Create ability buttons
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = Enum.FillDirection.Horizontal
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	layout.Padding = UDim.new(0, 6)
+	layout.Parent = bar
+	
 	local skills = {
-		{Name = "Skill1", Key = "E", DisplayName = "Pie", Color = Config.Colors.Pie, Emoji = "🥧"},
-		{Name = "Skill2", Key = "R", DisplayName = "Balloons", Color = Config.Colors.Balloon, Emoji = "🎈"},
-		{Name = "Skill3", Key = "T", DisplayName = "Honk", Color = Config.Colors.HonkWave, Emoji = "📯"},
-		{Name = "Skill4", Key = "F", DisplayName = "Juggle", Color = Config.Colors.Secondary, Emoji = "🤹"},
-		{Name = "Ultimate", Key = "G", DisplayName = "Big Top", Color = Config.Colors.UltAura, Emoji = "🎪"},
+		{Name = "Skill1", Key = "E", Emoji = "🥧", Color = COLORS.Cream, Label = "Pie"},
+		{Name = "Skill2", Key = "R", Emoji = "🎈", Color = COLORS.Pink, Label = "Balloon"},
+		{Name = "Skill3", Key = "T", Emoji = "📯", Color = COLORS.Orange, Label = "Honk"},
+		{Name = "Skill4", Key = "F", Emoji = "🤹", Color = COLORS.Gold, Label = "Juggle"},
+		{Name = "Ultimate", Key = "G", Emoji = "🎪", Color = COLORS.HotPink, Label = "BIG TOP"},
 	}
 	
-	ClownUI.SkillFrames = {}
+	UI.SkillFrames = {}
 	
-	for _, skill in ipairs(skills) do
-		local skillFrame = Instance.new("Frame")
-		skillFrame.Name = skill.Name
-		skillFrame.Size = UDim2.new(0, 85, 0, 60)
-		skillFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-		skillFrame.BackgroundTransparency = 0.2
-		skillFrame.Parent = abilityBar
+	for _, sk in ipairs(skills) do
+		local frame = Instance.new("Frame")
+		frame.Name = sk.Name
+		frame.Size = UDim2.new(0, 82, 0, 55)
+		frame.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+		frame.BackgroundTransparency = 0.15
+		frame.Parent = bar
 		
-		local skillCorner = Instance.new("UICorner")
-		skillCorner.CornerRadius = UDim.new(0, 8)
-		skillCorner.Parent = skillFrame
+		Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
 		
-		local skillStroke = Instance.new("UIStroke")
-		skillStroke.Color = skill.Color
-		skillStroke.Thickness = 2
-		skillStroke.Transparency = 0.5
-		skillStroke.Parent = skillFrame
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = sk.Color
+		stroke.Thickness = 1.5
+		stroke.Transparency = 0.5
+		stroke.Parent = frame
 		
-		-- Skill emoji/icon
-		local emojiLabel = Instance.new("TextLabel")
-		emojiLabel.Size = UDim2.new(1, 0, 0, 25)
-		emojiLabel.Position = UDim2.new(0, 0, 0, 2)
-		emojiLabel.BackgroundTransparency = 1
-		emojiLabel.Text = skill.Emoji
-		emojiLabel.TextSize = 20
-		emojiLabel.Font = Enum.Font.GothamBold
-		emojiLabel.TextColor3 = Color3.new(1, 1, 1)
-		emojiLabel.Parent = skillFrame
+		local emoji = Instance.new("TextLabel")
+		emoji.Size = UDim2.new(1, 0, 0, 22)
+		emoji.Position = UDim2.new(0, 0, 0, 1)
+		emoji.BackgroundTransparency = 1
+		emoji.Text = sk.Emoji
+		emoji.TextSize = 18
+		emoji.Font = Enum.Font.GothamBold
+		emoji.TextColor3 = Color3.new(1, 1, 1)
+		emoji.Parent = frame
 		
-		-- Key bind label
-		local keyLabel = Instance.new("TextLabel")
-		keyLabel.Size = UDim2.new(1, 0, 0, 18)
-		keyLabel.Position = UDim2.new(0, 0, 0, 25)
-		keyLabel.BackgroundTransparency = 1
-		keyLabel.Text = "[" .. skill.Key .. "]"
-		keyLabel.TextSize = 14
-		keyLabel.Font = Enum.Font.GothamBold
-		keyLabel.TextColor3 = skill.Color
-		keyLabel.Parent = skillFrame
+		local key = Instance.new("TextLabel")
+		key.Size = UDim2.new(1, 0, 0, 16)
+		key.Position = UDim2.new(0, 0, 0, 22)
+		key.BackgroundTransparency = 1
+		key.Text = "[" .. sk.Key .. "]"
+		key.TextSize = 13
+		key.Font = Enum.Font.GothamBlack
+		key.TextColor3 = sk.Color
+		key.Parent = frame
 		
-		-- Skill name
-		local nameLabel = Instance.new("TextLabel")
-		nameLabel.Size = UDim2.new(1, 0, 0, 15)
-		nameLabel.Position = UDim2.new(0, 0, 0, 42)
-		nameLabel.BackgroundTransparency = 1
-		nameLabel.Text = skill.DisplayName
-		nameLabel.TextSize = 10
-		nameLabel.Font = Enum.Font.Gotham
-		nameLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-		nameLabel.Parent = skillFrame
+		local name = Instance.new("TextLabel")
+		name.Size = UDim2.new(1, 0, 0, 13)
+		name.Position = UDim2.new(0, 0, 0, 38)
+		name.BackgroundTransparency = 1
+		name.Text = sk.Label
+		name.TextSize = 9
+		name.Font = Enum.Font.Gotham
+		name.TextColor3 = Color3.fromRGB(160, 160, 160)
+		name.Parent = frame
 		
 		-- Cooldown overlay
 		local cdOverlay = Instance.new("Frame")
-		cdOverlay.Name = "CooldownOverlay"
+		cdOverlay.Name = "CDOverlay"
 		cdOverlay.Size = UDim2.new(1, 0, 1, 0)
 		cdOverlay.BackgroundColor3 = Color3.new(0, 0, 0)
-		cdOverlay.BackgroundTransparency = 0.5
+		cdOverlay.BackgroundTransparency = 0.45
 		cdOverlay.Visible = false
-		cdOverlay.ZIndex = 2
-		cdOverlay.Parent = skillFrame
-		
-		local cdCorner = Instance.new("UICorner")
-		cdCorner.CornerRadius = UDim.new(0, 8)
-		cdCorner.Parent = cdOverlay
+		cdOverlay.ZIndex = 5
+		cdOverlay.Parent = frame
+		Instance.new("UICorner", cdOverlay).CornerRadius = UDim.new(0, 8)
 		
 		local cdText = Instance.new("TextLabel")
 		cdText.Name = "CDText"
 		cdText.Size = UDim2.new(1, 0, 1, 0)
 		cdText.BackgroundTransparency = 1
 		cdText.Text = "0.0"
-		cdText.TextSize = 18
+		cdText.TextSize = 16
 		cdText.Font = Enum.Font.GothamBlack
 		cdText.TextColor3 = Color3.new(1, 1, 1)
-		cdText.ZIndex = 3
+		cdText.ZIndex = 6
 		cdText.Parent = cdOverlay
 		
-		ClownUI.SkillFrames[skill.Name] = {
-			Frame = skillFrame,
-			CooldownOverlay = cdOverlay,
+		UI.SkillFrames[sk.Name] = {
+			Frame = frame,
+			CDOverlay = cdOverlay,
 			CDText = cdText,
-			Stroke = skillStroke,
+			Stroke = stroke,
 		}
 	end
 	
-	-- ═══ ULTIMATE METER BAR ═══
-	local ultFrame = Instance.new("Frame")
-	ultFrame.Name = "UltBar"
-	ultFrame.Size = UDim2.new(0, 300, 0, 20)
-	ultFrame.Position = UDim2.new(0.5, -150, 1, -120)
-	ultFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-	ultFrame.BackgroundTransparency = 0.3
-	ultFrame.Parent = screenGui
+	-- ═══ ULT METER BAR ═══
+	local ultBar = Instance.new("Frame")
+	ultBar.Name = "UltMeter"
+	ultBar.Size = UDim2.new(0, 280, 0, 16)
+	ultBar.Position = UDim2.new(0.5, -140, 1, -108)
+	ultBar.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+	ultBar.BackgroundTransparency = 0.3
+	ultBar.Parent = sg
 	
-	local ultCorner = Instance.new("UICorner")
-	ultCorner.CornerRadius = UDim.new(0, 10)
-	ultCorner.Parent = ultFrame
+	Instance.new("UICorner", ultBar).CornerRadius = UDim.new(0, 8)
 	
 	local ultStroke = Instance.new("UIStroke")
-	ultStroke.Color = Config.Colors.UltAura
-	ultStroke.Thickness = 2
-	ultStroke.Parent = ultFrame
+	ultStroke.Color = COLORS.HotPink
+	ultStroke.Thickness = 1.5
+	ultStroke.Parent = ultBar
 	
 	local ultFill = Instance.new("Frame")
 	ultFill.Name = "Fill"
 	ultFill.Size = UDim2.new(0, 0, 1, 0)
-	ultFill.BackgroundColor3 = Config.Colors.UltAura
-	ultFill.Parent = ultFrame
+	ultFill.BackgroundColor3 = COLORS.HotPink
+	ultFill.Parent = ultBar
+	Instance.new("UICorner", ultFill).CornerRadius = UDim.new(0, 8)
 	
-	local ultFillCorner = Instance.new("UICorner")
-	ultFillCorner.CornerRadius = UDim.new(0, 10)
-	ultFillCorner.Parent = ultFill
-	
-	local ultFillGradient = Instance.new("UIGradient")
-	ultFillGradient.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Config.Colors.UltAura),
-		ColorSequenceKeypoint.new(0.5, Config.Colors.UltSecondary),
-		ColorSequenceKeypoint.new(1, Config.Colors.UltAura),
+	local ultGrad = Instance.new("UIGradient")
+	ultGrad.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, COLORS.HotPink),
+		ColorSequenceKeypoint.new(0.5, COLORS.Cyan),
+		ColorSequenceKeypoint.new(1, COLORS.HotPink),
 	})
-	ultFillGradient.Parent = ultFill
+	ultGrad.Parent = ultFill
 	
 	local ultLabel = Instance.new("TextLabel")
 	ultLabel.Size = UDim2.new(1, 0, 1, 0)
 	ultLabel.BackgroundTransparency = 1
 	ultLabel.Text = "🎪 ULTIMATE"
-	ultLabel.TextSize = 12
+	ultLabel.TextSize = 10
 	ultLabel.Font = Enum.Font.GothamBlack
 	ultLabel.TextColor3 = Color3.new(1, 1, 1)
-	ultLabel.TextStrokeTransparency = 0.3
-	ultLabel.ZIndex = 2
-	ultLabel.Parent = ultFrame
+	ultLabel.TextStrokeTransparency = 0.4
+	ultLabel.ZIndex = 3
+	ultLabel.Parent = ultBar
 	
-	ClownUI.UltBar = ultFrame
+	UI.UltFill = ultFill
+	UI.UltLabel = ultLabel
 	
-	-- ═══ CHARACTER ICON (Clown Emoji) ═══
+	-- ═══ CHARACTER ICON ═══
 	local iconFrame = Instance.new("Frame")
-	iconFrame.Name = "CharacterIcon"
-	iconFrame.Size = UDim2.new(0, 80, 0, 80)
-	iconFrame.Position = UDim2.new(0.5, -290, 1, -115)
-	iconFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
-	iconFrame.BackgroundTransparency = 0.2
-	iconFrame.Parent = screenGui
+	iconFrame.Name = "ClownIcon"
+	iconFrame.Size = UDim2.new(0, 65, 0, 65)
+	iconFrame.Position = UDim2.new(0.5, -270, 1, -100)
+	iconFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
+	iconFrame.BackgroundTransparency = 0.15
+	iconFrame.Parent = sg
 	
-	local iconCorner = Instance.new("UICorner")
-	iconCorner.CornerRadius = UDim.new(0.5, 0) -- Circle
-	iconCorner.Parent = iconFrame
+	Instance.new("UICorner", iconFrame).CornerRadius = UDim.new(0.5, 0)
 	
 	local iconStroke = Instance.new("UIStroke")
-	iconStroke.Color = Config.Colors.Primary
+	iconStroke.Color = COLORS.Red
 	iconStroke.Thickness = 3
 	iconStroke.Parent = iconFrame
 	
-	-- Inner glow gradient
-	local iconGradient = Instance.new("UIGradient")
-	iconGradient.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, Config.Colors.Primary),
-		ColorSequenceKeypoint.new(0.5, Config.Colors.Secondary),
-		ColorSequenceKeypoint.new(1, Config.Colors.Tertiary),
-	})
-	iconGradient.Rotation = 45
-	iconGradient.Parent = iconFrame
-	
-	-- Clown emoji as icon
 	local clownEmoji = Instance.new("TextLabel")
 	clownEmoji.Size = UDim2.new(1, 0, 1, 0)
 	clownEmoji.BackgroundTransparency = 1
 	clownEmoji.Text = "🤡"
-	clownEmoji.TextSize = 45
+	clownEmoji.TextSize = 38
 	clownEmoji.Font = Enum.Font.GothamBlack
 	clownEmoji.TextColor3 = Color3.new(1, 1, 1)
 	clownEmoji.Parent = iconFrame
 	
-	-- Animated glow ring
+	-- Animated icon border
 	spawn(function()
-		while screenGui.Parent do
-			TweenService:Create(iconStroke, TweenInfo.new(1), {
-				Color = Config.Colors.Secondary,
+		local colorCycle = {COLORS.Red, COLORS.Gold, COLORS.Purple, COLORS.Cyan, COLORS.Pink}
+		local idx = 1
+		while sg.Parent do
+			TweenService:Create(iconStroke, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {
+				Color = colorCycle[idx]
 			}):Play()
-			wait(1)
-			TweenService:Create(iconStroke, TweenInfo.new(1), {
-				Color = Config.Colors.Primary,
-			}):Play()
-			wait(1)
-			TweenService:Create(iconStroke, TweenInfo.new(1), {
-				Color = Config.Colors.Tertiary,
-			}):Play()
-			wait(1)
+			idx = idx % #colorCycle + 1
+			wait(0.8)
 		end
 	end)
 	
-	-- ═══ CHARACTER NAME LABEL ═══
-	local nameFrame = Instance.new("TextLabel")
-	nameFrame.Name = "CharacterName"
-	nameFrame.Size = UDim2.new(0, 200, 0, 25)
-	nameFrame.Position = UDim2.new(0.5, -290, 1, -30)
-	nameFrame.BackgroundTransparency = 1
-	nameFrame.Text = Config.CharacterName
-	nameFrame.TextSize = 16
-	nameFrame.Font = Enum.Font.GothamBlack
-	nameFrame.TextColor3 = Config.Colors.Primary
-	nameFrame.TextStrokeColor3 = Color3.new(0, 0, 0)
-	nameFrame.TextStrokeTransparency = 0
-	nameFrame.TextXAlignment = Enum.TextXAlignment.Left
-	nameFrame.Parent = screenGui
+	-- ═══ CHARACTER NAME ═══
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(0, 150, 0, 20)
+	nameLabel.Position = UDim2.new(0.5, -265, 1, -30)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = "🤡 THE CLOWN"
+	nameLabel.TextSize = 14
+	nameLabel.Font = Enum.Font.GothamBlack
+	nameLabel.TextColor3 = COLORS.Red
+	nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
+	nameLabel.TextStrokeTransparency = 0
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.Parent = sg
 	
 	-- ═══ COMBO COUNTER ═══
-	local comboLabel = Instance.new("TextLabel")
-	comboLabel.Name = "ComboCounter"
-	comboLabel.Size = UDim2.new(0, 200, 0, 60)
-	comboLabel.Position = UDim2.new(0.5, 200, 0.5, -30)
-	comboLabel.BackgroundTransparency = 1
-	comboLabel.Text = ""
-	comboLabel.TextSize = 40
-	comboLabel.Font = Enum.Font.GothamBlack
-	comboLabel.TextColor3 = Config.Colors.Secondary
-	comboLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-	comboLabel.TextStrokeTransparency = 0
-	comboLabel.TextTransparency = 1
-	comboLabel.Parent = screenGui
+	local combo = Instance.new("TextLabel")
+	combo.Name = "ComboCounter"
+	combo.Size = UDim2.new(0, 150, 0, 50)
+	combo.Position = UDim2.new(0.5, 180, 0.5, -25)
+	combo.BackgroundTransparency = 1
+	combo.Text = ""
+	combo.TextSize = 36
+	combo.Font = Enum.Font.GothamBlack
+	combo.TextColor3 = COLORS.Gold
+	combo.TextStrokeColor3 = Color3.new(0, 0, 0)
+	combo.TextStrokeTransparency = 0
+	combo.TextTransparency = 1
+	combo.Parent = sg
 	
-	ClownUI.ComboLabel = comboLabel
-	ClownUI.ScreenGui = screenGui
-	
-	return screenGui
+	UI.ComboLabel = combo
+	UI.ScreenGui = sg
 end
 
-function ClownUI.UpdateCooldowns()
-	for skillName, uiData in pairs(ClownUI.SkillFrames) do
-		if State.CooldownTimers[skillName] and State.CooldownTimers[skillName] > tick() then
-			local remaining = State.CooldownTimers[skillName] - tick()
-			uiData.CooldownOverlay.Visible = true
-			uiData.CDText.Text = string.format("%.1f", remaining)
+function UI.UpdateCooldowns()
+	if not UI.SkillFrames then return end
+	
+	for skillName, data in pairs(UI.SkillFrames) do
+		local cd = State.Cooldowns[skillName]
+		if cd and cd > tick() then
+			data.CDOverlay.Visible = true
+			data.CDText.Text = string.format("%.1f", cd - tick())
+			data.Stroke.Transparency = 0.8
 		else
-			uiData.CooldownOverlay.Visible = false
+			data.CDOverlay.Visible = false
+			data.Stroke.Transparency = 0.5
+		end
+	end
+	
+	-- Update ult meter
+	if UI.UltFill then
+		local fill = State.UltMeter / State.UltMax
+		TweenService:Create(UI.UltFill, TweenInfo.new(0.15), {
+			Size = UDim2.new(fill, 0, 1, 0)
+		}):Play()
+		
+		if State.UltMeter >= State.UltMax then
+			UI.UltLabel.Text = "🎪 READY! [G]"
+		else
+			UI.UltLabel.Text = "🎪 ULTIMATE"
 		end
 	end
 end
 
-function ClownUI.ShowCombo(count)
-	if not ClownUI.ComboLabel then return end
+function UI.ShowCombo(count)
+	if not UI.ComboLabel then return end
+	UI.ComboLabel.Text = count .. " 💥"
+	UI.ComboLabel.TextTransparency = 0
+	UI.ComboLabel.TextStrokeTransparency = 0
+	UI.ComboLabel.TextSize = 45
 	
-	local label = ClownUI.ComboLabel
-	label.Text = count .. " 💥"
-	label.TextTransparency = 0
-	label.TextSize = 50
-	
-	TweenService:Create(label, TweenInfo.new(0.1, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-		TextSize = 40,
+	TweenService:Create(UI.ComboLabel, TweenInfo.new(0.08, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		TextSize = 36,
 	}):Play()
 	
-	-- Fade after delay
 	spawn(function()
-		wait(1.5)
-		if label.Text == count .. " 💥" then
-			TweenService:Create(label, TweenInfo.new(0.3), {
+		local txt = count .. " 💥"
+		wait(1.2)
+		if UI.ComboLabel and UI.ComboLabel.Text == txt then
+			TweenService:Create(UI.ComboLabel, TweenInfo.new(0.3), {
 				TextTransparency = 1,
+				TextStrokeTransparency = 1,
 			}):Play()
 		end
 	end)
 end
 
-function ClownUI.UltReadyPulse()
-	if not ClownUI.UltBar then return end
-	
-	spawn(function()
-		while State.UltMeter >= Config.UltMeterMax and not State.IsUltActive do
-			if not ClownUI.UltBar or not ClownUI.UltBar.Parent then break end
-			
-			local fill = ClownUI.UltBar:FindFirstChild("Fill")
-			if fill then
-				TweenService:Create(fill, TweenInfo.new(0.5), {
-					BackgroundTransparency = 0.3,
-				}):Play()
-				wait(0.5)
-				TweenService:Create(fill, TweenInfo.new(0.5), {
-					BackgroundTransparency = 0,
-				}):Play()
-				wait(0.5)
-			else
-				break
-			end
-		end
-	end)
-end
-
 -- ═══════════════════════════════════════════════════════════
--- OVERRIDE EXISTING MOVESET SYSTEM
+-- OVERRIDE THE EXISTING TSB UI / BAR
 -- ═══════════════════════════════════════════════════════════
-local Override = {}
-
-function Override.TryOverrideExistingUI()
-	-- Attempt to find and modify the existing TSB moveset UI
+local function OverrideExistingUI()
 	spawn(function()
-		local playerGui = Player:WaitForChild("PlayerGui")
-		
-		-- Wait a bit for the game's UI to load
+		local pg = Player:WaitForChild("PlayerGui")
 		wait(3)
 		
-		-- Try to find moveset-related GUIs
-		for _, gui in pairs(playerGui:GetChildren()) do
-			if gui:IsA("ScreenGui") then
-				-- Look for the moveset/character selection elements
-				for _, descendant in pairs(gui:GetDescendants()) do
-					-- Replace character icon/image
-					if descendant:IsA("ImageLabel") or descendant:IsA("ImageButton") then
-						-- Check if it might be a character icon (Saitama)
-						if descendant.Name:lower():find("icon") or 
-						   descendant.Name:lower():find("character") or
-						   descendant.Name:lower():find("avatar") or
-						   descendant.Name:lower():find("saitama") or
-						   descendant.Name:lower():find("punch") then
-							-- Replace with clown emoji text
-							descendant.ImageTransparency = 1
+		for _, gui in pairs(pg:GetChildren()) do
+			if gui:IsA("ScreenGui") and gui.Name ~= "ClownOverlayUI" and gui.Name ~= "UltTextGui" then
+				for _, desc in pairs(gui:GetDescendants()) do
+					-- Replace character images
+					if desc:IsA("ImageLabel") or desc:IsA("ImageButton") then
+						local n = desc.Name:lower()
+						if n:find("icon") or n:find("char") or n:find("avatar") or n:find("portrait") 
+						   or n:find("saitama") or n:find("punch") or n:find("thumb") then
+							desc.ImageTransparency = 1
 							
-							local clownReplace = Instance.new("TextLabel")
-							clownReplace.Size = UDim2.new(1, 0, 1, 0)
-							clownReplace.BackgroundTransparency = 1
-							clownReplace.Text = "🤡"
-							clownReplace.TextScaled = true
-							clownReplace.Font = Enum.Font.GothamBlack
-							clownReplace.TextColor3 = Color3.new(1, 1, 1)
-							clownReplace.Parent = descendant
+							-- Check if we already added a replacement
+							if not desc:FindFirstChild("ClownReplace") then
+								local replace = Instance.new("TextLabel")
+								replace.Name = "ClownReplace"
+								replace.Size = UDim2.new(1, 0, 1, 0)
+								replace.BackgroundTransparency = 1
+								replace.Text = "🤡"
+								replace.TextScaled = true
+								replace.Font = Enum.Font.GothamBlack
+								replace.TextColor3 = Color3.new(1, 1, 1)
+								replace.ZIndex = desc.ZIndex + 1
+								replace.Parent = desc
+							end
 						end
 					end
 					
 					-- Replace character name text
-					if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-						local text = descendant.Text:lower()
-						if text:find("saitama") or text:find("one punch") or text:find("opm") then
-							descendant.Text = "🤡 THE CLOWN"
-							descendant.TextColor3 = Config.Colors.Primary
+					if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+						local t = desc.Text:lower()
+						if t:find("saitama") or t:find("one punch") or t:find("opm") or t:find("normal") then
+							desc.Text = "🤡 THE CLOWN"
+							desc.TextColor3 = COLORS.Red
 						end
 					end
 				end
@@ -2139,203 +2767,23 @@ function Override.TryOverrideExistingUI()
 	end)
 end
 
-function Override.ReplaceDefaultAnimations()
-	-- Override default Roblox animations with clown variants
+-- ═══════════════════════════════════════════════════════════
+-- CLOWN APPEARANCE
+-- ═══════════════════════════════════════════════════════════
+local function ApplyClownAppearance()
 	spawn(function()
-		local animate = Character:WaitForChild("Animate", 5)
-		if not animate then return end
-		
-		-- We can replace animation script values here
-		-- This changes the idle, walk, run, etc.
-		local function replaceAnim(folder, newId)
-			if newId == "rbxassetid://0" then return end -- Skip placeholders
-			local animFolder = animate:FindFirstChild(folder)
-			if animFolder then
-				for _, child in pairs(animFolder:GetChildren()) do
-					if child:IsA("Animation") then
-						child.AnimationId = newId
-					end
-				end
-			end
-		end
-		
-		replaceAnim("idle", Config.Animations.Idle)
-		replaceAnim("walk", Config.Animations.Walk)
-		replaceAnim("run", Config.Animations.Run)
-		replaceAnim("jump", Config.Animations.Jump)
-		replaceAnim("fall", Config.Animations.Fall)
-	end)
-end
-
-function Override.InterceptRemoteEvents()
-	-- Try to intercept the game's combat remote events
-	-- This is the key part that makes the moveset replacement work
-	spawn(function()
-		-- Look for combat-related RemoteEvents
-		local function scanForRemotes(parent)
-			for _, child in pairs(parent:GetChildren()) do
-				if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
-					local name = child.Name:lower()
-					-- Log found remotes for debugging
-					-- print("[ClownOverride] Found remote:", child.Name)
-				end
-				
-				if child:IsA("Folder") or child:IsA("Model") then
-					scanForRemotes(child)
-				end
-			end
-		end
-		
-		scanForRemotes(ReplicatedStorage)
-	end)
-end
-
--- ═══════════════════════════════════════════════════════════
--- INPUT HANDLING
--- ═══════════════════════════════════════════════════════════
-local InputHandler = {}
-
-function InputHandler.Setup()
-	-- Mouse click for M1
-	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then return end
-		
-		-- M1 ATTACK (Left Click)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 then
-			Combat.M1Attack()
-			if State.M1Count > 0 then
-				ClownUI.ShowCombo(State.M1Count)
-			end
-		end
-		
-		if input.UserInputType == Enum.UserInputType.Keyboard then
-			-- SKILL 1: PIE TO THE FACE [E]
-			if input.KeyCode == Enum.KeyCode.E then
-				Combat.Skill1_PieToTheFace()
-			
-			-- SKILL 2: BALLOON ANIMAL BARRAGE [R]
-			elseif input.KeyCode == Enum.KeyCode.R then
-				Combat.Skill2_BalloonAnimalBarrage()
-			
-			-- SKILL 3: HONK SHOCKWAVE [T]
-			elseif input.KeyCode == Enum.KeyCode.T then
-				Combat.Skill3_HonkShockwave()
-			
-			-- SKILL 4: JUGGLING FRENZY [F]
-			elseif input.KeyCode == Enum.KeyCode.F then
-				Combat.Skill4_JugglingFrenzy()
-			
-			-- ULTIMATE: THE BIG TOP [G]
-			elseif input.KeyCode == Enum.KeyCode.G then
-				Combat.Ultimate_TheBigTop()
-			
-			-- DASH [Q]
-			elseif input.KeyCode == Enum.KeyCode.Q then
-				Combat.Dash()
-			
-			-- BLOCK [Hold Right Click handled separately]
-			end
-		end
-		
-		-- BLOCK (Right Click Hold)
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			Combat.StartBlock()
-		end
-	end)
-	
-	UserInputService.InputEnded:Connect(function(input, gameProcessed)
-		-- Stop blocking when right click released
-		if input.UserInputType == Enum.UserInputType.MouseButton2 then
-			Combat.StopBlock()
-		end
-	end)
-end
-
--- ═══════════════════════════════════════════════════════════
--- MAIN UPDATE LOOP
--- ═══════════════════════════════════════════════════════════
-local MainLoop = {}
-
-function MainLoop.Start()
-	RunService.Heartbeat:Connect(function(dt)
-		-- Update character references if respawned
-		if Player.Character and Player.Character ~= Character then
-			Character = Player.Character
-			Humanoid = Character:WaitForChild("Humanoid")
-			HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-			Animator = Humanoid:WaitForChild("Animator")
-			
-			-- Re-apply overrides
-			Override.ReplaceDefaultAnimations()
-		end
-		
-		-- Update cooldown UI
-		ClownUI.UpdateCooldowns()
-		
-		-- Check if ult is ready
-		if State.UltMeter >= Config.UltMeterMax and not State.IsUltActive then
-			-- Pulse effect on ult bar
-			-- (handled by UltReadyPulse which runs in its own thread)
-		end
-		
-		-- Awakened aura position update
-		if State.IsAwakened and HumanoidRootPart then
-			-- Aura follows character (already welded via ParticleEmitter parenting)
-		end
-	end)
-end
-
--- Ult meter watcher for pulse effect
-spawn(function()
-	local lastUltFull = false
-	while true do
 		wait(0.5)
-		if State.UltMeter >= Config.UltMeterMax and not lastUltFull then
-			lastUltFull = true
-			ClownUI.UltReadyPulse()
-			
-			-- Flash notification
-			if ClownUI.ScreenGui then
-				local readyLabel = Instance.new("TextLabel")
-				readyLabel.Size = UDim2.new(0, 300, 0, 40)
-				readyLabel.Position = UDim2.new(0.5, -150, 0.4, 0)
-				readyLabel.BackgroundTransparency = 1
-				readyLabel.Text = "🎪 ULTIMATE READY! [G] 🎪"
-				readyLabel.TextSize = 24
-				readyLabel.Font = Enum.Font.GothamBlack
-				readyLabel.TextColor3 = Config.Colors.UltAura
-				readyLabel.TextStrokeTransparency = 0
-				readyLabel.Parent = ClownUI.ScreenGui
-				
-				TweenService:Create(readyLabel, TweenInfo.new(2), {
-					TextTransparency = 1,
-					TextStrokeTransparency = 1,
-				}):Play()
-				
-				Debris:AddItem(readyLabel, 2.1)
-			end
-		elseif State.UltMeter < Config.UltMeterMax then
-			lastUltFull = false
-		end
-	end
-end)
-
--- ═══════════════════════════════════════════════════════════
--- CHARACTER APPEARANCE MODIFICATIONS
--- ═══════════════════════════════════════════════════════════
-local Appearance = {}
-
-function Appearance.ApplyClownLook()
-	spawn(function()
-		wait(1)
-		
 		if not Character then return end
 		
-		-- Red nose
 		local head = Character:FindFirstChild("Head")
 		if head then
+			-- Red clown nose
+			local existingNose = Character:FindFirstChild("ClownNose")
+			if existingNose then existingNose:Destroy() end
+			
 			local nose = Instance.new("Part")
-			nose.Size = Vector3.new(0.6, 0.6, 0.6)
+			nose.Name = "ClownNose"
+			nose.Size = Vector3.new(0.55, 0.55, 0.55)
 			nose.Shape = Enum.PartType.Ball
 			nose.Material = Enum.Material.SmoothPlastic
 			nose.Color = Color3.fromRGB(255, 0, 0)
@@ -2347,148 +2795,202 @@ function Appearance.ApplyClownLook()
 			weld.Part0 = head
 			weld.Part1 = nose
 			weld.Parent = nose
-			nose.CFrame = head.CFrame * CFrame.new(0, -0.1, -0.65)
+			nose.CFrame = head.CFrame * CFrame.new(0, -0.15, -0.62)
 			
-			-- Nose glow
-			local noseLight = Instance.new("PointLight")
-			noseLight.Color = Color3.fromRGB(255, 0, 0)
-			noseLight.Brightness = 1
-			noseLight.Range = 5
-			noseLight.Parent = nose
+			local noseGlow = Instance.new("PointLight")
+			noseGlow.Color = Color3.fromRGB(255, 0, 0)
+			noseGlow.Brightness = 0.8
+			noseGlow.Range = 4
+			noseGlow.Parent = nose
 			
-			-- Honk on touch
-			nose.Touched:Connect(function()
-				SFX.Play("Honk", nose.Position, 0.3, 1 + math.random() * 0.5)
-			end)
-		end
-		
-		-- Colorful particle aura (subtle idle particles)
-		if HumanoidRootPart then
-			local idleParticles = VFX.CreateParticleEmitter(HumanoidRootPart, {
-				Color = Config.Colors.Secondary,
-				Size = NumberSequence.new({
-					NumberSequenceKeypoint.new(0, 0.3),
-					NumberSequenceKeypoint.new(1, 0),
-				}),
-				Lifetime = NumberRange.new(0.5, 1),
-				Rate = 5,
-				Speed = NumberRange.new(1, 3),
-				SpreadAngle = Vector2.new(360, 360),
-				LightEmission = 0.5,
-			})
-			idleParticles.Name = "ClownIdleParticles"
-		end
-		
-		-- Overhead display name change
-		local headChar = Character:FindFirstChild("Head")
-		if headChar then
-			-- Remove existing name display if any custom one exists
-			for _, child in pairs(headChar:GetChildren()) do
-				if child:IsA("BillboardGui") and child.Name == "ClownNameTag" then
-					child:Destroy()
-				end
-			end
+			-- Name tag
+			local existingTag = head:FindFirstChild("ClownTag")
+			if existingTag then existingTag:Destroy() end
 			
-			local nameGui = Instance.new("BillboardGui")
-			nameGui.Name = "ClownNameTag"
-			nameGui.Size = UDim2.new(0, 200, 0, 50)
-			nameGui.StudsOffset = Vector3.new(0, 2.5, 0)
-			nameGui.AlwaysOnTop = false
-			nameGui.Parent = headChar
+			local tag = Instance.new("BillboardGui")
+			tag.Name = "ClownTag"
+			tag.Size = UDim2.new(0, 150, 0, 40)
+			tag.StudsOffset = Vector3.new(0, 2.5, 0)
+			tag.AlwaysOnTop = false
+			tag.Parent = head
 			
-			local nameLabel = Instance.new("TextLabel")
-			nameLabel.Size = UDim2.new(1, 0, 1, 0)
-			nameLabel.BackgroundTransparency = 1
-			nameLabel.Text = "🤡"
-			nameLabel.TextSize = 30
-			nameLabel.Font = Enum.Font.GothamBlack
-			nameLabel.TextColor3 = Config.Colors.Primary
-			nameLabel.TextStrokeTransparency = 0
-			nameLabel.TextStrokeColor3 = Color3.new(0, 0, 0)
-			nameLabel.Parent = nameGui
+			local tagLabel = Instance.new("TextLabel")
+			tagLabel.Size = UDim2.new(1, 0, 1, 0)
+			tagLabel.BackgroundTransparency = 1
+			tagLabel.Text = "🤡"
+			tagLabel.TextSize = 28
+			tagLabel.Font = Enum.Font.GothamBlack
+			tagLabel.TextColor3 = COLORS.Red
+			tagLabel.TextStrokeTransparency = 0
+			tagLabel.Parent = tag
 		end
 	end)
 end
 
 -- ═══════════════════════════════════════════════════════════
--- INITIALIZATION
+-- INPUT HANDLER
 -- ═══════════════════════════════════════════════════════════
-local function Initialize()
-	print("═══════════════════════════════════════")
-	print("🤡 CLOWN MOVESET OVERRIDE - LOADING...")
-	print("═══════════════════════════════════════")
+local function SetupInput()
+	UserInputService.InputBegan:Connect(function(input, gp)
+		if gp then return end
+		
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			Tools.M1Attack()
+			if State.M1Count > 0 then
+				UI.ShowCombo(State.M1Count)
+			end
+		end
+		
+		if input.UserInputType == Enum.UserInputType.Keyboard then
+			if input.KeyCode == Enum.KeyCode.E then
+				Tools.Skill1_Pie()
+			elseif input.KeyCode == Enum.KeyCode.R then
+				Tools.Skill2_Balloons()
+			elseif input.KeyCode == Enum.KeyCode.T then
+				Tools.Skill3_Honk()
+			elseif input.KeyCode == Enum.KeyCode.F then
+				Tools.Skill4_Juggle()
+			elseif input.KeyCode == Enum.KeyCode.G then
+				Tools.Ultimate()
+			elseif input.KeyCode == Enum.KeyCode.Q then
+				Tools.Dash()
+			end
+		end
+		
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			Tools.StartBlock()
+		end
+	end)
 	
-	-- Wait for everything to load
+	UserInputService.InputEnded:Connect(function(input, gp)
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			Tools.StopBlock()
+		end
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- MAIN LOOP
+-- ═══════════════════════════════════════════════════════════
+local function StartLoop()
+	-- Ult ready notification
+	local ultNotified = false
+	
+	RunService.Heartbeat:Connect(function(dt)
+		-- Character refresh
+		if Player.Character and Player.Character ~= Character then
+			CacheCharacter(Player.Character)
+			ApplyClownAppearance()
+			OverrideExistingUI()
+			Anim.StartClownIdle()
+		end
+		
+		-- UI updates
+		UI.UpdateCooldowns()
+		
+		-- Ult ready notification
+		if State.UltMeter >= State.UltMax and not ultNotified and not State.UltActive then
+			ultNotified = true
+			
+			local pg = Player:FindFirstChild("PlayerGui")
+			if pg and UI.ScreenGui then
+				local readyLabel = Instance.new("TextLabel")
+				readyLabel.Size = UDim2.new(0, 300, 0, 35)
+				readyLabel.Position = UDim2.new(0.5, -150, 0.42, 0)
+				readyLabel.BackgroundTransparency = 1
+				readyLabel.Text = "🎪 ULTIMATE READY! [G] 🎪"
+				readyLabel.TextSize = 22
+				readyLabel.Font = Enum.Font.GothamBlack
+				readyLabel.TextColor3 = COLORS.HotPink
+				readyLabel.TextStrokeTransparency = 0
+				readyLabel.Parent = UI.ScreenGui
+				
+				-- Flash
+				spawn(function()
+					for j = 1, 4 do
+						TweenService:Create(readyLabel, TweenInfo.new(0.15), {TextColor3 = COLORS.Cyan}):Play()
+						wait(0.15)
+						TweenService:Create(readyLabel, TweenInfo.new(0.15), {TextColor3 = COLORS.HotPink}):Play()
+						wait(0.15)
+					end
+					TweenService:Create(readyLabel, TweenInfo.new(0.5), {
+						TextTransparency = 1,
+						TextStrokeTransparency = 1,
+					}):Play()
+					Debris:AddItem(readyLabel, 0.6)
+				end)
+			end
+		elseif State.UltMeter < State.UltMax then
+			ultNotified = false
+		end
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- INIT
+-- ═══════════════════════════════════════════════════════════
+local function Init()
+	print("════════════════════════════════════")
+	print("🤡 CLOWN MOVESET V2 - LOADING...")
+	print("════════════════════════════════════")
+	
 	wait(2)
 	
-	-- Step 1: Create custom UI
-	print("[ClownOverride] Creating UI...")
-	ClownUI.Create()
+	print("[Clown] Creating UI...")
+	UI.Create()
 	
-	-- Step 2: Override existing UI elements
-	print("[ClownOverride] Overriding existing UI...")
-	Override.TryOverrideExistingUI()
+	print("[Clown] Creating tools...")
+	CreateClownTools()
 	
-	-- Step 3: Replace default animations
-	print("[ClownOverride] Replacing animations...")
-	Override.ReplaceDefaultAnimations()
+	print("[Clown] Setting up input...")
+	SetupInput()
 	
-	-- Step 4: Intercept remote events
-	print("[ClownOverride] Setting up remote intercepts...")
-	Override.InterceptRemoteEvents()
+	print("[Clown] Applying appearance...")
+	ApplyClownAppearance()
 	
-	-- Step 5: Apply clown appearance
-	print("[ClownOverride] Applying clown appearance...")
-	Appearance.ApplyClownLook()
+	print("[Clown] Overriding existing UI...")
+	OverrideExistingUI()
 	
-	-- Step 6: Setup input handling
-	print("[ClownOverride] Setting up input handlers...")
-	InputHandler.Setup()
+	print("[Clown] Starting idle animation...")
+	Anim.StartClownIdle()
 	
-	-- Step 7: Start main update loop
-	print("[ClownOverride] Starting main loop...")
-	MainLoop.Start()
+	print("[Clown] Starting main loop...")
+	StartLoop()
 	
-	-- Step 8: Handle respawns
+	-- Respawn handler
 	Player.CharacterAdded:Connect(function(newChar)
-		Character = newChar
-		Humanoid = newChar:WaitForChild("Humanoid")
-		HumanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
-		Animator = Humanoid:WaitForChild("Animator")
-		
-		-- Reset states
-		State.IsAttacking = false
-		State.IsBlocking = false
-		State.IsUsingSkill = false
-		State.IsUltActive = false
-		State.IsAwakened = false
-		State.IsDashing = false
-		State.M1Count = 0
-		-- Keep ult meter
-		
 		wait(1)
+		CacheCharacter(newChar)
 		
-		-- Re-apply everything
-		Override.ReplaceDefaultAnimations()
-		Appearance.ApplyClownLook()
-		Override.TryOverrideExistingUI()
+		State.Attacking = false
+		State.Blocking = false
+		State.UsingSkill = false
+		State.Dashing = false
+		State.UltActive = false
+		State.Awakened = false
+		State.Animating = false
+		State.M1Count = 0
+		
+		wait(0.5)
+		CreateClownTools()
+		ApplyClownAppearance()
+		OverrideExistingUI()
+		Anim.StartClownIdle()
 	end)
 	
-	print("═══════════════════════════════════════")
-	print("🤡 CLOWN MOVESET OVERRIDE - LOADED! 🤡")
-	print("═══════════════════════════════════════")
+	print("════════════════════════════════════")
+	print("🤡 CLOWN MOVESET V2 - LOADED! 🤡")
+	print("════════════════════════════════════")
 	print("")
-	print("CONTROLS:")
-	print("  Left Click - Slapstick Combo (M1)")
-	print("  [E] - Pie to the Face")
-	print("  [R] - Balloon Animal Barrage")
-	print("  [T] - Honk Shockwave")
-	print("  [F] - Juggling Frenzy")
-	print("  [G] - 🎪 THE BIG TOP (Ultimate)")
-	print("  [Q] - Cartwheel Dash")
-	print("  Right Click (Hold) - Block")
+	print("  LMB  - Slapstick Combo (5-hit M1)")
+	print("  [E]  - 🥧 Pie to the Face")
+	print("  [R]  - 🎈 Balloon Animal Barrage")
+	print("  [T]  - 📯 Honk Shockwave")
+	print("  [F]  - 🤹 Juggling Frenzy")
+	print("  [G]  - 🎪 THE BIG TOP (Ultimate)")
+	print("  [Q]  - Cartwheel Dash")
+	print("  RMB  - Block")
 	print("")
 end
 
--- Run initialization
-Initialize()
+Init()
