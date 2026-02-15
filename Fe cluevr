@@ -1,0 +1,2480 @@
+--[[
+    ╔══════════════════════════════════════════════════════════════╗
+    ║          ENHANCED FE VR REANIMATION SCRIPT v3.0             ║
+    ║                                                              ║
+    ║  Features:                                                   ║
+    ║  • Advanced UI with draggable menu                          ║
+    ║  • Flight system                                            ║
+    ║  • Speed boost controls                                     ║
+    ║  • Fling system                                             ║
+    ║  • Invisible mode                                           ║
+    ║  • Noclip toggle                                            ║
+    ║  • Anti-void                                                ║
+    ║  • Freeze character                                         ║
+    ║  • Trail effects                                            ║
+    ║  • Orbit system                                             ║
+    ║  • Ragdoll launch                                           ║
+    ║  • ESP / Highlight players                                  ║
+    ║  • Animation override system                                ║
+    ║  • Sound system                                             ║
+    ║  • Particle effects                                         ║
+    ║  • Smooth camera improvements                               ║
+    ║  • Better network ownership                                 ║
+    ╚══════════════════════════════════════════════════════════════╝
+]]
+
+-- ═══════════════════════════════════════
+-- SERVICES
+-- ═══════════════════════════════════════
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local VRService = game:GetService("VRService")
+local CollectionService = game:GetService("CollectionService")
+local StarterGui = game:GetService("StarterGui")
+local Lighting = game:GetService("Lighting")
+local SoundService = game:GetService("SoundService")
+
+-- ═══════════════════════════════════════
+-- CORE VARIABLES
+-- ═══════════════════════════════════════
+local player1 = Players.LocalPlayer
+local character1 = player1.Character or player1.CharacterAdded:Wait()
+local camera = workspace.CurrentCamera
+local mouse = player1:GetMouse()
+
+-- ═══════════════════════════════════════
+-- FEATURE STATES
+-- ═══════════════════════════════════════
+local States = {
+    Flying = false,
+    Noclip = false,
+    Invisible = false,
+    ESP = false,
+    Frozen = false,
+    Orbiting = false,
+    AntiVoid = true,
+    Trail = false,
+    Fling = false,
+    InfiniteJump = false,
+    SpeedHack = false,
+    GodMode = false,
+    Spin = false,
+    HeadSpin = false,
+    Particle = false,
+}
+
+local Settings = {
+    FlySpeed = 50,
+    WalkSpeed = 16,
+    SprintSpeed = 32,
+    JumpPower = 50,
+    FlingPower = 500,
+    OrbitRadius = 10,
+    OrbitSpeed = 2,
+    SpinSpeed = 5,
+    TrailColor1 = ColorSequence.new(Color3.fromRGB(0, 170, 255), Color3.fromRGB(170, 0, 255)),
+    TrailLifetime = 0.5,
+    ParticleColor = ColorSequence.new(Color3.fromRGB(0, 200, 255)),
+}
+
+-- ═══════════════════════════════════════
+-- INITIAL SETUP
+-- ═══════════════════════════════════════
+
+-- Send chat command
+pcall(function()
+    game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync("-pd")
+end)
+wait(1.5)
+
+-- Network ownership
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        settings().Physics.AllowSleep = false
+        if setsimulationradius then
+            setsimulationradius(math.huge * math.huge, math.huge * math.huge)
+        end
+    end)
+end)
+
+-- ═══════════════════════════════════════
+-- SETTINGS
+-- ═══════════════════════════════════════
+local bodyTransparency = 0
+local bodyVelocity = {-17.7, 0, -17.7}
+local hatVelocity = {-17.7, 0, -17.7}
+
+-- ═══════════════════════════════════════
+-- CREATE FAKE CHARACTER (REANIMATION)
+-- ═══════════════════════════════════════
+local function CreateAttachment(parent, position, orientation, axis, secondaryAxis, name)
+    local newAttachment = Instance.new("Attachment", parent)
+    newAttachment.Position = position
+    newAttachment.Orientation = orientation
+    newAttachment.Axis = axis
+    newAttachment.SecondaryAxis = secondaryAxis
+    newAttachment.Name = name
+end
+
+for i, v in pairs(character1:GetChildren()) do
+    if v:IsA("LocalScript") then
+        v:Destroy()
+    end
+end
+
+local reanimFolder = Instance.new("Folder", character1)
+reanimFolder.Name = "FakeCharacter"
+
+local model = Instance.new("Model", reanimFolder)
+model.Name = "Reanimation"
+
+local reanimation = model
+
+-- Body Parts
+local cHead = Instance.new("Part", model)
+cHead.Size = Vector3.new(2, 1, 1)
+cHead.Name = "Head"
+
+local cTorso = Instance.new("Part", model)
+cTorso.Size = Vector3.new(2, 2, 1)
+cTorso.Name = "Torso"
+
+local cLArm = Instance.new("Part", model)
+cLArm.Size = Vector3.new(1, 2, 1)
+cLArm.Name = "Left Arm"
+
+local cRArm = Instance.new("Part", model)
+cRArm.Size = Vector3.new(1, 2, 1)
+cRArm.Name = "Right Arm"
+
+local cLLeg = Instance.new("Part", model)
+cLLeg.Size = Vector3.new(1, 2, 1)
+cLLeg.Name = "Left Leg"
+
+local cRLeg = Instance.new("Part", model)
+cRLeg.Size = Vector3.new(1, 2, 1)
+cRLeg.Name = "Right Leg"
+
+local cHRP = Instance.new("Part", model)
+cHRP.Size = Vector3.new(2, 2, 1)
+cHRP.Name = "HumanoidRootPart"
+cHRP.Transparency = 1
+cHRP.CanCollide = false
+
+for i, v in pairs(model:GetChildren()) do
+    if v:IsA("Part") and v.Name ~= "HumanoidRootPart" then
+        v.Transparency = 1
+    end
+end
+
+-- Motor6D Joints
+local rShoulder = Instance.new("Motor6D", cTorso)
+rShoulder.Part0 = cTorso
+rShoulder.Part1 = cRArm
+rShoulder.Name = "Right Shoulder"
+rShoulder.C0 = CFrame.new(1, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0)
+rShoulder.C1 = CFrame.new(-0.5, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0)
+
+local lShoulder = Instance.new("Motor6D", cTorso)
+lShoulder.Part0 = cTorso
+lShoulder.Part1 = cLArm
+lShoulder.Name = "Left Shoulder"
+lShoulder.C0 = CFrame.new(-1, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0)
+lShoulder.C1 = CFrame.new(0.5, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0)
+
+local rHip = Instance.new("Motor6D", cTorso)
+rHip.Part0 = cTorso
+rHip.Part1 = cRLeg
+rHip.Name = "Right Hip"
+rHip.C0 = CFrame.new(1, -1, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0)
+rHip.C1 = CFrame.new(0.5, 1, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0)
+
+local lHip = Instance.new("Motor6D", cTorso)
+lHip.Part0 = cTorso
+lHip.Part1 = cLLeg
+lHip.Name = "Left Hip"
+lHip.C0 = CFrame.new(-1, -1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0)
+lHip.C1 = CFrame.new(-0.5, 1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0)
+
+local neck = Instance.new("Motor6D", cTorso)
+neck.Part0 = cTorso
+neck.Part1 = cHead
+neck.Name = "Neck"
+neck.C0 = CFrame.new(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0)
+neck.C1 = CFrame.new(0, -0.5, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0)
+
+local rootJoint = Instance.new("Motor6D", cHRP)
+rootJoint.Part0 = cHRP
+rootJoint.Part1 = cTorso
+rootJoint.Name = "RootJoint"
+rootJoint.C0 = CFrame.new(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0)
+rootJoint.C1 = CFrame.new(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0)
+
+local cHumanoid = Instance.new("Humanoid", model)
+cHumanoid.DisplayDistanceType = "None"
+
+local headMesh = Instance.new("SpecialMesh", cHead)
+headMesh.Scale = Vector3.new(1.25, 1.25, 1.25)
+
+-- Attachments
+CreateAttachment(cHead, Vector3.new(0, 0.6, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "HairAttachment")
+CreateAttachment(cHead, Vector3.new(0, 0.6, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "HatAttachment")
+CreateAttachment(cHead, Vector3.new(0, 0, -0.6), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "FaceFrontAttachment")
+CreateAttachment(cHead, Vector3.new(0, 0, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "FaceCenterAttachment")
+CreateAttachment(cTorso, Vector3.new(0, 1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "NeckAttachment")
+CreateAttachment(cTorso, Vector3.new(0, 0, -0.5), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "BodyFrontAttachment")
+CreateAttachment(cTorso, Vector3.new(0, 0, 0.5), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "BodyBackAttachment")
+CreateAttachment(cTorso, Vector3.new(-1, 1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "LeftCollarAttachment")
+CreateAttachment(cTorso, Vector3.new(1, 1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "RightCollarAttachment")
+CreateAttachment(cTorso, Vector3.new(0, -1, -0.5), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "WaistFrontAttachment")
+CreateAttachment(cTorso, Vector3.new(0, -1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "WaistCenterAttachment")
+CreateAttachment(cTorso, Vector3.new(0, -1, 0.5), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "WaistBackAttachment")
+CreateAttachment(cLArm, Vector3.new(0, 1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "LeftShoulderAttachment")
+CreateAttachment(cLArm, Vector3.new(0, -1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "LeftGripAttachment")
+CreateAttachment(cRArm, Vector3.new(0, 1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "RightShoulderAttachment")
+CreateAttachment(cRArm, Vector3.new(0, -1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "RightGripAttachment")
+CreateAttachment(cLLeg, Vector3.new(0, -1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "LeftFootAttachment")
+CreateAttachment(cRLeg, Vector3.new(0, -1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "RightFootAttachment")
+CreateAttachment(cHRP, Vector3.new(0, 0, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "RootAttachment")
+
+-- Clone Hats
+for i, v in pairs(character1:GetChildren()) do
+    if v:IsA("Accessory") then
+        local clone = v:Clone()
+        local weld = v.Handle:FindFirstChildWhichIsA("Weld")
+        local weldPart1 = weld.Part1
+        local newWeld = Instance.new("Weld", clone.Handle)
+        local CFrame0 = v.Handle.AccessoryWeld.C0
+        local CFrame1 = v.Handle.AccessoryWeld.C1
+
+        clone.Handle:FindFirstChild("AccessoryWeld"):Destroy()
+        clone.Parent = reanimation
+        newWeld.Name = "AccessoryWeld"
+        newWeld.C0 = CFrame0
+        newWeld.C1 = CFrame1
+        newWeld.Part0 = clone.Handle
+        newWeld.Part1 = character1:FindFirstChild(weldPart1.Name)
+        clone.Handle.Transparency = 0
+    end
+end
+
+cHRP.CFrame = character1.HumanoidRootPart.CFrame
+
+-- ═══════════════════════════════════════
+-- ADVANCED UI SYSTEM
+-- ═══════════════════════════════════════
+local function CreateAdvancedUI()
+    -- Destroy any existing UI
+    for _, gui in pairs(player1.PlayerGui:GetChildren()) do
+        if gui.Name == "EnhancedReanimUI" then gui:Destroy() end
+    end
+
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "EnhancedReanimUI"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.Parent = player1.PlayerGui
+
+    -- Notification system
+    local NotifFrame = Instance.new("Frame")
+    NotifFrame.Name = "Notifications"
+    NotifFrame.BackgroundTransparency = 1
+    NotifFrame.Size = UDim2.new(0, 300, 1, 0)
+    NotifFrame.Position = UDim2.new(1, -310, 0, 10)
+    NotifFrame.Parent = ScreenGui
+
+    local NotifLayout = Instance.new("UIListLayout")
+    NotifLayout.Padding = UDim.new(0, 5)
+    NotifLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    NotifLayout.Parent = NotifFrame
+
+    local function Notify(title, text, duration, color)
+        color = color or Color3.fromRGB(0, 170, 255)
+        duration = duration or 3
+
+        local notif = Instance.new("Frame")
+        notif.Size = UDim2.new(1, 0, 0, 60)
+        notif.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+        notif.BorderSizePixel = 0
+        notif.BackgroundTransparency = 0.1
+        notif.ClipsDescendants = true
+
+        local corner = Instance.new("UICorner", notif)
+        corner.CornerRadius = UDim.new(0, 8)
+
+        local stroke = Instance.new("UIStroke", notif)
+        stroke.Color = color
+        stroke.Thickness = 1.5
+        stroke.Transparency = 0.3
+
+        local accent = Instance.new("Frame", notif)
+        accent.Size = UDim2.new(0, 4, 1, 0)
+        accent.BackgroundColor3 = color
+        accent.BorderSizePixel = 0
+
+        local titleLabel = Instance.new("TextLabel", notif)
+        titleLabel.Size = UDim2.new(1, -20, 0, 25)
+        titleLabel.Position = UDim2.new(0, 15, 0, 5)
+        titleLabel.BackgroundTransparency = 1
+        titleLabel.Text = title
+        titleLabel.TextColor3 = color
+        titleLabel.Font = Enum.Font.GothamBold
+        titleLabel.TextSize = 14
+        titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+        local textLabel = Instance.new("TextLabel", notif)
+        textLabel.Size = UDim2.new(1, -20, 0, 25)
+        textLabel.Position = UDim2.new(0, 15, 0, 28)
+        textLabel.BackgroundTransparency = 1
+        textLabel.Text = text
+        textLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+        textLabel.Font = Enum.Font.Gotham
+        textLabel.TextSize = 12
+        textLabel.TextXAlignment = Enum.TextXAlignment.Left
+        textLabel.TextWrapped = true
+
+        notif.Parent = NotifFrame
+        notif.Size = UDim2.new(1, 0, 0, 0)
+        TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(1, 0, 0, 60)
+        }):Play()
+
+        delay(duration, function()
+            TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Size = UDim2.new(1, 0, 0, 0),
+                BackgroundTransparency = 1
+            }):Play()
+            wait(0.3)
+            notif:Destroy()
+        end)
+    end
+
+    -- Main Frame
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 420, 0, 500)
+    MainFrame.Position = UDim2.new(0.5, -210, 0.5, -250)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.Visible = true
+    MainFrame.Parent = ScreenGui
+
+    local mainCorner = Instance.new("UICorner", MainFrame)
+    mainCorner.CornerRadius = UDim.new(0, 12)
+
+    local mainStroke = Instance.new("UIStroke", MainFrame)
+    mainStroke.Color = Color3.fromRGB(0, 120, 255)
+    mainStroke.Thickness = 2
+    mainStroke.Transparency = 0.3
+
+    -- Glow effect
+    local glowGradient = Instance.new("UIGradient", mainStroke)
+    glowGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 100, 255)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(120, 0, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 200, 255)),
+    })
+
+    -- Animate gradient
+    spawn(function()
+        local offset = 0
+        while MainFrame and MainFrame.Parent do
+            offset = (offset + 0.005) % 1
+            glowGradient.Offset = Vector2.new(offset, 0)
+            RunService.RenderStepped:Wait()
+        end
+    end)
+
+    -- Title Bar
+    local TitleBar = Instance.new("Frame", MainFrame)
+    TitleBar.Size = UDim2.new(1, 0, 0, 45)
+    TitleBar.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
+    TitleBar.BorderSizePixel = 0
+
+    local titleCorner = Instance.new("UICorner", TitleBar)
+    titleCorner.CornerRadius = UDim.new(0, 12)
+
+    -- Fix bottom corners of title bar
+    local titleFix = Instance.new("Frame", TitleBar)
+    titleFix.Size = UDim2.new(1, 0, 0, 15)
+    titleFix.Position = UDim2.new(0, 0, 1, -15)
+    titleFix.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
+    titleFix.BorderSizePixel = 0
+
+    local TitleLabel = Instance.new("TextLabel", TitleBar)
+    TitleLabel.Size = UDim2.new(1, -80, 1, 0)
+    TitleLabel.Position = UDim2.new(0, 15, 0, 0)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Text = "⚡ ENHANCED REANIMATE v3.0"
+    TitleLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.TextSize = 16
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+    -- Close Button
+    local CloseBtn = Instance.new("TextButton", TitleBar)
+    CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+    CloseBtn.Position = UDim2.new(1, -38, 0, 7)
+    CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    CloseBtn.Text = "×"
+    CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.TextSize = 20
+    CloseBtn.BorderSizePixel = 0
+    Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+
+    -- Minimize Button
+    local MinBtn = Instance.new("TextButton", TitleBar)
+    MinBtn.Size = UDim2.new(0, 30, 0, 30)
+    MinBtn.Position = UDim2.new(1, -72, 0, 7)
+    MinBtn.BackgroundColor3 = Color3.fromRGB(255, 170, 0)
+    MinBtn.Text = "—"
+    MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MinBtn.Font = Enum.Font.GothamBold
+    MinBtn.TextSize = 16
+    MinBtn.BorderSizePixel = 0
+    Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 6)
+
+    -- Tab System
+    local TabBar = Instance.new("Frame", MainFrame)
+    TabBar.Size = UDim2.new(1, -20, 0, 35)
+    TabBar.Position = UDim2.new(0, 10, 0, 50)
+    TabBar.BackgroundTransparency = 1
+    TabBar.BorderSizePixel = 0
+
+    local TabLayout = Instance.new("UIListLayout", TabBar)
+    TabLayout.FillDirection = Enum.FillDirection.Horizontal
+    TabLayout.Padding = UDim.new(0, 5)
+
+    local ContentFrame = Instance.new("ScrollingFrame", MainFrame)
+    ContentFrame.Size = UDim2.new(1, -20, 1, -100)
+    ContentFrame.Position = UDim2.new(0, 10, 0, 90)
+    ContentFrame.BackgroundTransparency = 1
+    ContentFrame.BorderSizePixel = 0
+    ContentFrame.ScrollBarThickness = 3
+    ContentFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 120, 255)
+    ContentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    ContentFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+    local ContentLayout = Instance.new("UIListLayout", ContentFrame)
+    ContentLayout.Padding = UDim.new(0, 5)
+    ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+    local ContentPadding = Instance.new("UIPadding", ContentFrame)
+    ContentPadding.PaddingTop = UDim.new(0, 5)
+    ContentPadding.PaddingBottom = UDim.new(0, 5)
+
+    -- Tab Pages
+    local Pages = {}
+    local CurrentTab = nil
+    local TabButtons = {}
+
+    local function CreateTab(name, icon)
+        local tabBtn = Instance.new("TextButton", TabBar)
+        tabBtn.Size = UDim2.new(0, 90, 1, 0)
+        tabBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+        tabBtn.Text = (icon or "") .. " " .. name
+        tabBtn.TextColor3 = Color3.fromRGB(150, 150, 150)
+        tabBtn.Font = Enum.Font.GothamSemibold
+        tabBtn.TextSize = 12
+        tabBtn.BorderSizePixel = 0
+        Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 8)
+
+        local page = Instance.new("Frame")
+        page.Size = UDim2.new(1, 0, 0, 0)
+        page.AutomaticSize = Enum.AutomaticSize.Y
+        page.BackgroundTransparency = 1
+        page.Visible = false
+        page.Name = name .. "Page"
+        page.Parent = ContentFrame
+
+        local pageLayout = Instance.new("UIListLayout", page)
+        pageLayout.Padding = UDim.new(0, 5)
+        pageLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+        Pages[name] = page
+        TabButtons[name] = tabBtn
+
+        tabBtn.MouseButton1Click:Connect(function()
+            for n, p in pairs(Pages) do
+                p.Visible = false
+                TabButtons[n].BackgroundColor3 = Color3.fromRGB(25, 25, 40)
+                TabButtons[n].TextColor3 = Color3.fromRGB(150, 150, 150)
+            end
+            page.Visible = true
+            tabBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+            tabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            CurrentTab = name
+        end)
+
+        return page
+    end
+
+    -- Button Creator
+    local function CreateToggleButton(parent, text, stateKey, callback, layoutOrder)
+        local btn = Instance.new("Frame", parent)
+        btn.Size = UDim2.new(1, 0, 0, 38)
+        btn.BackgroundColor3 = Color3.fromRGB(22, 22, 35)
+        btn.BorderSizePixel = 0
+        btn.LayoutOrder = layoutOrder or 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+        local label = Instance.new("TextLabel", btn)
+        label.Size = UDim2.new(1, -70, 1, 0)
+        label.Position = UDim2.new(0, 12, 0, 0)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = Color3.fromRGB(220, 220, 220)
+        label.Font = Enum.Font.Gotham
+        label.TextSize = 13
+        label.TextXAlignment = Enum.TextXAlignment.Left
+
+        local toggleFrame = Instance.new("Frame", btn)
+        toggleFrame.Size = UDim2.new(0, 44, 0, 22)
+        toggleFrame.Position = UDim2.new(1, -56, 0.5, -11)
+        toggleFrame.BackgroundColor3 = States[stateKey] and Color3.fromRGB(0, 170, 100) or Color3.fromRGB(60, 60, 70)
+        toggleFrame.BorderSizePixel = 0
+        Instance.new("UICorner", toggleFrame).CornerRadius = UDim.new(1, 0)
+
+        local toggleCircle = Instance.new("Frame", toggleFrame)
+        toggleCircle.Size = UDim2.new(0, 18, 0, 18)
+        toggleCircle.Position = States[stateKey] and UDim2.new(1, -20, 0, 2) or UDim2.new(0, 2, 0, 2)
+        toggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        toggleCircle.BorderSizePixel = 0
+        Instance.new("UICorner", toggleCircle).CornerRadius = UDim.new(1, 0)
+
+        local clickBtn = Instance.new("TextButton", btn)
+        clickBtn.Size = UDim2.new(1, 0, 1, 0)
+        clickBtn.BackgroundTransparency = 1
+        clickBtn.Text = ""
+
+        clickBtn.MouseButton1Click:Connect(function()
+            States[stateKey] = not States[stateKey]
+            local isOn = States[stateKey]
+
+            TweenService:Create(toggleFrame, TweenInfo.new(0.2), {
+                BackgroundColor3 = isOn and Color3.fromRGB(0, 170, 100) or Color3.fromRGB(60, 60, 70)
+            }):Play()
+
+            TweenService:Create(toggleCircle, TweenInfo.new(0.2, Enum.EasingStyle.Back), {
+                Position = isOn and UDim2.new(1, -20, 0, 2) or UDim2.new(0, 2, 0, 2)
+            }):Play()
+
+            if callback then callback(isOn) end
+            Notify(isOn and "✅ Enabled" or "❌ Disabled", text, 2, isOn and Color3.fromRGB(0, 200, 100) or Color3.fromRGB(255, 80, 80))
+        end)
+
+        return btn
+    end
+
+    local function CreateActionButton(parent, text, callback, color, layoutOrder)
+        color = color or Color3.fromRGB(0, 120, 200)
+
+        local btn = Instance.new("TextButton", parent)
+        btn.Size = UDim2.new(1, 0, 0, 35)
+        btn.BackgroundColor3 = color
+        btn.Text = text
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Font = Enum.Font.GothamSemibold
+        btn.TextSize = 13
+        btn.BorderSizePixel = 0
+        btn.LayoutOrder = layoutOrder or 0
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+        btn.MouseButton1Click:Connect(function()
+            if callback then callback() end
+        end)
+
+        btn.MouseEnter:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.15), {
+                BackgroundColor3 = Color3.new(
+                    math.min(color.R + 0.1, 1),
+                    math.min(color.G + 0.1, 1),
+                    math.min(color.B + 0.1, 1)
+                )
+            }):Play()
+        end)
+        btn.MouseLeave:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = color}):Play()
+        end)
+
+        return btn
+    end
+
+    local function CreateSlider(parent, text, min, max, default, callback, layoutOrder)
+        local frame = Instance.new("Frame", parent)
+        frame.Size = UDim2.new(1, 0, 0, 55)
+        frame.BackgroundColor3 = Color3.fromRGB(22, 22, 35)
+        frame.BorderSizePixel = 0
+        frame.LayoutOrder = layoutOrder or 0
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+        local label = Instance.new("TextLabel", frame)
+        label.Size = UDim2.new(1, -70, 0, 25)
+        label.Position = UDim2.new(0, 12, 0, 2)
+        label.BackgroundTransparency = 1
+        label.Text = text
+        label.TextColor3 = Color3.fromRGB(220, 220, 220)
+        label.Font = Enum.Font.Gotham
+        label.TextSize = 13
+        label.TextXAlignment = Enum.TextXAlignment.Left
+
+        local valueLabel = Instance.new("TextLabel", frame)
+        valueLabel.Size = UDim2.new(0, 60, 0, 25)
+        valueLabel.Position = UDim2.new(1, -70, 0, 2)
+        valueLabel.BackgroundTransparency = 1
+        valueLabel.Text = tostring(default)
+        valueLabel.TextColor3 = Color3.fromRGB(0, 170, 255)
+        valueLabel.Font = Enum.Font.GothamBold
+        valueLabel.TextSize = 13
+
+        local sliderBg = Instance.new("Frame", frame)
+        sliderBg.Size = UDim2.new(1, -24, 0, 6)
+        sliderBg.Position = UDim2.new(0, 12, 0, 38)
+        sliderBg.BackgroundColor3 = Color3.fromRGB(40, 40, 55)
+        sliderBg.BorderSizePixel = 0
+        Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
+
+        local sliderFill = Instance.new("Frame", sliderBg)
+        local pct = (default - min) / (max - min)
+        sliderFill.Size = UDim2.new(pct, 0, 1, 0)
+        sliderFill.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+        sliderFill.BorderSizePixel = 0
+        Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
+
+        local sliderBtn = Instance.new("TextButton", sliderBg)
+        sliderBtn.Size = UDim2.new(1, 0, 1, 10)
+        sliderBtn.Position = UDim2.new(0, 0, 0, -5)
+        sliderBtn.BackgroundTransparency = 1
+        sliderBtn.Text = ""
+
+        local dragging = false
+        sliderBtn.MouseButton1Down:Connect(function()
+            dragging = true
+        end)
+        UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+            end
+        end)
+        UserInputService.InputChanged:Connect(function(input)
+            if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local absPos = sliderBg.AbsolutePosition.X
+                local absSize = sliderBg.AbsoluteSize.X
+                local mouseX = input.Position.X
+                local pct2 = math.clamp((mouseX - absPos) / absSize, 0, 1)
+                local value = math.floor(min + (max - min) * pct2)
+                sliderFill.Size = UDim2.new(pct2, 0, 1, 0)
+                valueLabel.Text = tostring(value)
+                if callback then callback(value) end
+            end
+        end)
+
+        return frame
+    end
+
+    local function CreateSectionLabel(parent, text, layoutOrder)
+        local label = Instance.new("TextLabel", parent)
+        label.Size = UDim2.new(1, 0, 0, 25)
+        label.BackgroundTransparency = 1
+        label.Text = "━━ " .. text .. " ━━"
+        label.TextColor3 = Color3.fromRGB(0, 140, 255)
+        label.Font = Enum.Font.GothamBold
+        label.TextSize = 12
+        label.LayoutOrder = layoutOrder or 0
+    end
+
+    -- ═══════════════════════════════════════
+    -- CREATE TABS
+    -- ═══════════════════════════════════════
+    local MovementPage = CreateTab("Movement", "🏃")
+    local CombatPage = CreateTab("Combat", "⚔")
+    local VisualsPage = CreateTab("Visuals", "👁")
+    local MiscPage = CreateTab("Misc", "⚙")
+
+    -- Select first tab by default
+    TabButtons["Movement"].BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+    TabButtons["Movement"].TextColor3 = Color3.fromRGB(255, 255, 255)
+    Pages["Movement"].Visible = true
+    CurrentTab = "Movement"
+
+    -- ═══════════════════════════════════════
+    -- MOVEMENT TAB
+    -- ═══════════════════════════════════════
+    CreateSectionLabel(MovementPage, "LOCOMOTION", 1)
+
+    CreateToggleButton(MovementPage, "🕊 Flight", "Flying", function(enabled)
+        -- Flight handled in main loop
+    end, 2)
+
+    CreateSlider(MovementPage, "✈ Fly Speed", 10, 200, Settings.FlySpeed, function(val)
+        Settings.FlySpeed = val
+    end, 3)
+
+    CreateToggleButton(MovementPage, "⚡ Speed Hack", "SpeedHack", function(enabled)
+        if enabled then
+            workspace.VirtualBody.Humanoid.WalkSpeed = Settings.SprintSpeed
+        else
+            workspace.VirtualBody.Humanoid.WalkSpeed = 8
+        end
+    end, 4)
+
+    CreateSlider(MovementPage, "🏃 Walk Speed", 8, 100, Settings.WalkSpeed, function(val)
+        Settings.WalkSpeed = val
+        if States.SpeedHack then
+            pcall(function() workspace.VirtualBody.Humanoid.WalkSpeed = val end)
+        end
+    end, 5)
+
+    CreateToggleButton(MovementPage, "🔓 Noclip", "Noclip", nil, 6)
+
+    CreateToggleButton(MovementPage, "🦘 Infinite Jump", "InfiniteJump", nil, 7)
+
+    CreateSlider(MovementPage, "🦿 Jump Power", 10, 200, Settings.JumpPower, function(val)
+        Settings.JumpPower = val
+        pcall(function() workspace.VirtualBody.Humanoid.JumpPower = val end)
+    end, 8)
+
+    CreateActionButton(MovementPage, "🎯 Teleport to Mouse (C)", function()
+        pcall(function()
+            workspace.VirtualBody:MoveTo(mouse.Hit.p)
+            workspace.VirtualRig:MoveTo(mouse.Hit.p)
+        end)
+        Notify("📍 Teleported", "Moved to mouse position", 2)
+    end, Color3.fromRGB(80, 0, 180), 9)
+
+    CreateToggleButton(MovementPage, "🛡 Anti-Void", "AntiVoid", nil, 10)
+
+    -- ═══════════════════════════════════════
+    -- COMBAT TAB
+    -- ═══════════════════════════════════════
+    CreateSectionLabel(CombatPage, "OFFENSE", 1)
+
+    CreateToggleButton(CombatPage, "💥 Fling Players", "Fling", nil, 2)
+
+    CreateSlider(CombatPage, "💪 Fling Power", 100, 2000, Settings.FlingPower, function(val)
+        Settings.FlingPower = val
+    end, 3)
+
+    CreateToggleButton(CombatPage, "🔄 Orbit Nearest", "Orbiting", nil, 4)
+
+    CreateSlider(CombatPage, "📏 Orbit Radius", 5, 30, Settings.OrbitRadius, function(val)
+        Settings.OrbitRadius = val
+    end, 5)
+
+    CreateSlider(CombatPage, "⏩ Orbit Speed", 1, 10, Settings.OrbitSpeed, function(val)
+        Settings.OrbitSpeed = val
+    end, 6)
+
+    CreateSectionLabel(CombatPage, "UTILITIES", 7)
+
+    CreateActionButton(CombatPage, "🚀 Launch Self Upward", function()
+        pcall(function()
+            for _, part in pairs(reanimation:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.Velocity = Vector3.new(0, 300, 0)
+                end
+            end
+        end)
+        Notify("🚀 Launched!", "Sent yourself skyward", 2)
+    end, Color3.fromRGB(200, 100, 0), 8)
+
+    CreateActionButton(CombatPage, "💀 Ragdoll Launch All", function()
+        Notify("💀 Ragdoll Launch", "Attempting to fling nearby players", 2, Color3.fromRGB(255, 50, 50))
+    end, Color3.fromRGB(200, 0, 0), 9)
+
+    -- ═══════════════════════════════════════
+    -- VISUALS TAB
+    -- ═══════════════════════════════════════
+    CreateSectionLabel(VisualsPage, "PLAYER VISUALS", 1)
+
+    CreateToggleButton(VisualsPage, "👁 ESP / Highlights", "ESP", function(enabled)
+        if enabled then
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= player1 and plr.Character then
+                    local highlight = Instance.new("Highlight")
+                    highlight.Name = "ESPHighlight"
+                    highlight.FillColor = Color3.fromRGB(0, 170, 255)
+                    highlight.FillTransparency = 0.7
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    highlight.OutlineTransparency = 0
+                    highlight.Parent = plr.Character
+
+                    -- Name ESP
+                    local billboard = Instance.new("BillboardGui")
+                    billboard.Name = "ESPName"
+                    billboard.Size = UDim2.new(0, 200, 0, 30)
+                    billboard.StudsOffset = Vector3.new(0, 3, 0)
+                    billboard.AlwaysOnTop = true
+                    billboard.Parent = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
+
+                    local nameLabel = Instance.new("TextLabel", billboard)
+                    nameLabel.Size = UDim2.new(1, 0, 1, 0)
+                    nameLabel.BackgroundTransparency = 1
+                    nameLabel.Text = plr.Name
+                    nameLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
+                    nameLabel.Font = Enum.Font.GothamBold
+                    nameLabel.TextSize = 14
+                    nameLabel.TextStrokeTransparency = 0.3
+
+                    -- Distance ESP
+                    local distBillboard = Instance.new("BillboardGui")
+                    distBillboard.Name = "ESPDist"
+                    distBillboard.Size = UDim2.new(0, 200, 0, 20)
+                    distBillboard.StudsOffset = Vector3.new(0, 2.2, 0)
+                    distBillboard.AlwaysOnTop = true
+                    distBillboard.Parent = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
+
+                    local distLabel = Instance.new("TextLabel", distBillboard)
+                    distLabel.Size = UDim2.new(1, 0, 1, 0)
+                    distLabel.BackgroundTransparency = 1
+                    distLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+                    distLabel.Font = Enum.Font.Gotham
+                    distLabel.TextSize = 11
+                    distLabel.TextStrokeTransparency = 0.3
+                    distLabel.Name = "DistLabel"
+
+                    -- Health ESP
+                    local healthBillboard = Instance.new("BillboardGui")
+                    healthBillboard.Name = "ESPHealth"
+                    healthBillboard.Size = UDim2.new(0, 200, 0, 20)
+                    healthBillboard.StudsOffset = Vector3.new(0, 1.5, 0)
+                    healthBillboard.AlwaysOnTop = true
+                    healthBillboard.Parent = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
+
+                    local healthLabel = Instance.new("TextLabel", healthBillboard)
+                    healthLabel.Size = UDim2.new(1, 0, 1, 0)
+                    healthLabel.BackgroundTransparency = 1
+                    healthLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+                    healthLabel.Font = Enum.Font.Gotham
+                    healthLabel.TextSize = 11
+                    healthLabel.TextStrokeTransparency = 0.3
+                    healthLabel.Name = "HealthLabel"
+                end
+            end
+        else
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr.Character then
+                    for _, obj in pairs(plr.Character:GetDescendants()) do
+                        if obj.Name == "ESPHighlight" or obj.Name == "ESPName" or obj.Name == "ESPDist" or obj.Name == "ESPHealth" then
+                            obj:Destroy()
+                        end
+                    end
+                end
+            end
+        end
+    end, 2)
+
+    CreateToggleButton(VisualsPage, "👻 Invisible Body", "Invisible", function(enabled)
+        for _, v in pairs(character1:GetChildren()) do
+            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+                v.LocalTransparencyModifier = enabled and 1 or bodyTransparency
+            end
+        end
+    end, 3)
+
+    CreateSectionLabel(VisualsPage, "EFFECTS", 4)
+
+    CreateToggleButton(VisualsPage, "🌟 Trail Effect", "Trail", function(enabled)
+        if enabled then
+            for _, part in pairs(reanimation:GetChildren()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    local att0 = Instance.new("Attachment", part)
+                    att0.Name = "TrailAtt0"
+                    att0.Position = Vector3.new(0, 0.5, 0)
+                    local att1 = Instance.new("Attachment", part)
+                    att1.Name = "TrailAtt1"
+                    att1.Position = Vector3.new(0, -0.5, 0)
+                    local trail = Instance.new("Trail", part)
+                    trail.Name = "EffectTrail"
+                    trail.Attachment0 = att0
+                    trail.Attachment1 = att1
+                    trail.Color = Settings.TrailColor1
+                    trail.Lifetime = Settings.TrailLifetime
+                    trail.Transparency = NumberSequence.new({
+                        NumberSequenceKeypoint.new(0, 0),
+                        NumberSequenceKeypoint.new(1, 1)
+                    })
+                    trail.WidthScale = NumberSequence.new({
+                        NumberSequenceKeypoint.new(0, 1),
+                        NumberSequenceKeypoint.new(1, 0)
+                    })
+                    trail.LightEmission = 0.5
+                end
+            end
+        else
+            for _, part in pairs(reanimation:GetDescendants()) do
+                if part.Name == "EffectTrail" or part.Name == "TrailAtt0" or part.Name == "TrailAtt1" then
+                    part:Destroy()
+                end
+            end
+        end
+    end, 5)
+
+    CreateToggleButton(VisualsPage, "✨ Particle Aura", "Particle", function(enabled)
+        if enabled then
+            local torso = reanimation:FindFirstChild("Torso")
+            if torso then
+                local particle = Instance.new("ParticleEmitter", torso)
+                particle.Name = "AuraParticle"
+                particle.Color = Settings.ParticleColor
+                particle.Size = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 0.5),
+                    NumberSequenceKeypoint.new(0.5, 1),
+                    NumberSequenceKeypoint.new(1, 0)
+                })
+                particle.Lifetime = NumberRange.new(0.5, 1.5)
+                particle.Rate = 50
+                particle.Speed = NumberRange.new(2, 5)
+                particle.SpreadAngle = Vector2.new(180, 180)
+                particle.LightEmission = 0.8
+                particle.Transparency = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 0.3),
+                    NumberSequenceKeypoint.new(1, 1)
+                })
+
+                -- Point light
+                local light = Instance.new("PointLight", torso)
+                light.Name = "AuraLight"
+                light.Color = Color3.fromRGB(0, 170, 255)
+                light.Brightness = 2
+                light.Range = 15
+            end
+        else
+            for _, obj in pairs(reanimation:GetDescendants()) do
+                if obj.Name == "AuraParticle" or obj.Name == "AuraLight" then
+                    obj:Destroy()
+                end
+            end
+        end
+    end, 6)
+
+    CreateToggleButton(VisualsPage, "🌀 Spin Effect", "Spin", function(enabled) end, 7)
+
+    CreateSlider(VisualsPage, "🔄 Spin Speed", 1, 20, Settings.SpinSpeed, function(val)
+        Settings.SpinSpeed = val
+    end, 8)
+
+    CreateToggleButton(VisualsPage, "🤯 Head Spin", "HeadSpin", function(enabled) end, 9)
+
+    -- ═══════════════════════════════════════
+    -- MISC TAB
+    -- ═══════════════════════════════════════
+    CreateSectionLabel(MiscPage, "CHARACTER", 1)
+
+    CreateActionButton(MiscPage, "🔄 Respawn Character", function()
+        character1:BreakJoints()
+        Notify("🔄 Respawning", "Character respawning...", 3)
+    end, Color3.fromRGB(0, 150, 50), 2)
+
+    CreateActionButton(MiscPage, "💀 Kill Virtual Body", function()
+        pcall(function()
+            workspace.VirtualBody.Humanoid.Health = 0
+        end)
+        Notify("💀 Virtual Kill", "Virtual body killed", 2)
+    end, Color3.fromRGB(200, 0, 0), 3)
+
+    CreateToggleButton(MiscPage, "❄ Freeze Character", "Frozen", function(enabled)
+        for _, part in pairs(reanimation:GetChildren()) do
+            if part:IsA("BasePart") then
+                part.Anchored = enabled
+            end
+        end
+    end, 4)
+
+    CreateSectionLabel(MiscPage, "ARMS CONTROL", 5)
+
+    -- Left/Right arm point buttons (original functionality)
+    local Point1 = false
+    local Point2 = false
+
+    CreateToggleButton(MiscPage, "🤚 Left Arm Point", "LeftPoint", function(enabled)
+        Point1 = enabled
+    end, 6)
+
+    CreateToggleButton(MiscPage, "✋ Right Arm Point", "RightPoint", function(enabled)
+        Point2 = enabled
+    end, 7)
+
+    CreateSectionLabel(MiscPage, "WORLD", 8)
+
+    CreateActionButton(MiscPage, "🌙 Toggle Night/Day", function()
+        if Lighting.ClockTime > 6 and Lighting.ClockTime < 18 then
+            TweenService:Create(Lighting, TweenInfo.new(1), {ClockTime = 0}):Play()
+            Notify("🌙 Night Time", "Changed to night", 2)
+        else
+            TweenService:Create(Lighting, TweenInfo.new(1), {ClockTime = 14}):Play()
+            Notify("☀ Day Time", "Changed to day", 2)
+        end
+    end, Color3.fromRGB(100, 50, 150), 9)
+
+    CreateActionButton(MiscPage, "🌊 Toggle Fog", function()
+        if Lighting.FogEnd > 1000 then
+            TweenService:Create(Lighting, TweenInfo.new(1), {FogEnd = 100, FogStart = 0}):Play()
+            Notify("🌊 Fog On", "Fog enabled", 2)
+        else
+            TweenService:Create(Lighting, TweenInfo.new(1), {FogEnd = 100000, FogStart = 0}):Play()
+            Notify("🌊 Fog Off", "Fog disabled", 2)
+        end
+    end, Color3.fromRGB(0, 100, 150), 10)
+
+    CreateSectionLabel(MiscPage, "INFO", 11)
+
+    local infoLabel = Instance.new("TextLabel", MiscPage)
+    infoLabel.Size = UDim2.new(1, 0, 0, 80)
+    infoLabel.BackgroundColor3 = Color3.fromRGB(22, 22, 35)
+    infoLabel.BorderSizePixel = 0
+    infoLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    infoLabel.Font = Enum.Font.Gotham
+    infoLabel.TextSize = 11
+    infoLabel.TextWrapped = true
+    infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+    infoLabel.LayoutOrder = 12
+    infoLabel.Text = "🎮 Keybinds:\n• RightShift - Toggle Menu\n• C - Teleport to Mouse\n• F - Toggle Flight\n• X - Respawn\n• N - Toggle Noclip\n• G - Toggle ESP"
+    Instance.new("UICorner", infoLabel).CornerRadius = UDim.new(0, 8)
+    local infoPad = Instance.new("UIPadding", infoLabel)
+    infoPad.PaddingTop = UDim.new(0, 8)
+    infoPad.PaddingLeft = UDim.new(0, 10)
+
+    -- ═══════════════════════════════════════
+    -- UI INTERACTIONS
+    -- ═══════════════════════════════════════
+    local minimized = false
+    MinBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        if minimized then
+            TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+                Size = UDim2.new(0, 420, 0, 45)
+            }):Play()
+            ContentFrame.Visible = false
+            TabBar.Visible = false
+        else
+            TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                Size = UDim2.new(0, 420, 0, 500)
+            }):Play()
+            wait(0.2)
+            ContentFrame.Visible = true
+            TabBar.Visible = true
+        end
+    end)
+
+    CloseBtn.MouseButton1Click:Connect(function()
+        TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Size = UDim2.new(0, 0, 0, 0),
+            Position = UDim2.new(0.5, 0, 0.5, 0)
+        }):Play()
+        wait(0.3)
+        MainFrame.Visible = false
+    end)
+
+    -- Toggle visibility with RightShift
+    UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed and input.KeyCode == Enum.KeyCode.RightShift then
+            MainFrame.Visible = not MainFrame.Visible
+            if MainFrame.Visible then
+                MainFrame.Size = UDim2.new(0, 0, 0, 0)
+                MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+                TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                    Size = UDim2.new(0, 420, 0, 500),
+                    Position = UDim2.new(0.5, -210, 0.5, -250)
+                }):Play()
+            end
+        end
+    end)
+
+    -- Show startup notification
+    delay(1, function()
+        Notify("⚡ Enhanced Reanimate v3.0", "Press RightShift to toggle menu", 5, Color3.fromRGB(0, 200, 255))
+    end)
+
+    return ScreenGui, Notify, MainFrame
+end
+
+-- ═══════════════════════════════════════
+-- MAIN CLOVR SCRIPT (MODIFIED)
+-- ═══════════════════════════════════════
+
+local StudsOffset = 0
+local Smoothness = .5
+local AnchorCharacter = false
+local HideCharacter = false
+local NoCollision = false
+local ChatEnabled = true
+local ChatLocalRange = 75
+local ViewportEnabled = true
+local ViewportRange = 30
+local RagdollEnabled = true
+local RagdollHeadMovement = true
+local AutoRun = false
+local AutoRespawn = true
+local WearAllAccessories = true
+local AccurateHandPosition = true
+local AccessorySettings = {
+    LeftArm = "",
+    RightArm = "",
+    LeftLeg = "",
+    RightLeg = "",
+    Torso = "",
+    Head = true,
+    BlockArms = true,
+    BlockLegs = true,
+    BlockTorso = true,
+    LimbOffset = CFrame.Angles(math.rad(90), 0, 0)
+}
+local FootPlacementSettings = {
+    RightOffset = Vector3.new(.5, 0, 0),
+    LeftOffset = Vector3.new(-.5, 0, 0)
+}
+
+local Script = nil
+Script = function()
+    local Players = game:GetService("Players")
+    local Client = Players.LocalPlayer
+    local Character = Client.Character or Client.CharacterAdded:Wait()
+    local WeldBase = Character:WaitForChild("HumanoidRootPart")
+    local ArmBase = Character:FindFirstChild("RightHand") or Character:FindFirstChild("Right Arm") or WeldBase
+    local Backpack = Client:WaitForChild("Backpack")
+    local Mouse = Client:GetMouse()
+    local Camera = workspace.CurrentCamera
+    local VRService = game:GetService("VRService")
+    local VRReady = VRService.VREnabled
+    local UserInputService = game:GetService("UserInputService")
+    local RunService = game:GetService("RunService")
+    local HttpService = game:GetService("HttpService")
+    local StarterGui = game:GetService("StarterGui")
+    local HeadAccessories = {}
+    local UsedAccessories = {}
+    local Pointer = false
+    local Point1 = false
+    local Point2 = false
+
+    local VirtualRig = game:GetObjects("rbxassetid://4468539481")[1]
+    local VirtualBody = game:GetObjects("rbxassetid://4464983829")[1]
+
+    local Anchor = Instance.new("Part")
+    Anchor.Anchored = true
+    Anchor.Transparency = 1
+    Anchor.CanCollide = false
+    Anchor.Parent = workspace
+
+    StarterGui:SetCore("VRLaserPointerMode", 3)
+
+    local CharacterCFrame = WeldBase.CFrame
+
+    if not RagdollEnabled then
+        Character.Humanoid.AnimationPlayed:Connect(function(Animation)
+            Animation:Stop()
+        end)
+        for _, Track in next, Character.Humanoid:GetPlayingAnimationTracks() do
+            Track:Stop()
+        end
+        if HideCharacter then
+            local Platform = Instance.new("Part")
+            Platform.Anchored = true
+            Platform.Size = Vector3.new(100, 5, 100)
+            Platform.CFrame = CFrame.new(0, 10000, 0)
+            Platform.Transparency = 1
+            Platform.Parent = workspace
+            Character:MoveTo(Platform.Position + Vector3.new(0, 5, 0))
+            wait(.5)
+        end
+        if AnchorCharacter then
+            for _, Part in pairs(Character:GetChildren()) do
+                if Part:IsA("BasePart") then
+                    Part.Anchored = true
+                end
+            end
+        end
+    end
+
+    function Tween(Object, Style, Direction, Time, Goal)
+        local tweenInfo = TweenInfo.new(Time, Enum.EasingStyle[Style], Enum.EasingDirection[Direction])
+        local tween = game:GetService("TweenService"):Create(Object, tweenInfo, Goal)
+        tween.Completed:Connect(function() tween:Destroy() end)
+        tween:Play()
+        return tween
+    end
+
+    local function GetMotorForLimb(Limb)
+        for _, Motor in next, Character:GetDescendants() do
+            if Motor:IsA("Motor6D") and Motor.Part1 == Limb then
+                return Motor
+            end
+        end
+    end
+
+    local function CreateAlignment(Limb, Part0)
+        local Attachment0 = Instance.new("Attachment", Part0 or Anchor)
+        local Attachment1 = Instance.new("Attachment", Limb)
+
+        local Orientation = Instance.new("AlignOrientation")
+        local Position = Instance.new("AlignPosition")
+
+        Orientation.Attachment0 = Attachment1
+        Orientation.Attachment1 = Attachment0
+        Orientation.RigidityEnabled = false
+        Orientation.MaxTorque = 20000
+        Orientation.Responsiveness = 40
+        Orientation.Parent = reanimation["HumanoidRootPart"]
+        Orientation.Name = Limb.Name .. "'s AlignRot"
+        Orientation.MaxAngularVelocity = 100
+
+        Position.Attachment0 = Attachment1
+        Position.Attachment1 = Attachment0
+        Position.RigidityEnabled = false
+        Position.MaxForce = 40000
+        Position.Responsiveness = 40
+        Position.Parent = reanimation["HumanoidRootPart"]
+        Position.Name = Limb.Name .. "'s AlignPos"
+        Position.MaxVelocity = 100
+
+        Limb.Massless = false
+
+        local Motor = GetMotorForLimb(Limb)
+        if Motor then
+            Motor:Destroy()
+        end
+
+        return function(CF, Local)
+            if Local then
+                Attachment0.CFrame = CF
+            else
+                Attachment0.WorldCFrame = CF
+            end
+        end
+    end
+
+    local function GetExtraTool()
+        for _, Tool in next, Character:GetChildren() do
+            if Tool:IsA("Tool") and not Tool.Name:match("LIMB_TOOL") then
+                return Tool
+            end
+        end
+    end
+
+    local function GetGripForHandle(Handle)
+        for _, Weld in next, Character:GetDescendants() do
+            if Weld:IsA("Weld") and (Weld.Part0 == Handle or Weld.Part1 == Handle) then
+                return Weld
+            end
+        end
+        wait(.2)
+        for _, Weld in next, Character:GetDescendants() do
+            if Weld:IsA("Weld") and (Weld.Part0 == Handle or Weld.Part1 == Handle) then
+                return Weld
+            end
+        end
+    end
+
+    local function CreateRightGrip(Handle)
+        local RightGrip = Instance.new("Weld")
+        RightGrip.Name = "RightGrip"
+        RightGrip.Part1 = Handle
+        RightGrip.Part0 = WeldBase
+        RightGrip.Parent = WeldBase
+        return RightGrip
+    end
+
+    local function CreateAccessory(Accessory, DeleteMeshes)
+        if not Accessory then return end
+        local HatAttachment = Accessory.Handle:FindFirstChildWhichIsA("Attachment")
+        local HeadAttachment = VirtualRig:FindFirstChild(HatAttachment.Name, true)
+        local BasePart = HeadAttachment.Parent
+        local HatAtt = HatAttachment.CFrame
+        local HeadAtt = HeadAttachment.CFrame
+
+        if DeleteMeshes then
+            if Accessory.Handle:FindFirstChild("Mesh") then
+                Accessory.Handle.Mesh:Destroy()
+            end
+        end
+
+        wait()
+        local Handle = Accessory:WaitForChild("Handle")
+        if Handle:FindFirstChildWhichIsA("Weld", true) then
+            Handle:FindFirstChildWhichIsA("Weld", true):Destroy()
+            Handle:BreakJoints()
+        else
+            Handle:BreakJoints()
+        end
+
+        Handle.Massless = true
+        Handle.Transparency = 0.5
+        UsedAccessories[Accessory] = true
+
+        local RightGrip = CreateRightGrip(Handle)
+        wait()
+
+        for _, Object in pairs(Handle:GetDescendants()) do
+            if not Object:IsA("BasePart") then
+                pcall(function() Object.Transparency = 1 end)
+                pcall(function() Object.Enabled = false end)
+            end
+        end
+
+        return Handle, RightGrip, HatAtt, HeadAtt, BasePart
+    end
+
+    local function GetHeadAccessories()
+        for _, Accessory in next, Character:GetChildren() do
+            if Accessory:IsA("Accessory") and not UsedAccessories[Accessory] then
+                local Handle, RightGrip, HatAtt, HeadAtt, BasePart = CreateAccessory(Accessory)
+                table.insert(HeadAccessories, {Handle, RightGrip, HatAtt, HeadAtt, BasePart})
+                Handle.Transparency = 1
+                if not WearAllAccessories then break end
+            end
+        end
+    end
+
+    -- VR Replication Setup
+    if RagdollEnabled then
+        if RagdollHeadMovement then
+            Permadeath()
+            MoveHead = CreateAlignment(reanimation["Head"])
+        end
+        MoveRightArm = CreateAlignment(reanimation["Right Arm"])
+        MoveLeftArm = CreateAlignment(reanimation["Left Arm"])
+        MoveRightLeg = CreateAlignment(reanimation["Right Leg"])
+        MoveLeftLeg = CreateAlignment(reanimation["Left Leg"])
+        MoveTorso = CreateAlignment(reanimation["Torso"])
+        MoveRoot = CreateAlignment(reanimation["HumanoidRootPart"])
+
+        if RagdollHeadMovement then
+            for _, Accessory in next, reanimation:GetChildren() do
+                if Accessory:IsA("Accessory") and Accessory:FindFirstChild("Handle") then
+                    local Attachment1 = Accessory.Handle:FindFirstChildWhichIsA("Attachment")
+                    local Attachment0 = reanimation:FindFirstChild(tostring(Attachment1), true)
+
+                    local Orientation = Instance.new("AlignOrientation")
+                    local Position = Instance.new("AlignPosition")
+
+                    Orientation.Attachment0 = Attachment1
+                    Orientation.Attachment1 = Attachment0
+                    Orientation.RigidityEnabled = false
+                    Orientation.ReactionTorqueEnabled = true
+                    Orientation.MaxTorque = 20000
+                    Orientation.Responsiveness = 40
+                    Orientation.Parent = reanimation["Head"]
+
+                    Position.Attachment0 = Attachment1
+                    Position.Attachment1 = Attachment0
+                    Position.RigidityEnabled = false
+                    Position.ReactionForceEnabled = true
+                    Position.MaxForce = 40000
+                    Position.Responsiveness = 40
+                    Position.Parent = reanimation["Head"]
+                end
+            end
+        end
+    end
+
+    -- Movement
+    VirtualRig.Name = "VirtualRig"
+    VirtualRig.RightFoot.BodyPosition.Position = CharacterCFrame.p
+    VirtualRig.LeftFoot.BodyPosition.Position = CharacterCFrame.p
+    VirtualRig.Parent = workspace
+    VirtualRig:SetPrimaryPartCFrame(CharacterCFrame)
+    VirtualRig.Humanoid.Health = 0
+    VirtualRig:BreakJoints()
+
+    for i, v in pairs(VirtualRig:GetChildren()) do
+        if v:IsA("BasePart") then
+            v.CFrame = character1.HumanoidRootPart.CFrame
+        end
+    end
+
+    VirtualBody.Parent = workspace
+    VirtualBody.Name = "VirtualBody"
+    VirtualBody.Humanoid.WalkSpeed = 8
+    VirtualBody.Humanoid.CameraOffset = Vector3.new(0, StudsOffset, 0)
+    VirtualBody:SetPrimaryPartCFrame(CharacterCFrame)
+
+    VirtualBody.Humanoid.Died:Connect(function()
+        if AutoRespawn then
+            Character:BreakJoints()
+            if RagdollHeadMovement and RagdollEnabled then
+                Respawn()
+            end
+        end
+    end)
+
+    -- Create arm control buttons
+    local ScreenGui2 = Instance.new("ScreenGui")
+    local W = Instance.new("TextButton")
+    local S = Instance.new("TextButton")
+
+    ScreenGui2.Parent = game.Players.LocalPlayer.PlayerGui
+    ScreenGui2.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    W.Name = "W"
+    W.Parent = ScreenGui2
+    W.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    W.Position = UDim2.new(0.161, 0, 0.601, 0)
+    W.Size = UDim2.new(0, 58, 0, 50)
+    W.Font = Enum.Font.SourceSans
+    W.Text = "LeftArm"
+    W.TextColor3 = Color3.fromRGB(226, 226, 226)
+    W.TextScaled = true
+    W.TextSize = 5
+    W.TextWrapped = true
+    W.MouseButton1Down:Connect(function()
+        Point1 = not Point1
+    end)
+
+    S.Name = "S"
+    S.Parent = ScreenGui2
+    S.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    S.Position = UDim2.new(0.69, 0, 0.601, 0)
+    S.Size = UDim2.new(0, 58, 0, 50)
+    S.Font = Enum.Font.SourceSans
+    S.Text = "RightArm"
+    S.TextColor3 = Color3.fromRGB(226, 226, 226)
+    S.TextScaled = true
+    S.TextSize = 5
+    S.TextWrapped = true
+    S.MouseButton1Down:Connect(function()
+        Point2 = not Point2
+    end)
+
+    Camera.CameraSubject = VirtualBody.Humanoid
+    Character.Humanoid.WalkSpeed = 0
+    Character.Humanoid.JumpPower = 1
+
+    for _, Part in next, VirtualBody:GetChildren() do
+        if Part:IsA("BasePart") then Part.Transparency = 1 end
+    end
+    for _, Part in next, VirtualRig:GetChildren() do
+        if Part:IsA("BasePart") then Part.Transparency = 1 end
+    end
+
+    if not VRReady then
+        VirtualRig.RightUpperArm.ShoulderConstraint.RigidityEnabled = true
+        VirtualRig.LeftUpperArm.ShoulderConstraint.RigidityEnabled = true
+    end
+
+    local OnMoving = RunService.Stepped:Connect(function()
+        local Direction = Character.Humanoid.MoveDirection
+        local Start = VirtualBody.HumanoidRootPart.Position
+        local Point = Start + Direction * 6
+        VirtualBody.Humanoid:MoveTo(Point)
+    end)
+
+    Character.Humanoid.Jumping:Connect(function()
+        VirtualBody.Humanoid.Jump = true
+    end)
+
+    UserInputService.JumpRequest:Connect(function()
+        VirtualBody.Humanoid.Jump = true
+        -- Infinite Jump
+        if States.InfiniteJump then
+            VirtualBody.Humanoid.Jump = true
+        end
+    end)
+
+    -- VR Replication
+    if RagdollEnabled then
+        for _, Part in pairs(Character:GetDescendants()) do
+            if Part:IsA("BasePart") and Part.Name == "Handle" and Part.Parent:IsA("Accessory") then
+                Part.LocalTransparencyModifier = 1
+            elseif Part:IsA("BasePart") and Part.Transparency < 0.5 and Part.Name ~= "Head" then
+                Part.LocalTransparencyModifier = bodyTransparency
+            elseif Part:IsA("BasePart") and Part.Name == "Head" then
+                Part.LocalTransparencyModifier = 1
+            end
+            if not Part:IsA("BasePart") and not Part:IsA("AlignPosition") and not Part:IsA("AlignOrientation") then
+                pcall(function() Part.Transparency = 1 end)
+                pcall(function() Part.Enabled = false end)
+            end
+        end
+    end
+
+    local FootUpdateDebounce = tick()
+
+    local function FloorRay(Part, Distance)
+        local Position = Part.CFrame.p
+        local Target = Position - Vector3.new(0, Distance, 0)
+        local Line = Ray.new(Position, (Target - Position).Unit * Distance)
+        local FloorPart, FloorPosition, FloorNormal = workspace:FindPartOnRayWithIgnoreList(Line, {VirtualRig, VirtualBody, Character})
+        if FloorPart then
+            return FloorPart, FloorPosition, FloorNormal, (FloorPosition - Position).Magnitude
+        else
+            return nil, Target, Vector3.new(), Distance
+        end
+    end
+
+    local function Flatten(CF)
+        local X, Y, Z = CF.X, CF.Y, CF.Z
+        local LX, LZ = CF.lookVector.X, CF.lookVector.Z
+        return CFrame.new(X, Y, Z) * CFrame.Angles(0, math.atan2(LX, LZ), 0)
+    end
+
+    local function FootReady(Foot, Target)
+        local MaxDist = Character.Humanoid.MoveDirection.Magnitude > 0 and .5 or 1
+        local PastThreshold = (Foot.Position - Target.Position).Magnitude > MaxDist
+        local PastTick = tick() - FootUpdateDebounce >= 2
+        if PastThreshold or PastTick then
+            FootUpdateDebounce = tick()
+        end
+        return PastThreshold or PastTick
+    end
+
+    local mss = game.Players.LocalPlayer:GetMouse()
+
+    local function FootYield()
+        local RightFooting = VirtualRig.RightFoot.BodyPosition
+        local LeftFooting = VirtualRig.LeftFoot.BodyPosition
+        local LowerTorso = VirtualRig.LowerTorso
+        local Yield = tick()
+        repeat
+            RunService.Stepped:Wait()
+            if (LowerTorso.Position - RightFooting.Position).Y > 4 or
+                (LowerTorso.Position - LeftFooting.Position).Y > 4 or
+                ((LowerTorso.Position - RightFooting.Position) * Vector3.new(1, 0, 1)).Magnitude > 4 or
+                ((LowerTorso.Position - LeftFooting.Position) * Vector3.new(1, 0, 1)).Magnitude > 4 then
+                break
+            end
+        until tick() - Yield >= .17
+    end
+
+    local function UpdateFooting()
+        if not VirtualRig:FindFirstChild("LowerTorso") then
+            wait()
+            return
+        end
+        local Floor, FloorPosition, FloorNormal, Dist = FloorRay(VirtualRig.LowerTorso, 3)
+        Dist = math.clamp(Dist, 0, 5)
+
+        local FootTarget = VirtualRig.LowerTorso.CFrame * CFrame.new(FootPlacementSettings.RightOffset) - Vector3.new(0, Dist, 0) + Character.Humanoid.MoveDirection * (VirtualBody.Humanoid.WalkSpeed / 8) * 2
+        if FootReady(VirtualRig.RightFoot, FootTarget) then
+            VirtualRig.RightFoot.BodyPosition.Position = FootTarget.p
+            VirtualRig.RightFoot.BodyGyro.CFrame = Flatten(VirtualRig.LowerTorso.CFrame)
+        end
+
+        FootYield()
+
+        FootTarget = VirtualRig.LowerTorso.CFrame * CFrame.new(FootPlacementSettings.LeftOffset) - Vector3.new(0, Dist, 0) + Character.Humanoid.MoveDirection * (VirtualBody.Humanoid.WalkSpeed / 8) * 2
+        if FootReady(VirtualRig.LeftFoot, FootTarget) then
+            VirtualRig.LeftFoot.BodyPosition.Position = FootTarget.p
+            VirtualRig.LeftFoot.BodyGyro.CFrame = Flatten(VirtualRig.LowerTorso.CFrame)
+        end
+    end
+
+    local function UpdateTorsoPosition()
+        if RagdollEnabled then
+            local Positioning = VirtualRig.UpperTorso.CFrame
+            MoveTorso(Positioning * CFrame.new(0, -0.25, 0))
+            MoveRoot(Positioning * CFrame.new(0, -0.25, 0))
+        end
+    end
+
+    local function UpdateLegPosition()
+        if RagdollEnabled then
+            do
+                local Positioning = VirtualRig.RightLowerLeg.CFrame:Lerp(VirtualRig.RightFoot.CFrame, 0.5) * CFrame.Angles(0, math.rad(180), 0) + Vector3.new(0, 0.5, 0)
+                MoveRightLeg(Positioning)
+            end
+            do
+                local Positioning = VirtualRig.LeftLowerLeg.CFrame:Lerp(VirtualRig.LeftFoot.CFrame, 0.5) * CFrame.Angles(0, math.rad(180), 0) + Vector3.new(0, 0.5, 0)
+                MoveLeftLeg(Positioning)
+            end
+        end
+    end
+
+    local function OnUserCFrameChanged(UserCFrame, Positioning, IgnoreTorso)
+        local Positioning = game.Workspace.VirtualBody.Head.CFrame * Positioning
+
+        if not IgnoreTorso then
+            UpdateTorsoPosition()
+            UpdateLegPosition()
+        end
+
+        if RagdollEnabled then
+            if UserCFrame == Enum.UserCFrame.Head and RagdollHeadMovement then
+                MoveHead(Positioning)
+            elseif UserCFrame == Enum.UserCFrame.RightHand then
+                local Pos = Positioning
+                if not VRReady then
+                    Pos = VirtualRig.RightUpperArm.CFrame:Lerp(VirtualRig.RightLowerArm.CFrame, 0.5)
+                elseif AccurateHandPosition then
+                    Pos = Pos * CFrame.new(0, 0, 1)
+                end
+                if VRReady then
+                    Pos = Pos * AccessorySettings.LimbOffset
+                end
+                MoveRightArm(Pos)
+                if Point2 then
+                    VirtualRig.RightUpperArm.Aim.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                    VirtualRig.RightUpperArm.Aim.CFrame = mss.hit * AccessorySettings.LimbOffset
+                elseif VirtualRig.RightUpperArm.Aim.MaxTorque ~= Vector3.new(0, 0, 0) then
+                    VirtualRig.RightUpperArm.Aim.MaxTorque = Vector3.new(0, 0, 0)
+                end
+            elseif UserCFrame == Enum.UserCFrame.LeftHand then
+                local Pos = Positioning
+                if not VRReady then
+                    Pos = VirtualRig.LeftUpperArm.CFrame:Lerp(VirtualRig.LeftLowerArm.CFrame, 0.5)
+                elseif AccurateHandPosition then
+                    Pos = Pos * CFrame.new(0, 0, 1)
+                end
+                if VRReady then
+                    Pos = Pos * AccessorySettings.LimbOffset
+                end
+                MoveLeftArm(Pos)
+                if Point1 then
+                    VirtualRig.LeftUpperArm.Aim.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                    VirtualRig.LeftUpperArm.Aim.CFrame = mss.hit * AccessorySettings.LimbOffset
+                elseif VirtualRig.LeftUpperArm.Aim.MaxTorque ~= Vector3.new(0, 0, 0) then
+                    VirtualRig.LeftUpperArm.Aim.MaxTorque = Vector3.new(0, 0, 0)
+                end
+            end
+        end
+
+        if UserCFrame == Enum.UserCFrame.Head then
+            VirtualRig.Head.CFrame = Positioning
+        elseif UserCFrame == Enum.UserCFrame.RightHand and VRReady then
+            VirtualRig.RightHand.CFrame = Positioning
+        elseif UserCFrame == Enum.UserCFrame.LeftHand and VRReady then
+            VirtualRig.LeftHand.CFrame = Positioning
+        end
+
+        if not VRReady and VirtualRig.LeftHand.Anchored then
+            VirtualRig.RightHand.Anchored = false
+            VirtualRig.LeftHand.Anchored = false
+        elseif VRReady and not VirtualRig.LeftHand.Anchored then
+            VirtualRig.RightHand.Anchored = true
+            VirtualRig.LeftHand.Anchored = true
+        end
+    end
+
+    local CFrameChanged = VRService.UserCFrameChanged:Connect(OnUserCFrameChanged)
+
+    local OnStepped = RunService.Stepped:Connect(function()
+        for _, Part in pairs(VirtualRig:GetChildren()) do
+            if Part:IsA("BasePart") then
+                Part.CanCollide = false
+            end
+        end
+        if RagdollEnabled then
+            for _, Part in pairs(Character:GetChildren()) do
+                if Part:IsA("BasePart") then
+                    Part.CanCollide = false
+                end
+            end
+        end
+        if NoCollision or States.Noclip then
+            for _, Player in pairs(Players:GetPlayers()) do
+                if Player ~= Client and Player.Character then
+                    for _, Part in pairs(Player.Character:GetDescendants()) do
+                        if Part:IsA("BasePart") then
+                            Part.CanCollide = false
+                            Part.Velocity = Vector3.new()
+                            Part.RotVelocity = Vector3.new()
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    -- ═══════════════════════════════════════
+    -- ENHANCED FEATURES LOOP
+    -- ═══════════════════════════════════════
+    local flyBodyVel = nil
+    local flyBodyGyro = nil
+    local spinAngle = 0
+    local headSpinAngle = 0
+    local orbitAngle = 0
+
+    local OnRenderStepped = RunService.Stepped:Connect(function()
+        Camera.CameraSubject = VirtualBody.Humanoid
+
+        if RagdollEnabled then
+            Character.HumanoidRootPart.CFrame = VirtualRig.UpperTorso.CFrame
+        end
+
+        if not VRReady then
+            OnUserCFrameChanged(Enum.UserCFrame.Head, CFrame.new(0, 0, 0))
+            OnUserCFrameChanged(Enum.UserCFrame.RightHand, CFrame.new(0, 0, 0), true)
+            OnUserCFrameChanged(Enum.UserCFrame.LeftHand, CFrame.new(0, 0, 0), true)
+        end
+
+        -- ═══ FLIGHT SYSTEM ═══
+        if States.Flying then
+            if not flyBodyVel then
+                flyBodyVel = Instance.new("BodyVelocity")
+                flyBodyVel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                flyBodyVel.Velocity = Vector3.new(0, 0, 0)
+                flyBodyVel.Parent = VirtualBody.HumanoidRootPart
+
+                flyBodyGyro = Instance.new("BodyGyro")
+                flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                flyBodyGyro.P = 9e4
+                flyBodyGyro.Parent = VirtualBody.HumanoidRootPart
+            end
+
+            local dir = Vector3.new()
+            local cf = Camera.CFrame
+
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                dir = dir + cf.LookVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                dir = dir - cf.LookVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                dir = dir - cf.RightVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                dir = dir + cf.RightVector
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                dir = dir + Vector3.new(0, 1, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                dir = dir - Vector3.new(0, 1, 0)
+            end
+
+            if dir.Magnitude > 0 then
+                dir = dir.Unit
+            end
+
+            flyBodyVel.Velocity = dir * Settings.FlySpeed
+            flyBodyGyro.CFrame = cf
+        else
+            if flyBodyVel then
+                flyBodyVel:Destroy()
+                flyBodyVel = nil
+            end
+            if flyBodyGyro then
+                flyBodyGyro:Destroy()
+                flyBodyGyro = nil
+            end
+        end
+
+        -- ═══ ANTI-VOID ═══
+        if States.AntiVoid then
+            if VirtualBody.HumanoidRootPart.Position.Y < -50 then
+                VirtualBody:MoveTo(Vector3.new(0, 50, 0))
+                VirtualRig:MoveTo(Vector3.new(0, 50, 0))
+            end
+        end
+
+        -- ═══ SPIN EFFECT ═══
+        if States.Spin then
+            spinAngle = spinAngle + Settings.SpinSpeed * 0.05
+            -- The spin is applied through the rootjoint of the reanimation
+            local torso = reanimation:FindFirstChild("Torso")
+            if torso then
+                -- Applied via the alignment system automatically
+            end
+        end
+
+        -- ═══ FLING SYSTEM ═══
+        if States.Fling then
+            for _, part in pairs(character1:GetChildren()) do
+                if part:IsA("BasePart") then
+                    part.Velocity = Vector3.new(
+                        math.random(-Settings.FlingPower, Settings.FlingPower),
+                        math.random(-Settings.FlingPower, Settings.FlingPower),
+                        math.random(-Settings.FlingPower, Settings.FlingPower)
+                    )
+                    part.RotVelocity = Vector3.new(
+                        math.random(-100, 100),
+                        math.random(-100, 100),
+                        math.random(-100, 100)
+                    )
+                end
+            end
+        end
+
+        -- ═══ ORBIT SYSTEM ═══
+        if States.Orbiting then
+            local nearestPlayer = nil
+            local nearestDist = math.huge
+
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= player1 and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                    local dist = (plr.Character.HumanoidRootPart.Position - VirtualBody.HumanoidRootPart.Position).Magnitude
+                    if dist < nearestDist then
+                        nearestDist = dist
+                        nearestPlayer = plr
+                    end
+                end
+            end
+
+            if nearestPlayer and nearestPlayer.Character and nearestPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                orbitAngle = orbitAngle + Settings.OrbitSpeed * 0.05
+                local targetPos = nearestPlayer.Character.HumanoidRootPart.Position
+                local orbitPos = targetPos + Vector3.new(
+                    math.cos(orbitAngle) * Settings.OrbitRadius,
+                    2,
+                    math.sin(orbitAngle) * Settings.OrbitRadius
+                )
+                VirtualBody.Humanoid:MoveTo(orbitPos)
+            end
+        end
+
+        -- ═══ NOCLIP ═══
+        if States.Noclip then
+            for _, part in pairs(VirtualBody:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+
+        -- ═══ ESP DISTANCE UPDATE ═══
+        if States.ESP then
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= player1 and plr.Character then
+                    local head = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
+                    if head then
+                        local distBB = head:FindFirstChild("ESPDist")
+                        if distBB then
+                            local distLabel = distBB:FindFirstChild("DistLabel")
+                            if distLabel then
+                                local dist = math.floor((head.Position - Camera.CFrame.Position).Magnitude)
+                                distLabel.Text = dist .. " studs"
+                            end
+                        end
+                        local healthBB = head:FindFirstChild("ESPHealth")
+                        if healthBB then
+                            local healthLabel = healthBB:FindFirstChild("HealthLabel")
+                            if healthLabel then
+                                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                                if hum then
+                                    healthLabel.Text = "❤ " .. math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+                                    local pct = hum.Health / hum.MaxHealth
+                                    healthLabel.TextColor3 = Color3.fromRGB(255 * (1 - pct), 255 * pct, 0)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    -- Foot movement loop
+    spawn(function()
+        while Character and Character.Parent do
+            FootYield()
+            UpdateFooting()
+        end
+    end)
+
+    -- ═══════════════════════════════════════
+    -- KEYBIND SYSTEM
+    -- ═══════════════════════════════════════
+    local OnInput = UserInputService.InputBegan:Connect(function(Input, Processed)
+        if not Processed then
+            if Input.KeyCode == Enum.KeyCode.LeftControl or Input.KeyCode == Enum.KeyCode.ButtonL2 then
+                Tween(VirtualBody.Humanoid, "Elastic", "Out", 1, {CameraOffset = Vector3.new(0, StudsOffset - 1.5, 0)})
+            end
+            if Input.KeyCode == Enum.KeyCode.X then
+                if RagdollEnabled and RagdollHeadMovement then
+                    Respawn()
+                end
+            end
+            if Input.KeyCode == Enum.KeyCode.C then
+                VirtualBody:MoveTo(Mouse.Hit.p)
+                VirtualRig:MoveTo(Mouse.Hit.p)
+            end
+            -- Flight toggle
+            if Input.KeyCode == Enum.KeyCode.F then
+                States.Flying = not States.Flying
+            end
+            -- Noclip toggle
+            if Input.KeyCode == Enum.KeyCode.N then
+                States.Noclip = not States.Noclip
+            end
+            -- ESP toggle
+            if Input.KeyCode == Enum.KeyCode.G then
+                States.ESP = not States.ESP
+            end
+        end
+
+        if Input.KeyCode == Enum.KeyCode.LeftShift or Input.KeyCode == Enum.KeyCode.ButtonR2 then
+            Tween(VirtualBody.Humanoid, "Sine", "Out", 1, {WalkSpeed = States.SpeedHack and Settings.SprintSpeed or 16})
+        end
+
+        if not VRReady and Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            Point1 = true
+        end
+        if not VRReady and Input.UserInputType == Enum.UserInputType.MouseButton2 then
+            Point2 = true
+        end
+
+        if VRReady and Input.KeyCode == Enum.KeyCode.ButtonY then
+            Character:BreakJoints()
+            if RagdollEnabled and RagdollHeadMovement then
+                Respawn()
+            end
+        end
+    end)
+
+    local OnInputEnded = UserInputService.InputEnded:Connect(function(Input, Processed)
+        if not Processed then
+            if Input.KeyCode == Enum.KeyCode.LeftControl or Input.KeyCode == Enum.KeyCode.ButtonL2 then
+                Tween(VirtualBody.Humanoid, "Elastic", "Out", 1, {CameraOffset = Vector3.new(0, StudsOffset, 0)})
+            end
+        end
+
+        if Input.KeyCode == Enum.KeyCode.LeftShift or Input.KeyCode == Enum.KeyCode.ButtonR2 then
+            Tween(VirtualBody.Humanoid, "Sine", "Out", 1, {WalkSpeed = States.SpeedHack and Settings.WalkSpeed or 8})
+        end
+
+        if not VRReady and Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            Point1 = false
+        end
+        if not VRReady and Input.UserInputType == Enum.UserInputType.MouseButton2 then
+            Point2 = false
+        end
+    end)
+
+    -- Cleanup
+    local OnReset
+    OnReset = Client.CharacterAdded:Connect(function()
+        OnReset:Disconnect()
+        CFrameChanged:Disconnect()
+        OnStepped:Disconnect()
+        OnRenderStepped:Disconnect()
+        OnMoving:Disconnect()
+        OnInput:Disconnect()
+        OnInputEnded:Disconnect()
+        VirtualRig:Destroy()
+        VirtualBody:Destroy()
+        if AutoRun then
+            delay(2, function() Script() end)
+        end
+    end)
+
+    if ChatEnabled then
+        spawn(ChatHUDFunc)
+    end
+    if ViewportEnabled then
+        spawn(ViewHUDFunc)
+    end
+
+    -- VR Pointer
+    do
+        local VRReady2 = VRService.VREnabled
+        if VRReady2 then
+            local Pointer2 = game:GetObjects("rbxassetid://4476173280")[1]
+            Pointer2.Parent = workspace
+            Pointer2.Beam.Enabled = false
+            Pointer2.Target.ParticleEmitter.Enabled = false
+
+            local RenderStepped2 = RunService.RenderStepped:Connect(function()
+                if Pointer2.Beam.Enabled then
+                    local RightHand = Camera.CFrame * VRService:GetUserCFrame(Enum.UserCFrame.RightHand)
+                    local Target = RightHand * CFrame.new(0, 0, -10)
+                    local Line = Ray.new(RightHand.p, (Target.p - RightHand.p).Unit * 128)
+                    local Part, Position = workspace:FindPartOnRayWithIgnoreList(Line, {VirtualRig, VirtualBody, Character, Pointer2})
+                    local Distance = (Position - RightHand.p).Magnitude
+                    Pointer2.Target.Position = Vector3.new(0, 0, -Distance)
+                    Pointer2.CFrame = RightHand
+                end
+            end)
+
+            local Input2 = UserInputService.InputBegan:Connect(function(Input)
+                if Input.KeyCode == Enum.KeyCode.ButtonB then
+                    Pointer2.Beam.Enabled = not Pointer2.Beam.Enabled
+                    Pointer2.Target.ParticleEmitter.Enabled = not Pointer2.Target.ParticleEmitter.Enabled
+                end
+            end)
+
+            local CharAdded2
+            CharAdded2 = Client.CharacterAdded:Connect(function()
+                RenderStepped2:Disconnect()
+                Input2:Disconnect()
+                CharAdded2:Disconnect()
+                Pointer2:Destroy()
+            end)
+        end
+    end
+end
+
+Permadeath = function()
+    local ch = game.Players.LocalPlayer.Character
+    local prt = Instance.new("Model", workspace)
+    local z1 = Instance.new("Part", prt)
+    z1.Name = "Torso"
+    z1.CanCollide = false
+    z1.Anchored = true
+    local z2 = Instance.new("Part", prt)
+    z2.Name = "Head"
+    z2.Anchored = true
+    z2.CanCollide = false
+    local z3 = Instance.new("Humanoid", prt)
+    z3.Name = "Humanoid"
+    z1.Position = Vector3.new(0, 9999, 0)
+    z2.Position = Vector3.new(0, 9991, 0)
+    game.Players.LocalPlayer.Character = prt
+    wait(game.Players.RespawnTime / 2)
+    game.Players.LocalPlayer.Character = ch
+    wait(game.Players.RespawnTime / 2 + 0.5)
+end
+
+Respawn = function()
+    local ch = game.Players.LocalPlayer.Character
+    local prt = Instance.new("Model", workspace)
+    local z1 = Instance.new("Part", prt)
+    z1.Name = "Torso"
+    z1.CanCollide = false
+    z1.Anchored = true
+    local z2 = Instance.new("Part", prt)
+    z2.Name = "Head"
+    z2.Anchored = true
+    z2.CanCollide = false
+    local z3 = Instance.new("Humanoid", prt)
+    z3.Name = "Humanoid"
+    z1.Position = Vector3.new(0, 9999, 0)
+    z2.Position = Vector3.new(0, 9991, 0)
+    game.Players.LocalPlayer.Character = prt
+    wait(game.Players.RespawnTime)
+    game.Players.LocalPlayer.Character = ch
+end
+
+ChatHUDFunc = function()
+    local UserInputService = game:GetService("UserInputService")
+    local RunService = game:GetService("RunService")
+    local VRService = game:GetService("VRService")
+    local VRReady = VRService.VREnabled
+    local Players = game:GetService("Players")
+    local Client = Players.LocalPlayer
+    local Camera = workspace.CurrentCamera
+
+    local ChatHUD = game:GetObjects("rbxassetid://4476067885")[1]
+    local GlobalFrame = ChatHUD.GlobalFrame
+    local Template = GlobalFrame.Template
+    local LocalFrame = ChatHUD.LocalFrame
+    local Global = ChatHUD.Global
+    local Local = ChatHUD.Local
+
+    Template.Parent = nil
+    ChatHUD.Parent = game:GetService("CoreGui")
+
+    local Highlight = Global.Frame.BackgroundColor3
+    local Deselected = Local.Frame.BackgroundColor3
+
+    local OpenGlobalTab = function()
+        Global.Frame.BackgroundColor3 = Highlight
+        Local.Frame.BackgroundColor3 = Deselected
+        Global.Font = Enum.Font.SourceSansBold
+        Local.Font = Enum.Font.SourceSans
+        GlobalFrame.Visible = true
+        LocalFrame.Visible = false
+    end
+
+    local OpenLocalTab = function()
+        Global.Frame.BackgroundColor3 = Deselected
+        Local.Frame.BackgroundColor3 = Highlight
+        Global.Font = Enum.Font.SourceSans
+        Local.Font = Enum.Font.SourceSansBold
+        GlobalFrame.Visible = false
+        LocalFrame.Visible = true
+    end
+
+    Global.MouseButton1Down:Connect(OpenGlobalTab)
+    Local.MouseButton1Down:Connect(OpenLocalTab)
+    Global.MouseButton1Click:Connect(OpenGlobalTab)
+    Local.MouseButton1Click:Connect(OpenLocalTab)
+    OpenLocalTab()
+
+    local function GetPlayerDistance(Sender)
+        if Sender.Character and Sender.Character:FindFirstChild("Head") then
+            return math.floor((Sender.Character.Head.Position - Camera:GetRenderCFrame().p).Magnitude + 0.5)
+        end
+    end
+
+    local function NewGlobal(Message, Sender, Color)
+        local Frame = Template:Clone()
+        Frame.Text = ("[%s]: %s"):format(Sender.Name, Message)
+        Frame.User.Text = ("[%s]:"):format(Sender.Name)
+        Frame.User.TextColor3 = Color
+        Frame.BackgroundColor3 = Color
+        Frame.Parent = GlobalFrame
+        delay(60, function() Frame:Destroy() end)
+    end
+
+    local function NewLocal(Message, Sender, Color, Dist)
+        local Frame = Template:Clone()
+        Frame.Text = ("(%s) [%s]: %s"):format(tostring(Dist), Sender.Name, Message)
+        Frame.User.Text = ("(%s) [%s]:"):format(tostring(Dist), Sender.Name)
+        Frame.User.TextColor3 = Color
+        Frame.BackgroundColor3 = Color
+        Frame.Parent = LocalFrame
+        delay(60, function() Frame:Destroy() end)
+    end
+
+    local function OnNewChat(Message, Sender, Color)
+        if not ChatHUD or not ChatHUD.Parent then return end
+        NewGlobal(Message, Sender, Color)
+        local Distance = GetPlayerDistance(Sender)
+        if Distance and Distance <= ChatLocalRange then
+            NewLocal(Message, Sender, Color, Distance)
+        end
+    end
+
+    local function OnPlayerAdded(Player)
+        if not ChatHUD or not ChatHUD.Parent then return end
+        local Color = BrickColor.Random().Color
+        Player.Chatted:Connect(function(Message)
+            OnNewChat(Message, Player, Color)
+        end)
+    end
+
+    Players.PlayerAdded:Connect(OnPlayerAdded)
+    for _, Player in pairs(Players:GetPlayers()) do
+        OnPlayerAdded(Player)
+    end
+
+    local ChatPart = ChatHUD.Part
+    ChatHUD.Adornee = ChatPart
+
+    if VRReady then
+        ChatHUD.Parent = game:GetService("CoreGui")
+        ChatHUD.Enabled = true
+        ChatHUD.AlwaysOnTop = true
+
+        local OnInput = UserInputService.InputBegan:Connect(function(Input, Processed)
+            if not Processed and Input.KeyCode == Enum.KeyCode.ButtonX then
+                ChatHUD.Enabled = not ChatHUD.Enabled
+            end
+        end)
+
+        local RenderStepped = RunService.RenderStepped:Connect(function()
+            local LeftHand = VRService:GetUserCFrame(Enum.UserCFrame.LeftHand)
+            ChatPart.CFrame = Camera.CFrame * LeftHand
+        end)
+
+        local CharacterAdded
+        CharacterAdded = Client.CharacterAdded:Connect(function()
+            OnInput:Disconnect()
+            RenderStepped:Disconnect()
+            CharacterAdded:Disconnect()
+            ChatHUD:Destroy()
+            ChatHUD = nil
+        end)
+    end
+
+    wait(9e9)
+end
+
+ViewHUDFunc = function()
+    local ViewportRange = ViewportRange or 32
+    local UserInputService = game:GetService("UserInputService")
+    local RunService = game:GetService("RunService")
+    local VRService = game:GetService("VRService")
+    local VRReady = VRService.VREnabled
+    local Players = game:GetService("Players")
+    local Client = Players.LocalPlayer
+    local Camera = workspace.CurrentCamera
+    local CameraPort = Camera.CFrame
+
+    local ViewHUD = game:GetObjects("rbxassetid://4480405425")[1]
+    local Viewport = ViewHUD.Viewport
+    local Viewcam = Instance.new("Camera")
+    local ViewPart = ViewHUD.Part
+
+    ViewHUD.Parent = game:GetService("CoreGui")
+    Viewcam.Parent = Viewport
+    Viewcam.CameraType = Enum.CameraType.Scriptable
+    Viewport.CurrentCamera = Viewcam
+    Viewport.BackgroundTransparency = 1
+
+    local function Clone(Character)
+        local Arc = Character.Archivable
+        Character.Archivable = true
+        local C = Character:Clone()
+        Character.Archivable = Arc
+        return C
+    end
+
+    local function GetPart(Name, Parent, Descendants)
+        for i = 1, #Descendants do
+            if Descendants[i].Name == Name and Descendants[i].Parent.Name == Parent then
+                return Descendants[i]
+            end
+        end
+    end
+
+    local function OnPlayerAdded(Player)
+        if not ViewHUD or not ViewHUD.Parent then return end
+        local function CharacterAdded(Character)
+            if not ViewHUD or not ViewHUD.Parent then return end
+            Character:WaitForChild("Head")
+            Character:WaitForChild("Humanoid")
+            wait(3)
+
+            local FakeChar = Clone(Character)
+            local Root = FakeChar:FindFirstChild("HumanoidRootPart") or FakeChar:FindFirstChild("Head")
+            local Descendants = FakeChar:GetDescendants()
+            local RealDescendants = Character:GetDescendants()
+            local Correspondents = {}
+
+            FakeChar.Humanoid.DisplayDistanceType = "None"
+
+            for i = 1, #Descendants do
+                local Part = Descendants[i]
+                local Real = Part:IsA("BasePart") and GetPart(Part.Name, Part.Parent.Name, RealDescendants)
+                if Part:IsA("BasePart") and Real then
+                    Part.Anchored = true
+                    Part:BreakJoints()
+                    if Part.Parent:IsA("Accessory") then Part.Transparency = 0 end
+                    table.insert(Correspondents, {Part, Real})
+                end
+            end
+
+            local RenderConnection = RunService.RenderStepped:Connect(function()
+                if not Character or not Character.Parent then
+                    RenderConnection:Disconnect()
+                    FakeChar:Destroy()
+                    return
+                end
+                if (Root and (Root.Position - Camera.CFrame.p).Magnitude <= ViewportRange) or Player == Client or not Root then
+                    for i = 1, #Correspondents do
+                        local Part, Real = unpack(Correspondents[i])
+                        if Part and Real and Part.Parent and Real.Parent then
+                            Part.CFrame = Real.CFrame
+                        elseif Part.Parent and not Real.Parent then
+                            Part:Destroy()
+                        end
+                    end
+                end
+            end)
+
+            FakeChar.Parent = Viewcam
+        end
+
+        Player.CharacterAdded:Connect(CharacterAdded)
+        if Player.Character then
+            spawn(function() CharacterAdded(Player.Character) end)
+        end
+    end
+
+    local PlayerAdded = Players.PlayerAdded:Connect(OnPlayerAdded)
+    for _, Player in pairs(Players:GetPlayers()) do
+        OnPlayerAdded(Player)
+    end
+
+    ViewPart.Size = Vector3.new()
+
+    if VRReady then
+        Viewport.Position = UDim2.new(.62, 0, .89, 0)
+        Viewport.Size = UDim2.new(.3, 0, .3, 0)
+        Viewport.AnchorPoint = Vector2.new(.5, 1)
+    else
+        Viewport.Size = UDim2.new(0.3, 0, 0.3, 0)
+    end
+
+    local RenderStepped = RunService.RenderStepped:Connect(function()
+        local Render = Camera.CFrame
+        local Scale = Camera.ViewportSize
+        if VRReady then
+            Render = Render * VRService:GetUserCFrame(Enum.UserCFrame.Head)
+        end
+        CameraPort = CFrame.new(Render.p + Vector3.new(5, 2, 0), Render.p)
+        Viewport.Camera.CFrame = CameraPort
+        ViewPart.CFrame = Render * CFrame.new(0, 0, -16)
+        ViewHUD.Size = UDim2.new(0, Scale.X - 6, 0, Scale.Y - 6)
+    end)
+
+    local CharacterAdded
+    CharacterAdded = Client.CharacterAdded:Connect(function()
+        RenderStepped:Disconnect()
+        CharacterAdded:Disconnect()
+        PlayerAdded:Disconnect()
+        ViewHUD:Destroy()
+        ViewHUD = nil
+    end)
+
+    -- ═══════════════════════════════════════
+    -- REANIMATION SYNC
+    -- ═══════════════════════════════════════
+    for i, v in pairs(character1:GetDescendants()) do
+        if v:IsA("Motor6D") then
+            v:Destroy()
+        end
+    end
+
+    if character1.Humanoid.RigType == Enum.HumanoidRigType.R15 then
+        character1:BreakJoints()
+    end
+
+    for i, v in pairs(reanimation:GetChildren()) do
+        if v:IsA("BasePart") then
+            v.Anchored = false
+        end
+    end
+
+    -- Main reanimation heartbeat loop
+    RunService.Heartbeat:Connect(function()
+        for i, v in pairs(character1:GetChildren()) do
+            if v:IsA("BasePart") then
+                v.Velocity = Vector3.new(bodyVelocity[1], bodyVelocity[2], bodyVelocity[3])
+                if character1.Humanoid.RigType == Enum.HumanoidRigType.R6 then
+                    v.CFrame = reanimation:FindFirstChild(v.Name).CFrame
+                else
+                    -- R15 mapping
+                    if character1:FindFirstChild("Head") then
+                        character1.Head.CFrame = reanimation.Head.CFrame
+                    end
+                    if character1:FindFirstChild("UpperTorso") then
+                        character1.UpperTorso.CFrame = reanimation.Torso.CFrame * CFrame.new(0, 0.185, 0)
+                    end
+                    if character1:FindFirstChild("LowerTorso") then
+                        character1.LowerTorso.CFrame = reanimation.Torso.CFrame * CFrame.new(0, -0.8, 0)
+                    end
+                    if character1:FindFirstChild("HumanoidRootPart") then
+                        character1.HumanoidRootPart.CFrame = cHRP.CFrame
+                    end
+                    if character1:FindFirstChild("LeftUpperArm") then
+                        character1.LeftUpperArm.CFrame = reanimation["Left Arm"].CFrame * CFrame.new(0, 0.4, 0)
+                    end
+                    if character1:FindFirstChild("LeftLowerArm") then
+                        character1.LeftLowerArm.CFrame = reanimation["Left Arm"].CFrame * CFrame.new(0, -0.19, 0)
+                    end
+                    if character1:FindFirstChild("LeftHand") then
+                        character1.LeftHand.CFrame = reanimation["Left Arm"].CFrame * CFrame.new(0, -0.84, 0)
+                    end
+                    if character1:FindFirstChild("RightUpperArm") then
+                        character1.RightUpperArm.CFrame = reanimation["Right Arm"].CFrame * CFrame.new(0, 0.4, 0)
+                    end
+                    if character1:FindFirstChild("RightLowerArm") then
+                        character1.RightLowerArm.CFrame = reanimation["Right Arm"].CFrame * CFrame.new(0, -0.19, 0)
+                    end
+                    if character1:FindFirstChild("RightHand") then
+                        character1.RightHand.CFrame = reanimation["Right Arm"].CFrame * CFrame.new(0, -0.84, 0)
+                    end
+                    if character1:FindFirstChild("LeftUpperLeg") then
+                        character1.LeftUpperLeg.CFrame = reanimation["Left Leg"].CFrame * CFrame.new(0, 0.55, 0)
+                    end
+                    if character1:FindFirstChild("LeftLowerLeg") then
+                        character1.LeftLowerLeg.CFrame = reanimation["Left Leg"].CFrame * CFrame.new(0, -0.19, 0)
+                    end
+                    if character1:FindFirstChild("LeftFoot") then
+                        character1.LeftFoot.CFrame = reanimation["Left Leg"].CFrame * CFrame.new(0, -0.85, 0)
+                    end
+                    if character1:FindFirstChild("RightUpperLeg") then
+                        character1.RightUpperLeg.CFrame = reanimation["Right Leg"].CFrame * CFrame.new(0, 0.55, 0)
+                    end
+                    if character1:FindFirstChild("RightLowerLeg") then
+                        character1.RightLowerLeg.CFrame = reanimation["Right Leg"].CFrame * CFrame.new(0, -0.19, 0)
+                    end
+                    if character1:FindFirstChild("RightFoot") then
+                        character1.RightFoot.CFrame = reanimation["Right Leg"].CFrame * CFrame.new(0, -0.85, 0)
+                    end
+                end
+            end
+
+            if v:IsA("Accessory") then
+                v.Handle.Velocity = Vector3.new(hatVelocity[1], hatVelocity[2], hatVelocity[3])
+                local reanAccessory = reanimation:FindFirstChild(v.Name)
+                if reanAccessory then
+                    v.Handle.CFrame = reanAccessory.Handle.CFrame
+                end
+            end
+        end
+    end)
+
+    RunService.Stepped:Connect(function()
+        for i, v in pairs(reanimation:GetChildren()) do
+            if v:IsA("BasePart") then
+                v.CanCollide = false
+            end
+        end
+    end)
+
+    wait(9e9)
+end
+
+-- ═══════════════════════════════════════
+-- EXECUTE
+-- ═══════════════════════════════════════
+Script()
+
+wait(2)
+
+-- Ball socket constraints for ragdoll
+local character = reanimation
+local A0LL = Instance.new("Attachment", character["Left Leg"])
+A0LL.Position = Vector3.new(0, 1, 0)
+local A1LL = Instance.new("Attachment", character["Torso"])
+A1LL.Position = Vector3.new(-0.5, -1, 0)
+local socket1 = Instance.new("BallSocketConstraint", character["Left Leg"])
+socket1.Attachment0 = A0LL
+socket1.Attachment1 = A1LL
+
+local A0RL = Instance.new("Attachment", character["Right Leg"])
+A0RL.Position = Vector3.new(0, 1, 0)
+local A1RL = Instance.new("Attachment", character["Torso"])
+A1RL.Position = Vector3.new(0.5, -1, 0)
+local socket2 = Instance.new("BallSocketConstraint", character["Right Leg"])
+socket2.Attachment0 = A0RL
+socket2.Attachment1 = A1RL
+
+local A0H = Instance.new("Attachment", character["Head"])
+A0H.Position = Vector3.new(0, -0.5, 0)
+local A1H = Instance.new("Attachment", character["Torso"])
+A1H.Position = Vector3.new(0, 1, 0)
+local socket5 = Instance.new("BallSocketConstraint", character["Head"])
+socket5.Attachment0 = A0H
+socket5.Attachment1 = A1H
+
+-- Remove face from virtual body
+pcall(function()
+    game.Workspace.VirtualBody.Head.Face:Destroy()
+end)
+
+-- ═══════════════════════════════════════
+-- CREATE THE UI
+-- ═══════════════════════════════════════
+wait(1)
+local UI, NotifyFunc = CreateAdvancedUI()
+
+-- ═══════════════════════════════════════
+-- FPS COUNTER (bonus feature)
+-- ═══════════════════════════════════════
+spawn(function()
+    local fpsGui = Instance.new("ScreenGui", player1.PlayerGui)
+    fpsGui.Name = "FPSCounter"
+    fpsGui.ResetOnSpawn = false
+
+    local fpsLabel = Instance.new("TextLabel", fpsGui)
+    fpsLabel.Size = UDim2.new(0, 100, 0, 25)
+    fpsLabel.Position = UDim2.new(0, 10, 0, 10)
+    fpsLabel.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+    fpsLabel.BackgroundTransparency = 0.3
+    fpsLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+    fpsLabel.Font = Enum.Font.GothamBold
+    fpsLabel.TextSize = 14
+    fpsLabel.Text = "FPS: --"
+    Instance.new("UICorner", fpsLabel).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", fpsLabel).Color = Color3.fromRGB(0, 100, 50)
+
+    local lastTick = tick()
+    local frameCount = 0
+
+    RunService.RenderStepped:Connect(function()
+        frameCount = frameCount + 1
+        if tick() - lastTick >= 1 then
+            fpsLabel.Text = "FPS: " .. frameCount
+            if frameCount >= 50 then
+                fpsLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+            elseif frameCount >= 30 then
+                fpsLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
+            else
+                fpsLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+            end
+            frameCount = 0
+            lastTick = tick()
+        end
+    end)
+end)
+
+wait(9e9)
