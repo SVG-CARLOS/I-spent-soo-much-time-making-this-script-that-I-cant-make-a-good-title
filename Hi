@@ -1,0 +1,1816 @@
+-- StarterPlayerScripts > ToolEvolution (LocalScript)
+local Players = game:GetService("Players")
+local RS = game:GetService("RunService")
+local TS = game:GetService("TweenService")
+local UIS = game:GetService("UserInputService")
+local P = Players.LocalPlayer
+local PG = P:WaitForChild("PlayerGui")
+
+local function tw(o,p,d,s)
+	local t = TS:Create(o,TweenInfo.new(d or 0.3,s or Enum.EasingStyle.Quint),p)
+	t:Play()
+	return t
+end
+
+-- ═══════════════════════════
+-- TIERS
+-- ═══════════════════════════
+local Tiers = {
+	{n="Broken",c=Color3.fromRGB(110,100,85),m=Enum.Material.Slate,xp=40,dmg=5},
+	{n="Rusty",c=Color3.fromRGB(155,100,55),m=Enum.Material.Brick,xp=65,dmg=7},
+	{n="Worn",c=Color3.fromRGB(175,170,160),m=Enum.Material.SmoothPlastic,xp=90,dmg=9},
+	{n="Common",c=Color3.fromRGB(195,195,205),m=Enum.Material.Plastic,xp=120,dmg=12},
+	{n="Polished",c=Color3.fromRGB(85,195,85),m=Enum.Material.Metal,xp=160,dmg=16},
+	{n="Uncommon",c=Color3.fromRGB(35,175,35),m=Enum.Material.Metal,xp=210,dmg=21},
+	{n="Fine",c=Color3.fromRGB(45,145,255),m=Enum.Material.Glass,xp=270,dmg=27},
+	{n="Rare",c=Color3.fromRGB(25,85,255),m=Enum.Material.Glass,xp=340,dmg=34},
+	{n="Enchanted",c=Color3.fromRGB(125,45,255),m=Enum.Material.Neon,xp=420,dmg=42},
+	{n="Epic",c=Color3.fromRGB(175,35,255),m=Enum.Material.Neon,xp=520,dmg=52},
+	{n="Arcane",c=Color3.fromRGB(205,45,185),m=Enum.Material.Foil,xp=640,dmg=65},
+	{n="Legendary",c=Color3.fromRGB(255,200,45),m=Enum.Material.Foil,xp=780,dmg=80},
+	{n="Ancient",c=Color3.fromRGB(255,155,25),m=Enum.Material.Metal,xp=950,dmg=98},
+	{n="Mythic",c=Color3.fromRGB(255,75,35),m=Enum.Material.DiamondPlate,xp=1150,dmg=120},
+	{n="Primordial",c=Color3.fromRGB(205,20,20),m=Enum.Material.DiamondPlate,xp=1400,dmg=145},
+	{n="Divine",c=Color3.fromRGB(255,55,55),m=Enum.Material.Neon,xp=1700,dmg=175},
+	{n="Celestial",c=Color3.fromRGB(255,175,215),m=Enum.Material.Neon,xp=2050,dmg=210},
+	{n="Astral",c=Color3.fromRGB(95,205,255),m=Enum.Material.Glass,xp=2450,dmg=250},
+	{n="Cosmic",c=Color3.fromRGB(45,255,205),m=Enum.Material.Neon,xp=2920,dmg=300},
+	{n="Galactic",c=Color3.fromRGB(25,205,255),m=Enum.Material.Neon,xp=3460,dmg=360},
+	{n="Transcendent",c=Color3.fromRGB(205,255,255),m=Enum.Material.Glass,xp=4100,dmg=430},
+	{n="Void",c=Color3.fromRGB(55,0,75),m=Enum.Material.SmoothPlastic,xp=4850,dmg=520},
+	{n="Abyssal",c=Color3.fromRGB(35,0,55),m=Enum.Material.Neon,xp=5730,dmg=620},
+	{n="Omega",c=Color3.fromRGB(255,0,105),m=Enum.Material.Neon,xp=6770,dmg=750},
+	{n="Apex",c=Color3.fromRGB(255,45,0),m=Enum.Material.Neon,xp=8000,dmg=900},
+	{n="Exalted",c=Color3.fromRGB(255,220,0),m=Enum.Material.Foil,xp=9450,dmg=1100},
+	{n="Immortal",c=Color3.fromRGB(255,255,185),m=Enum.Material.Neon,xp=11150,dmg=1350},
+	{n="Godlike",c=Color3.fromRGB(255,255,95),m=Enum.Material.Neon,xp=13200,dmg=1650},
+	{n="Eternal",c=Color3.fromRGB(255,255,255),m=Enum.Material.Neon,xp=16000,dmg=2000},
+	{n="PERFECTED",c=Color3.fromRGB(255,255,255),m=Enum.Material.Neon,xp=999999,dmg=3000},
+}
+
+local AbilityList = {
+	{tier=5,name="Quick Strike",desc="15% double hit",type="double",val=0.15},
+	{tier=8,name="Lifesteal",desc="Heal 5% of damage",type="heal",val=0.05},
+	{tier=12,name="Shockwave",desc="AOE every 10 hits",type="aoe",val=10},
+	{tier=15,name="Vampiric Rage",desc="Heal 12% of damage",type="heal",val=0.12},
+	{tier=18,name="Chain Hit",desc="Hits chain to nearby",type="chain",val=3},
+	{tier=20,name="Frost Aura",desc="Slow nearby enemies",type="slow",val=0.3},
+	{tier=22,name="Shadow Clone",desc="20% double hit",type="double",val=0.2},
+	{tier=25,name="Obliterate",desc="8th hit = 5x damage",type="crit",val=5},
+	{tier=28,name="Godhand",desc="Attacks explode",type="explode",val=1},
+	{tier=30,name="PERFECT FORM",desc="All abilities 2x",type="perfect",val=2},
+}
+
+local ShopList = {
+	{name="Minor XP Flask",desc="+150 XP",cost=20,cur="c",xp=150},
+	{name="Major XP Flask",desc="+800 XP",cost=80,cur="c",xp=800},
+	{name="Mega XP Flask",desc="+4000 XP",cost=300,cur="c",xp=4000},
+	{name="XP Storm",desc="+500 XP all tools",cost=180,cur="c",xpAll=500},
+	{name="Tier Skip",desc="Skip 1 tier",cost=5,cur="g",tierUp=1},
+	{name="Double Skip",desc="Skip 2 tiers",cost=12,cur="g",tierUp=2},
+	{name="Gem Convert",desc="200 coins to 3 gems",cost=200,cur="c",giveGems=3},
+}
+
+local MAX = #Tiers
+local Tools = {}
+local Coins = 50
+local Gems = 0
+local Kills = 0
+local animT = 0
+local curTab = "tools"
+local ui = {}
+
+local function gt(t) return Tiers[math.clamp(t,1,MAX)] end
+local function fmt(n)
+	if n>=1e6 then return string.format("%.1fM",n/1e6) end
+	if n>=1e3 then return string.format("%.1fK",n/1e3) end
+	return tostring(math.floor(n))
+end
+local function rb(t) return Color3.fromHSV((t*0.12)%1,0.7,1) end
+
+local function getHandle(tool)
+	if not tool or not tool.Parent then return nil end
+	local h = tool:FindFirstChild("Handle")
+	if h and h:IsA("BasePart") then return h end
+	for _,c in ipairs(tool:GetDescendants()) do
+		if c:IsA("BasePart") then return c end
+	end
+	return nil
+end
+
+-- store original colors of every part
+local function storeOriginals(d)
+	if d.origColors then return end
+	d.origColors = {}
+	for _,p in ipairs(d.tool:GetDescendants()) do
+		if p:IsA("BasePart") then
+			d.origColors[p] = {color = p.Color, material = p.Material, transparency = p.Transparency}
+		end
+	end
+end
+
+-- ═══════════════════════════
+-- SMART COLOR SYSTEM
+-- keeps model looking good by tinting not replacing
+-- ═══════════════════════════
+local function applySmartColor(d)
+	local td = gt(d.tier)
+	local tierCol = td.c
+	local handle = getHandle(d.tool)
+	if not handle then return end
+
+	storeOriginals(d)
+
+	for part, orig in pairs(d.origColors) do
+		if part and part.Parent and part.Name:sub(1,2) ~= "e_" then
+			-- calculate how much to tint based on part role
+			local isHandle = (part == handle)
+			local tintStrength = isHandle and 0.6 or 0.3
+
+			-- keep some original color so model doesn't look flat
+			local blended = orig.color:Lerp(tierCol, tintStrength)
+
+			-- neon parts get stronger tint
+			if orig.material == Enum.Material.Neon then
+				blended = orig.color:Lerp(tierCol, tintStrength + 0.2)
+			end
+
+			-- dark parts stay darker, light parts get more color
+			local h,s,v = orig.color:ToHSV()
+			if v < 0.3 then
+				blended = orig.color:Lerp(tierCol, tintStrength * 0.4)
+			end
+
+			tw(part, {Color = blended}, 1)
+
+			-- only change material on handle and main parts
+			if isHandle then
+				part.Material = td.m
+				part.Reflectance = math.min(d.tier * 0.015, 0.4)
+			end
+		end
+	end
+end
+
+-- ═══════════════════════════
+-- UPGRADE BULLETS/EFFECTS ON GUNS
+-- ═══════════════════════════
+local function upgradeToolEffects(d)
+	local td = gt(d.tier)
+	local col = td.c
+
+	for _,desc in ipairs(d.tool:GetDescendants()) do
+		-- recolor particle emitters
+		if desc:IsA("ParticleEmitter") and desc.Name:sub(1,2) ~= "e_" then
+			local cs = desc.Color
+			-- blend existing color with tier color
+			pcall(function()
+				desc.Color = ColorSequence.new(
+					col:Lerp(Color3.new(1,1,1), 0.2),
+					col:Lerp(Color3.new(1,1,0.8), 0.5)
+				)
+			end)
+			-- boost size slightly per tier
+			pcall(function()
+				local origRate = desc.Rate
+				desc.Rate = math.min(origRate * (1 + d.tier * 0.03), origRate * 3)
+			end)
+		end
+
+		-- recolor beams
+		if desc:IsA("Beam") then
+			pcall(function()
+				desc.Color = ColorSequence.new(col, col:Lerp(Color3.new(1,1,1), 0.4))
+			end)
+		end
+
+		-- recolor trails
+		if desc:IsA("Trail") and desc.Name:sub(1,2) ~= "e_" then
+			pcall(function()
+				desc.Color = ColorSequence.new(col, col:Lerp(Color3.new(1,1,1), 0.5))
+			end)
+		end
+
+		-- recolor point lights / spot lights
+		if desc:IsA("PointLight") or desc:IsA("SpotLight") then
+			if desc.Name:sub(1,2) ~= "e_" then
+				desc.Color = col
+				desc.Brightness = desc.Brightness * (1 + d.tier * 0.02)
+			end
+		end
+
+		-- recolor surface guis / billboards text
+		if desc:IsA("TextLabel") and desc:FindFirstAncestorWhichIsA("BillboardGui") then
+			pcall(function() desc.TextColor3 = col end)
+		end
+
+		-- recolor sparkles
+		if desc:IsA("Sparkles") then
+			desc.SparkleColor = col
+		end
+
+		-- recolor fire
+		if desc:IsA("Fire") then
+			desc.Color = col
+			desc.SecondaryColor = col:Lerp(Color3.new(1,1,0), 0.3)
+		end
+
+		-- recolor smoke tint
+		if desc:IsA("Smoke") then
+			desc.Color = col
+		end
+
+		-- explosions
+		if desc:IsA("Explosion") then
+			-- can't recolor but we note it
+		end
+	end
+
+	-- find scripts that create bullets and hook into them
+	-- we track new parts added to workspace that might be bullets
+	if not d.bulletTracker then
+		d.bulletTracker = true
+		-- watch for projectiles from this tool
+		d.tool.ChildAdded:Connect(function(child)
+			if child:IsA("BasePart") then
+				child.Color = col
+				child.Material = Enum.Material.Neon
+			end
+		end)
+	end
+end
+
+-- ═══════════════════════════
+-- WELD + CLEAR
+-- ═══════════════════════════
+local function doWeld(part,handle,cf)
+	part.CanCollide = false
+	part.Massless = true
+	part.Anchored = false
+	local w = Instance.new("Weld")
+	w.Part0 = handle
+	w.Part1 = part
+	w.C0 = cf or CFrame.new()
+	w.Parent = part
+	part.Parent = handle.Parent
+	return w
+end
+
+local function clearEvo(d)
+	for _,p in ipairs(d.evo or {}) do
+		if p and p.Parent then p:Destroy() end
+	end
+	d.evo = {}
+	local h = getHandle(d.tool)
+	if h then
+		for _,c in ipairs(h:GetChildren()) do
+			if c.Name:sub(1,2) == "e_" then c:Destroy() end
+		end
+	end
+end
+
+-- ═══════════════════════════
+-- PART MAKERS
+-- ═══════════════════════════
+local function mkRing(h,tier,col,i)
+	local p = Instance.new("Part")
+	p.Name = "e_ring"
+	p.Shape = Enum.PartType.Cylinder
+	p.Size = Vector3.new(0.025,0.8+tier*0.04,0.8+tier*0.04)
+	p.Material = Enum.Material.Neon
+	p.Color = col
+	p.Transparency = 0.25
+	doWeld(p,h,CFrame.Angles(0,math.rad((i or 0)*50),math.rad(90)))
+	return p
+end
+
+local function mkCrystal(h,tier,col,off)
+	local p = Instance.new("Part")
+	p.Name = "e_crys"
+	p.Size = Vector3.new(0.1,0.2+tier*0.01,0.1)
+	p.Material = Enum.Material.Neon
+	p.Color = col
+	p.Transparency = 0.1
+	local m = Instance.new("SpecialMesh")
+	m.MeshType = Enum.MeshType.Sphere
+	m.Scale = Vector3.new(0.5,1.5,0.5)
+	m.Parent = p
+	doWeld(p,h,CFrame.new(off))
+	return p
+end
+
+local function mkShard(h,tier,col)
+	local p = Instance.new("Part")
+	p.Name = "e_shard"
+	local s = 0.05+tier*0.005
+	p.Size = Vector3.new(s,s*3.5,s*1.8)
+	p.Material = gt(tier).m
+	p.Color = col
+	local a = math.rad(math.random(360))
+	local r = 0.3+tier*0.01
+	doWeld(p,h,CFrame.new(math.cos(a)*r,(math.random()-0.5)*0.8,math.sin(a)*r)
+		*CFrame.Angles(math.rad(math.random(-25,25)),a,math.rad(math.random(-20,20))))
+	return p
+end
+
+local function mkAura(h,tier,col,sz)
+	local p = Instance.new("Part")
+	p.Name = "e_aura"
+	p.Shape = Enum.PartType.Ball
+	local s = sz or (1+tier*0.03)
+	p.Size = Vector3.new(s,s,s)
+	p.Material = Enum.Material.Neon
+	p.Color = col
+	p.Transparency = 0.92
+	doWeld(p,h,CFrame.new())
+	return p
+end
+
+local function mkWing(h,tier,col,side)
+	local p = Instance.new("Part")
+	p.Name = "e_wing"
+	p.Size = Vector3.new(0.03,0.4+tier*0.02,0.3+tier*0.01)
+	p.Material = Enum.Material.Neon
+	p.Color = col
+	p.Transparency = 0.45
+	local x = side=="L" and -0.45 or 0.45
+	doWeld(p,h,CFrame.new(x,0.1,0)*CFrame.Angles(0,0,math.rad(side=="L" and 20 or -20)))
+	return p
+end
+
+local function mkHalo(h,tier,col)
+	local p = Instance.new("Part")
+	p.Name = "e_halo"
+	p.Shape = Enum.PartType.Cylinder
+	p.Size = Vector3.new(0.015,1.2+tier*0.03,1.2+tier*0.03)
+	p.Material = Enum.Material.Neon
+	p.Color = col
+	p.Transparency = 0.25
+	doWeld(p,h,CFrame.new(0,1.2,0)*CFrame.Angles(0,0,math.rad(90)))
+	return p
+end
+
+local function mkSpike(h,tier,col)
+	local p = Instance.new("Part")
+	p.Name = "e_spike"
+	p.Size = Vector3.new(0.05,0.15+tier*0.01,0.05)
+	p.Material = Enum.Material.Neon
+	p.Color = col
+	local a = math.rad(math.random(360))
+	doWeld(p,h,CFrame.new(math.cos(a)*0.2,(math.random()-0.5)*0.5,math.sin(a)*0.2)
+		*CFrame.Angles(math.rad(math.random(-35,35)),a,0))
+	return p
+end
+
+local function addParticles(h,tier,col)
+	local att = Instance.new("Attachment")
+	att.Name = "e_att"
+	att.Parent = h
+	local pe = Instance.new("ParticleEmitter")
+	pe.Name = "e_pe"
+	pe.Color = ColorSequence.new(col,col:Lerp(Color3.new(1,1,1),0.4))
+	pe.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0,0.03+tier*0.01),
+		NumberSequenceKeypoint.new(0.5,0.05+tier*0.008),
+		NumberSequenceKeypoint.new(1,0)
+	})
+	pe.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0,0.1),
+		NumberSequenceKeypoint.new(0.6,0.4),
+		NumberSequenceKeypoint.new(1,1)
+	})
+	pe.Lifetime = NumberRange.new(0.2,0.8)
+	pe.Rate = 3+tier*1.5
+	pe.Speed = NumberRange.new(0.2,0.6)
+	pe.SpreadAngle = Vector2.new(180,180)
+	pe.LightEmission = 0.5
+	pe.Parent = att
+	return att
+end
+
+local function addLight(h,tier,col)
+	local l = Instance.new("PointLight")
+	l.Name = "e_light"
+	l.Color = col
+	l.Brightness = 0.3+tier*0.2
+	l.Range = 3+tier*0.5
+	l.Parent = h
+	return l
+end
+
+local function addTrail(h,tier,col)
+	local a0 = Instance.new("Attachment")
+	a0.Name = "e_t0"
+	a0.Position = Vector3.new(0,0.3,0)
+	a0.Parent = h
+	local a1 = Instance.new("Attachment")
+	a1.Name = "e_t1"
+	a1.Position = Vector3.new(0,-0.3,0)
+	a1.Parent = h
+	local tr = Instance.new("Trail")
+	tr.Name = "e_trail"
+	tr.Attachment0 = a0
+	tr.Attachment1 = a1
+	tr.Lifetime = 0.15+tier*0.01
+	tr.MinLength = 0.04
+	tr.Color = ColorSequence.new(col,col:Lerp(Color3.new(1,1,1),0.5))
+	tr.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0,0.15),
+		NumberSequenceKeypoint.new(1,1)
+	})
+	tr.WidthScale = NumberSequence.new({
+		NumberSequenceKeypoint.new(0,1),
+		NumberSequenceKeypoint.new(1,0)
+	})
+	tr.LightEmission = 0.4
+	tr.Parent = h
+	return tr
+end
+
+local function doBurst(h,col,n)
+	local att = Instance.new("Attachment")
+	att.Name = "e_burst"
+	att.Parent = h
+	local pe = Instance.new("ParticleEmitter")
+	pe.Color = ColorSequence.new(col)
+	pe.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0,0.15),
+		NumberSequenceKeypoint.new(0.3,0.4),
+		NumberSequenceKeypoint.new(1,0)
+	})
+	pe.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0,0),
+		NumberSequenceKeypoint.new(1,1)
+	})
+	pe.Lifetime = NumberRange.new(0.3,0.7)
+	pe.Speed = NumberRange.new(3,10)
+	pe.SpreadAngle = Vector2.new(360,360)
+	pe.LightEmission = 1
+	pe.Enabled = false
+	pe.Parent = att
+	pe:Emit(n or 25)
+	task.delay(1.5,function() if att.Parent then att:Destroy() end end)
+end
+
+-- ═══════════════════════════
+-- BUILD VISUALS
+-- ═══════════════════════════
+local function buildVisuals(d)
+	local h = getHandle(d.tool)
+	if not h then return end
+	local tier = d.tier
+	local td = gt(tier)
+	local col = td.c
+	clearEvo(d)
+
+	-- smart scale handle only
+	local growth = 1+(tier-1)*0.015
+	if d.origSize then h.Size = d.origSize*growth end
+
+	-- smart color system
+	applySmartColor(d)
+
+	-- upgrade gun effects
+	upgradeToolEffects(d)
+
+	local pts = d.evo
+	if tier>=3 then table.insert(pts,addParticles(h,tier,col)) end
+	if tier>=4 then table.insert(pts,addLight(h,tier,col)) end
+	if tier>=5 then table.insert(pts,mkCrystal(h,tier,col,Vector3.new(0.35,0.12,0))) end
+	if tier>=7 then table.insert(pts,mkRing(h,tier,col,1)) end
+	if tier>=8 then
+		for i=1,math.min(tier-6,4) do table.insert(pts,mkShard(h,tier,col)) end
+	end
+	if tier>=10 then
+		for i=1,3 do
+			local a=math.rad(i*120)
+			table.insert(pts,mkCrystal(h,tier,col,Vector3.new(math.cos(a)*0.45,0,math.sin(a)*0.45)))
+		end
+	end
+	if tier>=12 then table.insert(pts,mkAura(h,tier,col)) end
+	if tier>=14 then
+		for i=1,math.min(tier-12,4) do table.insert(pts,mkSpike(h,tier,col)) end
+	end
+	if tier>=16 then
+		table.insert(pts,mkRing(h,tier,col,2))
+		table.insert(pts,mkWing(h,tier,col,"L"))
+		table.insert(pts,mkWing(h,tier,col,"R"))
+	end
+	if tier>=18 then table.insert(pts,addTrail(h,tier,col)) end
+	if tier>=20 then
+		table.insert(pts,mkRing(h,tier,col,3))
+		for i=1,6 do
+			local a=math.rad(i*60)
+			table.insert(pts,mkCrystal(h,tier,col,Vector3.new(math.cos(a)*0.65,0,math.sin(a)*0.65)))
+		end
+	end
+	if tier>=23 then table.insert(pts,mkHalo(h,tier,col)) end
+	if tier>=25 then table.insert(pts,mkAura(h,tier,col,1.8)) end
+	if tier>=27 then
+		for i=4,5 do table.insert(pts,mkRing(h,tier,col,i)) end
+	end
+	if tier>=28 then
+		for i=1,5 do table.insert(pts,mkShard(h,tier,col)) end
+	end
+	if tier>=30 then
+		table.insert(pts,mkAura(h,tier,col,2.5))
+		table.insert(pts,mkHalo(h,tier,col))
+		for i=1,8 do
+			local a=math.rad(i*45)
+			table.insert(pts,mkCrystal(h,tier,col,Vector3.new(math.cos(a)*0.9,math.sin(a*2)*0.15,math.sin(a)*0.9)))
+		end
+	end
+end
+
+-- ═══════════════════════════
+-- REAL DAMAGE SYSTEM
+-- hooks into the tool to actually deal damage
+-- ═══════════════════════════
+local function applyDamageBoost(d)
+	if d.dmgHooked then return end
+	d.dmgHooked = true
+
+	-- find any scripts that deal damage and boost their values
+	-- also directly hook touch on handle for melee weapons
+	local h = getHandle(d.tool)
+	if not h then return end
+
+	-- track if tool has a damage value
+	local dmgVal = d.tool:FindFirstChild("Damage") or d.tool:FindFirstChild("damage")
+	if dmgVal and dmgVal:IsA("NumberValue") or dmgVal and dmgVal:IsA("IntValue") then
+		d.origDmgVal = dmgVal.Value
+		dmgVal.Value = math.floor(d.origDmgVal * (gt(d.tier).dmg / 5))
+	end
+
+	-- also check for StringValue or other config patterns
+	for _,v in ipairs(d.tool:GetDescendants()) do
+		if (v:IsA("NumberValue") or v:IsA("IntValue")) then
+			local nm = v.Name:lower()
+			if nm:find("damage") or nm:find("dmg") or nm:find("power") then
+				if not d.origVals then d.origVals = {} end
+				if not d.origVals[v] then
+					d.origVals[v] = v.Value
+				end
+			end
+		end
+	end
+end
+
+local function updateDamageValues(d)
+	if not d.origVals then return end
+	local mult = gt(d.tier).dmg / 5
+	for v, orig in pairs(d.origVals) do
+		if v and v.Parent then
+			v.Value = math.floor(orig * mult)
+		end
+	end
+	local dmgVal = d.tool:FindFirstChild("Damage") or d.tool:FindFirstChild("damage")
+	if dmgVal and d.origDmgVal then
+		dmgVal.Value = math.floor(d.origDmgVal * mult)
+	end
+end
+
+-- ═══════════════════════════
+-- COMBAT
+-- ═══════════════════════════
+local function findTargets(pos,range)
+	local r = {}
+	for _,v in ipairs(workspace:GetDescendants()) do
+		if v:IsA("Humanoid") and v.Health>0 then
+			local root = v.Parent and v.Parent:FindFirstChild("HumanoidRootPart")
+			if root and v.Parent~=P.Character then
+				if (root.Position-pos).Magnitude<=range then
+					table.insert(r,{hum=v,root=root})
+				end
+			end
+		end
+	end
+	return r
+end
+
+local function dmgNum(root,dmg,crit)
+	local bb = Instance.new("BillboardGui")
+	bb.Size = UDim2.new(0,100,0,40)
+	bb.StudsOffset = Vector3.new(math.random(-2,2),2.5+math.random(),0)
+	bb.Adornee = root
+	bb.AlwaysOnTop = true
+	bb.Parent = root
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1,0,1,0)
+	l.BackgroundTransparency = 1
+	l.Text = "-"..fmt(dmg)
+	l.TextColor3 = crit and Color3.fromRGB(255,50,50) or Color3.fromRGB(255,255,100)
+	l.TextSize = crit and 24 or 18
+	l.Font = Enum.Font.GothamBlack
+	l.TextStrokeTransparency = 0.3
+	l.TextStrokeColor3 = Color3.new(0,0,0)
+	l.Parent = bb
+
+	-- animate scale up then fade
+	l.TextSize = crit and 10 or 8
+	tw(l,{TextSize = crit and 24 or 18},0.15,Enum.EasingStyle.Back)
+
+	tw(bb,{StudsOffset=bb.StudsOffset+Vector3.new(0,3,0)},0.9)
+	task.delay(0.3,function()
+		tw(l,{TextTransparency=1,TextStrokeTransparency=1},0.6)
+	end)
+	task.delay(1,function() if bb.Parent then bb:Destroy() end end)
+end
+
+local function getAbilityVal(d, aType)
+	local best = nil
+	for _,ab in ipairs(AbilityList) do
+		if d.tier >= ab.tier and ab.type == aType then
+			best = ab.val
+		end
+	end
+	if best and d.tier >= 30 then best = best * 2 end -- perfect form doubles
+	return best
+end
+
+local function doCombat(d)
+	local h = getHandle(d.tool)
+	if not h or not P.Character then return end
+	local hrp = P.Character:FindFirstChild("HumanoidRootPart")
+	local myHum = P.Character:FindFirstChildOfClass("Humanoid")
+	if not hrp then return end
+
+	d.hits = (d.hits or 0)+1
+	local td = gt(d.tier)
+	local base = td.dmg
+	local pos = hrp.Position+hrp.CFrame.LookVector*5
+	local targets = findTargets(pos,15)
+
+	for _,tgt in ipairs(targets) do
+		local final = base
+		local crit = false
+
+		-- double hit
+		local dhc = getAbilityVal(d, "double")
+		if dhc and math.random() < dhc then
+			final = final * 2
+			crit = true
+			-- flash handle white
+			if h then
+				local oc = h.Color
+				h.Color = Color3.new(1,1,1)
+				task.delay(0.08,function()
+					if h.Parent then tw(h,{Color=oc},0.15) end
+				end)
+			end
+		end
+
+		-- crit cycle (obliterate)
+		local critVal = getAbilityVal(d, "crit")
+		if critVal then
+			local interval = d.tier >= 30 and 4 or 8
+			if d.hits % interval == 0 then
+				final = final * critVal
+				crit = true
+				local ball = Instance.new("Part")
+				ball.Shape = Enum.PartType.Ball
+				ball.Size = Vector3.new(2,2,2)
+				ball.CFrame = CFrame.new(tgt.root.Position)
+				ball.Anchored = true
+				ball.CanCollide = false
+				ball.Material = Enum.Material.Neon
+				ball.Color = td.c
+				ball.Transparency = 0.2
+				ball.Parent = workspace
+				tw(ball,{Size=Vector3.new(12,12,12),Transparency=1},0.4)
+				task.delay(0.5,function() ball:Destroy() end)
+			end
+		end
+
+		tgt.hum:TakeDamage(final)
+		dmgNum(tgt.root,final,crit)
+
+		-- lifesteal / vampiric
+		local healPct = getAbilityVal(d, "heal")
+		if healPct and myHum then
+			local healAmt = final * healPct
+			myHum.Health = math.min(myHum.Health + healAmt, myHum.MaxHealth)
+
+			-- green heal number on player
+			if healAmt > 1 then
+				local hbb = Instance.new("BillboardGui")
+				hbb.Size = UDim2.new(0,60,0,25)
+				hbb.StudsOffset = Vector3.new(0,3,0)
+				hbb.Adornee = hrp
+				hbb.AlwaysOnTop = true
+				hbb.Parent = hrp
+				local hl = Instance.new("TextLabel")
+				hl.Size = UDim2.new(1,0,1,0)
+				hl.BackgroundTransparency = 1
+				hl.Text = "+"..math.floor(healAmt)
+				hl.TextColor3 = Color3.fromRGB(50,255,80)
+				hl.TextSize = 14
+				hl.Font = Enum.Font.GothamBlack
+				hl.TextStrokeTransparency = 0.3
+				hl.Parent = hbb
+				tw(hbb,{StudsOffset=Vector3.new(0,5,0)},0.8)
+				tw(hl,{TextTransparency=1,TextStrokeTransparency=1},0.8)
+				task.delay(0.9,function() hbb:Destroy() end)
+			end
+		end
+
+		-- shockwave aoe
+		local aoeVal = getAbilityVal(d, "aoe")
+		if aoeVal and d.hits % math.floor(aoeVal) == 0 then
+			local wave = Instance.new("Part")
+			wave.Shape = Enum.PartType.Cylinder
+			wave.Size = Vector3.new(0.15,2,2)
+			wave.CFrame = CFrame.new(hrp.Position)*CFrame.Angles(0,0,math.rad(90))
+			wave.Anchored = true
+			wave.CanCollide = false
+			wave.Material = Enum.Material.Neon
+			wave.Color = td.c
+			wave.Transparency = 0.3
+			wave.Parent = workspace
+			tw(wave,{Size=Vector3.new(0.15,28,28),Transparency=1},0.5)
+			task.delay(0.6,function() wave:Destroy() end)
+
+			for _,t2 in ipairs(findTargets(hrp.Position,14)) do
+				if t2.hum ~= tgt.hum then
+					t2.hum:TakeDamage(base*0.4)
+					dmgNum(t2.root, base*0.4, false)
+				end
+			end
+		end
+
+		-- chain
+		local chainVal = getAbilityVal(d, "chain")
+		if chainVal then
+			local chain = findTargets(tgt.root.Position,20)
+			local cc = 0
+			for _,ct in ipairs(chain) do
+				if ct.hum~=tgt.hum and cc<math.floor(chainVal) then
+					cc=cc+1
+					local chainDmg = base*0.3
+					ct.hum:TakeDamage(chainDmg)
+					dmgNum(ct.root,chainDmg,false)
+					local dist = (ct.root.Position-tgt.root.Position).Magnitude
+					if dist > 0.1 then
+						local beam = Instance.new("Part")
+						beam.Size = Vector3.new(0.08,0.08,dist)
+						beam.CFrame = CFrame.lookAt(tgt.root.Position,ct.root.Position)*CFrame.new(0,0,-dist/2)
+						beam.Anchored = true
+						beam.CanCollide = false
+						beam.Material = Enum.Material.Neon
+						beam.Color = td.c:Lerp(Color3.fromRGB(100,200,255),0.5)
+						beam.Parent = workspace
+						tw(beam,{Transparency=1,Size=Vector3.new(0.3,0.3,dist)},0.25)
+						task.delay(0.3,function() beam:Destroy() end)
+					end
+				end
+			end
+		end
+
+		-- slow aura
+		local slowVal = getAbilityVal(d, "slow")
+		if slowVal then
+			for _,st in ipairs(findTargets(hrp.Position,25)) do
+				local origSpeed = st.hum.WalkSpeed
+				st.hum.WalkSpeed = origSpeed * (1 - slowVal)
+				task.delay(1.5,function()
+					if st.hum and st.hum.Parent then
+						st.hum.WalkSpeed = origSpeed
+					end
+				end)
+			end
+		end
+
+		-- explosion
+		local expVal = getAbilityVal(d, "explode")
+		if expVal then
+			local exp = Instance.new("Explosion")
+			exp.Position = tgt.root.Position
+			exp.BlastRadius = 8
+			exp.BlastPressure = 0
+			exp.DestroyJointRadiusPercent = 0
+			exp.Parent = workspace
+			task.delay(2,function() exp:Destroy() end)
+
+			-- visual ring
+			local ring = Instance.new("Part")
+			ring.Shape = Enum.PartType.Ball
+			ring.Size = Vector3.new(1,1,1)
+			ring.CFrame = CFrame.new(tgt.root.Position)
+			ring.Anchored = true
+			ring.CanCollide = false
+			ring.Material = Enum.Material.Neon
+			ring.Color = td.c
+			ring.Transparency = 0.4
+			ring.Parent = workspace
+			tw(ring,{Size=Vector3.new(16,16,16),Transparency=1},0.4)
+			task.delay(0.5,function() ring:Destroy() end)
+		end
+
+		-- kill reward
+		if tgt.hum.Health<=0 then
+			Kills=Kills+1
+			Coins=Coins+math.floor(5+d.tier*1.5)
+			if d.tier>=15 then Gems=Gems+1 end
+			d.xp=d.xp+gt(d.tier).xp*0.06
+		end
+	end
+
+	d.xp=d.xp+gt(d.tier).xp*0.03
+	Coins=Coins+1
+end
+
+-- ═══════════════════════════
+-- EVOLVE
+-- ═══════════════════════════
+local function doEvolve(name)
+	local d = Tools[name]
+	if not d or d.tier>=MAX then return end
+	d.tier=d.tier+1
+	d.xp=0
+	d.hits=0
+	local td = gt(d.tier)
+	buildVisuals(d)
+	updateDamageValues(d)
+	local h = getHandle(d.tool)
+	if h then doBurst(h,td.c,20+d.tier*3) end
+	local cr = math.floor(3+d.tier*1.2)
+	local gr = d.tier%5==0 and math.floor(d.tier/5) or 0
+	Coins=Coins+cr
+	Gems=Gems+gr
+
+	local ab = nil
+	for _,a in ipairs(AbilityList) do
+		if a.tier==d.tier then ab=a break end
+	end
+	showNotif(td,cr,gr,ab,d)
+end
+
+-- ═══════════════════════════
+-- NOTIFICATION (animated)
+-- ═══════════════════════════
+function showNotif(td,coins,gems,ability,d)
+	if not ui.sg then return end
+	local h = ability and 105 or 75
+	local f = Instance.new("Frame")
+	f.Size = UDim2.new(0,320,0,h)
+	f.Position = UDim2.new(0.5,-160,0.35,0)
+	f.BackgroundColor3 = Color3.fromRGB(6,6,14)
+	f.BackgroundTransparency = 0
+	f.BorderSizePixel = 0
+	f.ZIndex = 90
+	f.ClipsDescendants = true
+	f.Parent = ui.sg
+	Instance.new("UICorner",f).CornerRadius = UDim.new(0,14)
+	local st = Instance.new("UIStroke",f)
+	st.Color = td.c
+	st.Thickness = 2
+
+	-- animated glow bar
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(0,0,0,3)
+	bar.BackgroundColor3 = td.c
+	bar.BorderSizePixel = 0
+	bar.ZIndex = 91
+	bar.Parent = f
+	tw(bar,{Size=UDim2.new(1,0,0,3)},0.5)
+
+	-- shimmer overlay
+	local shimmer = Instance.new("Frame")
+	shimmer.Size = UDim2.new(0.3,0,1,0)
+	shimmer.Position = UDim2.new(-0.3,0,0,0)
+	shimmer.BackgroundColor3 = Color3.new(1,1,1)
+	shimmer.BackgroundTransparency = 0.85
+	shimmer.BorderSizePixel = 0
+	shimmer.ZIndex = 92
+	shimmer.Parent = f
+	Instance.new("UICorner",shimmer).CornerRadius = UDim.new(0,14)
+	tw(shimmer,{Position=UDim2.new(1,0,0,0)},0.8)
+
+	local t1 = Instance.new("TextLabel")
+	t1.Size = UDim2.new(1,-16,0,26)
+	t1.Position = UDim2.new(0,12,0,8)
+	t1.BackgroundTransparency = 1
+	t1.Text = "EVOLVED: "..td.n:upper()
+	t1.TextColor3 = td.c
+	t1.TextSize = 18
+	t1.Font = Enum.Font.GothamBlack
+	t1.TextXAlignment = Enum.TextXAlignment.Left
+	t1.ZIndex = 93
+	t1.Parent = f
+
+	local rt = "+"..coins.." coins   DMG: "..gt(d and d.tier or 1).dmg
+	if gems>0 then rt = rt.."   +"..gems.." gems" end
+	local t2 = Instance.new("TextLabel")
+	t2.Size = UDim2.new(1,-16,0,18)
+	t2.Position = UDim2.new(0,12,0,36)
+	t2.BackgroundTransparency = 1
+	t2.Text = rt
+	t2.TextColor3 = Color3.fromRGB(190,200,230)
+	t2.TextSize = 12
+	t2.Font = Enum.Font.GothamBold
+	t2.TextXAlignment = Enum.TextXAlignment.Left
+	t2.ZIndex = 93
+	t2.Parent = f
+
+	if ability then
+		local t3 = Instance.new("TextLabel")
+		t3.Size = UDim2.new(1,-16,0,20)
+		t3.Position = UDim2.new(0,12,0,58)
+		t3.BackgroundTransparency = 1
+		t3.Text = "NEW ABILITY: "..ability.name.." - "..ability.desc
+		t3.TextColor3 = Color3.fromRGB(80,255,130)
+		t3.TextSize = 11
+		t3.Font = Enum.Font.GothamBold
+		t3.TextXAlignment = Enum.TextXAlignment.Left
+		t3.TextWrapped = true
+		t3.ZIndex = 93
+		t3.Parent = f
+	end
+
+	-- animate in from below
+	f.Position = UDim2.new(0.5,-160,0.4,0)
+	f.BackgroundTransparency = 0.5
+	tw(f,{Position=UDim2.new(0.5,-160,0.32,0),BackgroundTransparency=0},0.4,Enum.EasingStyle.Back)
+
+	-- scale text in
+	t1.TextTransparency = 1
+	t2.TextTransparency = 1
+	task.delay(0.1,function() tw(t1,{TextTransparency=0},0.3) end)
+	task.delay(0.2,function() tw(t2,{TextTransparency=0},0.3) end)
+
+	task.delay(3,function()
+		if not f.Parent then return end
+		tw(f,{BackgroundTransparency=1,Position=UDim2.new(0.5,-160,0.25,0)},0.5)
+		tw(st,{Transparency=1},0.5)
+		for _,c in ipairs(f:GetDescendants()) do
+			if c:IsA("TextLabel") then tw(c,{TextTransparency=1},0.4) end
+			if c:IsA("Frame") then tw(c,{BackgroundTransparency=1},0.4) end
+		end
+		task.delay(0.6,function() if f.Parent then f:Destroy() end end)
+	end)
+end
+
+-- ═══════════════════════════
+-- UI HELPERS
+-- ═══════════════════════════
+local function clearContent()
+	if not ui.content then return end
+	for _,c in ipairs(ui.content:GetChildren()) do
+		if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then c:Destroy() end
+	end
+end
+
+local function getWeakest()
+	local best,low = nil,math.huge
+	for n,d in pairs(Tools) do if d.tier<MAX and d.tier<low then low=d.tier best=n end end
+	return best
+end
+
+-- ═══════════════════════════
+-- TOOLS TAB
+-- ═══════════════════════════
+local function buildToolsTab()
+	clearContent()
+	if not next(Tools) then
+		local l = Instance.new("TextLabel")
+		l.Size = UDim2.new(1,0,0,80)
+		l.BackgroundTransparency = 1
+		l.Text = "Equip any tool to start!\nUse it in combat to level faster."
+		l.TextColor3 = Color3.fromRGB(90,90,115)
+		l.TextSize = 13
+		l.Font = Enum.Font.Gotham
+		l.TextWrapped = true
+		l.Parent = ui.content
+		return
+	end
+	for name,d in pairs(Tools) do
+		local td = gt(d.tier)
+		local need = td.xp
+		local ratio = math.clamp(d.xp/need,0,1)
+
+		local card = Instance.new("Frame")
+		card.Name = "T_"..name
+		card.Size = UDim2.new(1,0,0,105)
+		card.BackgroundColor3 = Color3.fromRGB(14,14,24)
+		card.BorderSizePixel = 0
+		card.Parent = ui.content
+		Instance.new("UICorner",card).CornerRadius = UDim.new(0,10)
+		local cs = Instance.new("UIStroke",card)
+		cs.Color = td.c
+		cs.Thickness = 1
+		cs.Transparency = 0.4
+
+		-- animated accent bar
+		local acc = Instance.new("Frame")
+		acc.Size = UDim2.new(0,3,0,0)
+		acc.Position = UDim2.new(0,4,0,4)
+		acc.BackgroundColor3 = td.c
+		acc.BorderSizePixel = 0
+		acc.Parent = card
+		Instance.new("UICorner",acc).CornerRadius = UDim.new(0,2)
+		tw(acc,{Size=UDim2.new(0,3,1,-8)},0.5,Enum.EasingStyle.Back)
+
+		-- name
+		local nl = Instance.new("TextLabel")
+		nl.Size = UDim2.new(0.55,-15,0,16)
+		nl.Position = UDim2.new(0,14,0,6)
+		nl.BackgroundTransparency = 1
+		nl.Text = name
+		nl.TextColor3 = Color3.fromRGB(235,235,255)
+		nl.TextSize = 13
+		nl.Font = Enum.Font.GothamBlack
+		nl.TextXAlignment = Enum.TextXAlignment.Left
+		nl.TextTruncate = Enum.TextTruncate.AtEnd
+		nl.Parent = card
+
+		-- tier name
+		local tl = Instance.new("TextLabel")
+		tl.Size = UDim2.new(0.5,-15,0,13)
+		tl.Position = UDim2.new(0,14,0,22)
+		tl.BackgroundTransparency = 1
+		tl.Text = "T"..d.tier.." "..td.n
+		tl.TextColor3 = td.c
+		tl.TextSize = 10
+		tl.Font = Enum.Font.GothamBold
+		tl.TextXAlignment = Enum.TextXAlignment.Left
+		tl.Parent = card
+
+		-- stats row
+		local sl = Instance.new("TextLabel")
+		sl.Size = UDim2.new(0.6,0,0,11)
+		sl.Position = UDim2.new(0,14,0,37)
+		sl.BackgroundTransparency = 1
+		sl.Text = "DMG: "..td.dmg.."  |  Hits: "..(d.hits or 0)
+		sl.TextColor3 = Color3.fromRGB(120,130,160)
+		sl.TextSize = 9
+		sl.Font = Enum.Font.Gotham
+		sl.TextXAlignment = Enum.TextXAlignment.Left
+		sl.Parent = card
+
+		-- status badge
+		local stxt = d.active and "ACTIVE" or (d.equipped and "EQUIPPED" or "IDLE")
+		local scol = d.active and Color3.fromRGB(255,200,50) or (d.equipped and Color3.fromRGB(80,220,100) or Color3.fromRGB(80,80,100))
+		local sbg = d.active and Color3.fromRGB(60,48,10) or (d.equipped and Color3.fromRGB(18,55,25) or Color3.fromRGB(28,28,40))
+		local badge = Instance.new("TextLabel")
+		badge.Name = "badge"
+		badge.Size = UDim2.new(0,60,0,15)
+		badge.Position = UDim2.new(1,-66,0,7)
+		badge.BackgroundColor3 = sbg
+		badge.Text = stxt
+		badge.TextColor3 = scol
+		badge.TextSize = 8
+		badge.Font = Enum.Font.GothamBlack
+		badge.BorderSizePixel = 0
+		badge.Parent = card
+		Instance.new("UICorner",badge).CornerRadius = UDim.new(0,4)
+
+		-- speed label
+		local spd = d.active and "8x" or (d.equipped and "3x" or "1x")
+		local sml = Instance.new("TextLabel")
+		sml.Name = "sml"
+		sml.Size = UDim2.new(0,60,0,11)
+		sml.Position = UDim2.new(1,-66,0,24)
+		sml.BackgroundTransparency = 1
+		sml.Text = spd.." XP"
+		sml.TextColor3 = d.active and Color3.fromRGB(255,200,50) or Color3.fromRGB(70,70,90)
+		sml.TextSize = 8
+		sml.Font = Enum.Font.GothamBold
+		sml.Parent = card
+
+		-- xp bar
+		local barBg = Instance.new("Frame")
+		barBg.Size = UDim2.new(1,-18,0,8)
+		barBg.Position = UDim2.new(0,9,0,55)
+		barBg.BackgroundColor3 = Color3.fromRGB(5,5,12)
+		barBg.BorderSizePixel = 0
+		barBg.Parent = card
+		Instance.new("UICorner",barBg).CornerRadius = UDim.new(1,0)
+
+		local fill = Instance.new("Frame")
+		fill.Name = "fill"
+		fill.Size = UDim2.new(0,0,1,0)
+		fill.BackgroundColor3 = td.c
+		fill.BorderSizePixel = 0
+		fill.Parent = barBg
+		Instance.new("UICorner",fill).CornerRadius = UDim.new(1,0)
+		-- animated fill
+		tw(fill,{Size=UDim2.new(math.max(ratio,0.003),0,1,0)},0.6,Enum.EasingStyle.Back)
+
+		-- glow on bar
+		local fillGlow = Instance.new("Frame")
+		fillGlow.Size = UDim2.new(0,8,1,4)
+		fillGlow.Position = UDim2.new(1,-4,0,-2)
+		fillGlow.BackgroundColor3 = td.c
+		fillGlow.BackgroundTransparency = 0.3
+		fillGlow.BorderSizePixel = 0
+		fillGlow.Parent = fill
+		Instance.new("UICorner",fillGlow).CornerRadius = UDim.new(1,0)
+
+		-- xp text
+		local xt = Instance.new("TextLabel")
+		xt.Name = "xt"
+		xt.Size = UDim2.new(1,-18,0,12)
+		xt.Position = UDim2.new(0,9,0,67)
+		xt.BackgroundTransparency = 1
+		xt.TextSize = 9
+		xt.Font = Enum.Font.GothamBold
+		xt.TextXAlignment = Enum.TextXAlignment.Left
+		xt.Parent = card
+		if d.tier>=MAX then
+			xt.Text = "MAX - PERFECTED"
+			xt.TextColor3 = td.c
+		else
+			xt.Text = fmt(d.xp).." / "..fmt(need).." XP"
+			xt.TextColor3 = Color3.fromRGB(100,100,125)
+		end
+
+		-- abilities row
+		local abils = {}
+		for _,a in ipairs(AbilityList) do
+			if d.tier>=a.tier then table.insert(abils,a.name) end
+		end
+		if #abils>0 then
+			local al = Instance.new("TextLabel")
+			al.Size = UDim2.new(1,-18,0,14)
+			al.Position = UDim2.new(0,9,0,83)
+			al.BackgroundTransparency = 1
+			al.Text = table.concat(abils," | ")
+			al.TextColor3 = Color3.fromRGB(70,200,110)
+			al.TextSize = 8
+			al.Font = Enum.Font.GothamBold
+			al.TextXAlignment = Enum.TextXAlignment.Left
+			al.TextTruncate = Enum.TextTruncate.AtEnd
+			al.Parent = card
+		end
+
+		-- hover animation
+		card.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement then
+				tw(card,{BackgroundColor3=Color3.fromRGB(22,22,38)},0.15)
+				tw(cs,{Transparency=0},0.15)
+			end
+		end)
+		card.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseMovement then
+				tw(card,{BackgroundColor3=Color3.fromRGB(14,14,24)},0.15)
+				tw(cs,{Transparency=0.4},0.15)
+			end
+		end)
+	end
+end
+
+-- ═══════════════════════════
+-- SHOP TAB
+-- ═══════════════════════════
+local function buildShopTab()
+	clearContent()
+	for idx,item in ipairs(ShopList) do
+		local card = Instance.new("Frame")
+		card.Size = UDim2.new(1,0,0,58)
+		card.BackgroundColor3 = Color3.fromRGB(14,14,24)
+		card.BorderSizePixel = 0
+		card.Parent = ui.content
+		Instance.new("UICorner",card).CornerRadius = UDim.new(0,9)
+
+		-- slide in animation
+		card.Position = UDim2.new(1,0,0,0)
+		card.BackgroundTransparency = 0.5
+		task.delay(idx*0.05,function()
+			tw(card,{Position=UDim2.new(0,0,0,0),BackgroundTransparency=0},0.3,Enum.EasingStyle.Back)
+		end)
+
+		local nl = Instance.new("TextLabel")
+		nl.Size = UDim2.new(0.52,0,0,15)
+		nl.Position = UDim2.new(0,10,0,8)
+		nl.BackgroundTransparency = 1
+		nl.Text = item.name
+		nl.TextColor3 = Color3.fromRGB(220,220,240)
+		nl.TextSize = 11
+		nl.Font = Enum.Font.GothamBold
+		nl.TextXAlignment = Enum.TextXAlignment.Left
+		nl.Parent = card
+
+		local dl = Instance.new("TextLabel")
+		dl.Size = UDim2.new(0.52,0,0,13)
+		dl.Position = UDim2.new(0,10,0,25)
+		dl.BackgroundTransparency = 1
+		dl.Text = item.desc
+		dl.TextColor3 = Color3.fromRGB(85,85,110)
+		dl.TextSize = 9
+		dl.Font = Enum.Font.Gotham
+		dl.TextXAlignment = Enum.TextXAlignment.Left
+		dl.Parent = card
+
+		local bal = item.cur=="g" and Gems or Coins
+		local sym = item.cur=="g" and " gems" or " coins"
+		local can = bal>=item.cost
+
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(0,82,0,28)
+		btn.Position = UDim2.new(1,-90,0,15)
+		btn.BackgroundColor3 = can and Color3.fromRGB(28,75,40) or Color3.fromRGB(40,20,20)
+		btn.Text = item.cost..sym
+		btn.TextColor3 = can and Color3.fromRGB(170,250,190) or Color3.fromRGB(120,70,70)
+		btn.TextSize = 10
+		btn.Font = Enum.Font.GothamBold
+		btn.BorderSizePixel = 0
+		btn.AutoButtonColor = false
+		btn.Parent = card
+		Instance.new("UICorner",btn).CornerRadius = UDim.new(0,7)
+
+		if can then
+			btn.InputBegan:Connect(function(i)
+				if i.UserInputType==Enum.UserInputType.MouseMovement then
+					tw(btn,{BackgroundColor3=Color3.fromRGB(38,100,55)},0.1)
+				end
+			end)
+			btn.InputEnded:Connect(function(i)
+				if i.UserInputType==Enum.UserInputType.MouseMovement then
+					tw(btn,{BackgroundColor3=Color3.fromRGB(28,75,40)},0.1)
+				end
+			end)
+			btn.MouseButton1Click:Connect(function()
+				local cb = item.cur=="g" and Gems or Coins
+				if cb<item.cost then return end
+				if item.cur=="g" then Gems=Gems-item.cost else Coins=Coins-item.cost end
+				if item.xp then
+					local w=getWeakest()
+					if w and Tools[w] then Tools[w].xp=Tools[w].xp+item.xp end
+				elseif item.xpAll then
+					for _,d in pairs(Tools) do if d.tier<MAX then d.xp=d.xp+item.xpAll end end
+				elseif item.tierUp then
+					local w=getWeakest()
+					if w then for i=1,item.tierUp do doEvolve(w) end end
+				elseif item.giveGems then Gems=Gems+item.giveGems end
+				-- buy animation
+				tw(btn,{BackgroundColor3=Color3.fromRGB(45,200,70),Size=UDim2.new(0,86,0,30)},0.1)
+				btn.Text = "BOUGHT"
+				task.delay(0.15,function()
+					tw(btn,{Size=UDim2.new(0,82,0,28)},0.2)
+				end)
+				task.delay(0.5,function() buildShopTab() end)
+			end)
+		end
+	end
+end
+
+-- ═══════════════════════════
+-- ABILITIES TAB
+-- ═══════════════════════════
+local function buildAbilTab()
+	clearContent()
+	local maxT = 0
+	for _,d in pairs(Tools) do if d.tier>maxT then maxT=d.tier end end
+
+	for idx,ab in ipairs(AbilityList) do
+		local unlocked = maxT>=ab.tier
+		local td = gt(ab.tier)
+		local card = Instance.new("Frame")
+		card.Size = UDim2.new(1,0,0,52)
+		card.BackgroundColor3 = unlocked and Color3.fromRGB(12,20,14) or Color3.fromRGB(12,12,20)
+		card.BorderSizePixel = 0
+		card.Parent = ui.content
+		Instance.new("UICorner",card).CornerRadius = UDim.new(0,9)
+		local cs = Instance.new("UIStroke",card)
+		cs.Color = unlocked and td.c or Color3.fromRGB(30,30,45)
+		cs.Thickness = 1
+		cs.Transparency = unlocked and 0.2 or 0.6
+
+		-- animated accent
+		if unlocked then
+			local gacc = Instance.new("Frame")
+			gacc.Size = UDim2.new(0,3,1,-8)
+			gacc.Position = UDim2.new(0,4,0,4)
+			gacc.BackgroundColor3 = td.c
+			gacc.BorderSizePixel = 0
+			gacc.Parent = card
+			Instance.new("UICorner",gacc).CornerRadius = UDim.new(0,2)
+		end
+
+		-- tier badge
+		local tb = Instance.new("TextLabel")
+		tb.Size = UDim2.new(0,30,0,16)
+		tb.Position = UDim2.new(0,unlocked and 12 or 8,0,6)
+		tb.BackgroundColor3 = unlocked and td.c:Lerp(Color3.new(0,0,0),0.55) or Color3.fromRGB(22,22,32)
+		tb.Text = "T"..ab.tier
+		tb.TextColor3 = unlocked and td.c or Color3.fromRGB(55,55,70)
+		tb.TextSize = 9
+		tb.Font = Enum.Font.GothamBlack
+		tb.BorderSizePixel = 0
+		tb.Parent = card
+		Instance.new("UICorner",tb).CornerRadius = UDim.new(0,5)
+
+		-- name
+		local nl = Instance.new("TextLabel")
+		nl.Size = UDim2.new(0.55,-48,0,16)
+		nl.Position = UDim2.new(0,unlocked and 48 or 44,0,6)
+		nl.BackgroundTransparency = 1
+		nl.Text = unlocked and ab.name or "???"
+		nl.TextColor3 = unlocked and Color3.fromRGB(230,230,250) or Color3.fromRGB(55,55,70)
+		nl.TextSize = 11
+		nl.Font = Enum.Font.GothamBold
+		nl.TextXAlignment = Enum.TextXAlignment.Left
+		nl.Parent = card
+
+		-- desc
+		local dl = Instance.new("TextLabel")
+		dl.Size = UDim2.new(0.7,-48,0,14)
+		dl.Position = UDim2.new(0,unlocked and 48 or 44,0,24)
+		dl.BackgroundTransparency = 1
+		dl.Text = unlocked and ab.desc or ("Reach Tier "..ab.tier)
+		dl.TextColor3 = unlocked and Color3.fromRGB(70,180,110) or Color3.fromRGB(45,45,60)
+		dl.TextSize = 9
+		dl.Font = Enum.Font.Gotham
+		dl.TextXAlignment = Enum.TextXAlignment.Left
+		dl.Parent = card
+
+		-- status
+		local stt = Instance.new("TextLabel")
+		stt.Size = UDim2.new(0,50,0,16)
+		stt.Position = UDim2.new(1,-56,0,18)
+		stt.BackgroundColor3 = unlocked and Color3.fromRGB(16,48,20) or Color3.fromRGB(30,16,16)
+		stt.Text = unlocked and "ACTIVE" or "LOCKED"
+		stt.TextColor3 = unlocked and Color3.fromRGB(60,220,90) or Color3.fromRGB(85,40,40)
+		stt.TextSize = 7
+		stt.Font = Enum.Font.GothamBlack
+		stt.BorderSizePixel = 0
+		stt.Parent = card
+		Instance.new("UICorner",stt).CornerRadius = UDim.new(0,5)
+	end
+end
+
+-- ═══════════════════════════
+-- STATS TAB (fixed layout)
+-- ═══════════════════════════
+local function buildStatsTab()
+	clearContent()
+	local tc,te,ht,hn = 0,0,0,"-"
+	local totalHits = 0
+	for _,d in pairs(Tools) do
+		tc=tc+1
+		te=te+(d.tier-1)
+		totalHits = totalHits + (d.hits or 0)
+		if d.tier>ht then ht=d.tier hn=gt(d.tier).n end
+	end
+	local bestDmg = ht>0 and gt(ht).dmg or 0
+
+	local stats = {
+		{"Coins",fmt(Coins),Color3.fromRGB(255,210,50)},
+		{"Gems",fmt(Gems),Color3.fromRGB(90,170,255)},
+		{"Kills",fmt(Kills),Color3.fromRGB(255,70,70)},
+		{"Total Hits",fmt(totalHits),Color3.fromRGB(255,180,60)},
+		{"Tools Tracked",tostring(tc),Color3.fromRGB(140,140,190)},
+		{"Total Evolves",tostring(te),Color3.fromRGB(80,255,140)},
+		{"Highest Tier",ht>0 and ("T"..ht.." "..hn) or "-",Color3.fromRGB(255,200,50)},
+		{"Best Damage",bestDmg>0 and tostring(bestDmg) or "-",Color3.fromRGB(255,100,80)},
+	}
+
+	for idx,s in ipairs(stats) do
+		local row = Instance.new("Frame")
+		row.Size = UDim2.new(1,0,0,36)
+		row.BackgroundColor3 = Color3.fromRGB(14,14,24)
+		row.BorderSizePixel = 0
+		row.Parent = ui.content
+		Instance.new("UICorner",row).CornerRadius = UDim.new(0,8)
+
+		-- slide in
+		row.BackgroundTransparency = 0.5
+		row.Position = UDim2.new(0.2,0,0,0)
+		task.delay(idx*0.04,function()
+			tw(row,{Position=UDim2.new(0,0,0,0),BackgroundTransparency=0},0.3,Enum.EasingStyle.Back)
+		end)
+
+		-- color accent dot
+		local dot = Instance.new("Frame")
+		dot.Size = UDim2.new(0,4,0,16)
+		dot.Position = UDim2.new(0,8,0.5,-8)
+		dot.BackgroundColor3 = s[3]
+		dot.BorderSizePixel = 0
+		dot.Parent = row
+		Instance.new("UICorner",dot).CornerRadius = UDim.new(0,2)
+
+		-- label (LEFT ALIGNED with padding)
+		local nl = Instance.new("TextLabel")
+		nl.Size = UDim2.new(0.45,0,1,0)
+		nl.Position = UDim2.new(0,18,0,0)
+		nl.BackgroundTransparency = 1
+		nl.Text = s[1]
+		nl.TextColor3 = Color3.fromRGB(140,140,170)
+		nl.TextSize = 12
+		nl.Font = Enum.Font.GothamBold
+		nl.TextXAlignment = Enum.TextXAlignment.Left
+		nl.Parent = row
+
+		-- value (LEFT of right edge with padding)
+		local vl = Instance.new("TextLabel")
+		vl.Size = UDim2.new(0.5,-12,1,0)
+		vl.Position = UDim2.new(0.5,0,0,0)
+		vl.BackgroundTransparency = 1
+		vl.Text = s[2]
+		vl.TextColor3 = s[3]
+		vl.TextSize = 14
+		vl.Font = Enum.Font.GothamBlack
+		vl.TextXAlignment = Enum.TextXAlignment.Right
+		vl.TextTruncate = Enum.TextTruncate.AtEnd
+		vl.Parent = row
+	end
+end
+
+-- ═══════════════════════════
+-- REFRESH
+-- ═══════════════════════════
+local function refresh()
+	if curTab=="tools" then buildToolsTab()
+	elseif curTab=="shop" then buildShopTab()
+	elseif curTab=="abilities" then buildAbilTab()
+	elseif curTab=="stats" then buildStatsTab() end
+	if ui.coinLbl then ui.coinLbl.Text = fmt(Coins).." coins" end
+	if ui.gemLbl then ui.gemLbl.Text = fmt(Gems).." gems" end
+end
+
+-- ═══════════════════════════
+-- BUILD GUI
+-- ═══════════════════════════
+local function buildGUI()
+	local sg = Instance.new("ScreenGui")
+	sg.Name = "EvoUI"
+	sg.ResetOnSpawn = false
+	sg.DisplayOrder = 10
+	sg.Parent = PG
+	ui.sg = sg
+
+	local panel = Instance.new("Frame")
+	panel.Size = UDim2.new(0,285,0,440)
+	panel.Position = UDim2.new(1,-300,0.5,-220)
+	panel.BackgroundColor3 = Color3.fromRGB(8,8,14)
+	panel.BorderSizePixel = 0
+	panel.ClipsDescendants = true
+	panel.Parent = sg
+	ui.panel = panel
+	Instance.new("UICorner",panel).CornerRadius = UDim.new(0,14)
+	local panelStroke = Instance.new("UIStroke",panel)
+	panelStroke.Color = Color3.fromRGB(32,32,55)
+
+	-- animated panel entrance
+	panel.Position = UDim2.new(1,50,0.5,-220)
+	panel.BackgroundTransparency = 0.5
+	tw(panel,{Position=UDim2.new(1,-300,0.5,-220),BackgroundTransparency=0},0.6,Enum.EasingStyle.Back)
+
+	-- header
+	local hdr = Instance.new("Frame")
+	hdr.Size = UDim2.new(1,0,0,38)
+	hdr.BackgroundColor3 = Color3.fromRGB(12,12,22)
+	hdr.BorderSizePixel = 0
+	hdr.Parent = panel
+	Instance.new("UICorner",hdr).CornerRadius = UDim.new(0,14)
+	local hfix = Instance.new("Frame")
+	hfix.Size = UDim2.new(1,0,0,14)
+	hfix.Position = UDim2.new(0,0,1,-14)
+	hfix.BackgroundColor3 = Color3.fromRGB(12,12,22)
+	hfix.BorderSizePixel = 0
+	hfix.Parent = hdr
+
+	local ttl = Instance.new("TextLabel")
+	ttl.Size = UDim2.new(0.65,0,1,0)
+	ttl.Position = UDim2.new(0,12,0,0)
+	ttl.BackgroundTransparency = 1
+	ttl.Text = "TOOL EVOLUTION"
+	ttl.TextColor3 = Color3.new(1,1,1)
+	ttl.TextSize = 14
+	ttl.Font = Enum.Font.GothamBlack
+	ttl.TextXAlignment = Enum.TextXAlignment.Left
+	ttl.Parent = hdr
+	ui.title = ttl
+
+	-- minimize
+	local minBtn = Instance.new("TextButton")
+	minBtn.Size = UDim2.new(0,26,0,26)
+	minBtn.Position = UDim2.new(1,-32,0,6)
+	minBtn.BackgroundColor3 = Color3.fromRGB(30,30,48)
+	minBtn.Text = "-"
+	minBtn.TextColor3 = Color3.fromRGB(160,160,180)
+	minBtn.TextSize = 16
+	minBtn.Font = Enum.Font.GothamBlack
+	minBtn.BorderSizePixel = 0
+	minBtn.AutoButtonColor = false
+	minBtn.Parent = hdr
+	Instance.new("UICorner",minBtn).CornerRadius = UDim.new(0,6)
+
+	local minimized = false
+	minBtn.MouseButton1Click:Connect(function()
+		minimized = not minimized
+		if minimized then
+			tw(panel,{Size=UDim2.new(0,285,0,42)},0.3,Enum.EasingStyle.Back)
+			minBtn.Text = "+"
+		else
+			tw(panel,{Size=UDim2.new(0,285,0,440)},0.35,Enum.EasingStyle.Back)
+			minBtn.Text = "-"
+		end
+	end)
+
+	-- drag
+	local dragging,dragStart,startPos
+	hdr.InputBegan:Connect(function(input)
+		if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+			dragging=true
+			dragStart=input.Position
+			startPos=panel.Position
+			input.Changed:Connect(function()
+				if input.UserInputState==Enum.UserInputState.End then dragging=false end
+			end)
+		end
+	end)
+	UIS.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType==Enum.UserInputType.MouseMovement or input.UserInputType==Enum.UserInputType.Touch) then
+			local d=input.Position-dragStart
+			panel.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y)
+		end
+	end)
+
+	-- currency bar
+	local curRow = Instance.new("Frame")
+	curRow.Size = UDim2.new(1,-14,0,24)
+	curRow.Position = UDim2.new(0,7,0,42)
+	curRow.BackgroundColor3 = Color3.fromRGB(10,10,18)
+	curRow.BorderSizePixel = 0
+	curRow.Parent = panel
+	Instance.new("UICorner",curRow).CornerRadius = UDim.new(0,6)
+
+	ui.coinLbl = Instance.new("TextLabel")
+	ui.coinLbl.Size = UDim2.new(0.5,0,1,0)
+	ui.coinLbl.BackgroundTransparency = 1
+	ui.coinLbl.Text = fmt(Coins).." coins"
+	ui.coinLbl.TextColor3 = Color3.fromRGB(255,210,50)
+	ui.coinLbl.TextSize = 11
+	ui.coinLbl.Font = Enum.Font.GothamBold
+	ui.coinLbl.Parent = curRow
+
+	ui.gemLbl = Instance.new("TextLabel")
+	ui.gemLbl.Size = UDim2.new(0.5,0,1,0)
+	ui.gemLbl.Position = UDim2.new(0.5,0,0,0)
+	ui.gemLbl.BackgroundTransparency = 1
+	ui.gemLbl.Text = fmt(Gems).." gems"
+	ui.gemLbl.TextColor3 = Color3.fromRGB(90,170,255)
+	ui.gemLbl.TextSize = 11
+	ui.gemLbl.Font = Enum.Font.GothamBold
+	ui.gemLbl.Parent = curRow
+
+	-- tabs
+	local tabBar = Instance.new("Frame")
+	tabBar.Size = UDim2.new(1,-14,0,26)
+	tabBar.Position = UDim2.new(0,7,0,70)
+	tabBar.BackgroundTransparency = 1
+	tabBar.BorderSizePixel = 0
+	tabBar.Parent = panel
+	Instance.new("UIListLayout",tabBar).FillDirection = Enum.FillDirection.Horizontal
+	tabBar:FindFirstChildOfClass("UIListLayout").Padding = UDim.new(0,3)
+
+	local tabs = {
+		{id="tools",label="Tools",col=Color3.fromRGB(55,115,255)},
+		{id="shop",label="Shop",col=Color3.fromRGB(55,175,75)},
+		{id="abilities",label="Skills",col=Color3.fromRGB(255,150,35)},
+		{id="stats",label="Stats",col=Color3.fromRGB(170,95,255)},
+	}
+	local tabBtns = {}
+	local tabW = math.floor((285-14-3*(#tabs-1))/#tabs)
+
+	for _,tab in ipairs(tabs) do
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.new(0,tabW,1,0)
+		b.BackgroundColor3 = curTab==tab.id and tab.col or Color3.fromRGB(20,20,32)
+		b.Text = tab.label
+		b.TextColor3 = curTab==tab.id and Color3.new(1,1,1) or Color3.fromRGB(90,90,110)
+		b.TextSize = 10
+		b.Font = Enum.Font.GothamBold
+		b.BorderSizePixel = 0
+		b.AutoButtonColor = false
+		b.Parent = tabBar
+		Instance.new("UICorner",b).CornerRadius = UDim.new(0,6)
+		tabBtns[tab.id] = {btn=b,data=tab}
+
+		b.MouseButton1Click:Connect(function()
+			curTab = tab.id
+			for tid,tb in pairs(tabBtns) do
+				local act = tid==tab.id
+				tw(tb.btn,{
+					BackgroundColor3 = act and tb.data.col or Color3.fromRGB(20,20,32),
+					TextColor3 = act and Color3.new(1,1,1) or Color3.fromRGB(90,90,110),
+				},0.15)
+			end
+			refresh()
+		end)
+	end
+
+	-- content
+	ui.content = Instance.new("ScrollingFrame")
+	ui.content.Size = UDim2.new(1,-14,1,-104)
+	ui.content.Position = UDim2.new(0,7,0,100)
+	ui.content.BackgroundTransparency = 1
+	ui.content.ScrollBarThickness = 3
+	ui.content.ScrollBarImageColor3 = Color3.fromRGB(45,45,75)
+	ui.content.BorderSizePixel = 0
+	ui.content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	ui.content.ScrollingDirection = Enum.ScrollingDirection.Y
+	ui.content.Parent = panel
+	local cl = Instance.new("UIListLayout",ui.content)
+	cl.Padding = UDim.new(0,5)
+	Instance.new("UIPadding",ui.content).PaddingBottom = UDim.new(0,8)
+
+	refresh()
+end
+
+-- ═══════════════════════════
+-- TRACKING
+-- ═══════════════════════════
+local function trackTool(tool)
+	if not tool:IsA("Tool") then return end
+	local name = tool.Name
+	if Tools[name] and Tools[name].tool==tool then return end
+	local h = getHandle(tool)
+	Tools[name] = {
+		tier=1, xp=0, tool=tool, evo={},
+		origSize = h and h.Size or Vector3.new(1,1,1),
+		equipped=false, active=false, lastUse=0, hits=0,
+	}
+
+	storeOriginals(Tools[name])
+	applyDamageBoost(Tools[name])
+
+	tool.Activated:Connect(function()
+		local d = Tools[name]
+		if not d then return end
+		d.active = true
+		d.lastUse = tick()
+		doCombat(d)
+		task.delay(2.5,function()
+			if d and tick()-d.lastUse>=2.3 then d.active=false end
+		end)
+	end)
+	tool.Equipped:Connect(function()
+		local d=Tools[name] if d then d.equipped=true end
+	end)
+	tool.Unequipped:Connect(function()
+		local d=Tools[name] if d then d.equipped=false d.active=false end
+	end)
+	tool.AncestryChanged:Connect(function(_,parent)
+		if parent==nil then
+			local d=Tools[name]
+			if d then clearEvo(d) end
+			Tools[name]=nil
+		end
+	end)
+	refresh()
+end
+
+local function scanAll()
+	local bp = P:FindFirstChild("Backpack")
+	if bp then for _,c in ipairs(bp:GetChildren()) do trackTool(c) end end
+	if P.Character then for _,c in ipairs(P.Character:GetChildren()) do trackTool(c) end end
+end
+
+-- ═══════════════════════════
+-- ANIMATED TITLE
+-- ═══════════════════════════
+local titleColors = {
+	Color3.fromRGB(255,255,255),
+	Color3.fromRGB(100,180,255),
+	Color3.fromRGB(255,150,50),
+	Color3.fromRGB(100,255,150),
+}
+local titleIdx = 1
+
+task.spawn(function()
+	while true do
+		task.wait(3)
+		if ui.title and ui.title.Parent then
+			titleIdx = titleIdx % #titleColors + 1
+			tw(ui.title,{TextColor3=titleColors[titleIdx]},1)
+		end
+	end
+end)
+
+-- ═══════════════════════════
+-- MAIN LOOP
+-- ═══════════════════════════
+local uiTimer = 0
+local pulseTimer = 0
+
+RS.Heartbeat:Connect(function(dt)
+	animT = animT+dt
+	uiTimer = uiTimer+dt
+	pulseTimer = pulseTimer+dt
+
+	-- xp tick
+	for name,d in pairs(Tools) do
+		if d.tool and d.tool.Parent and d.tier<MAX then
+			local rate = 0.25
+			local mult = 1
+			if d.active then mult=8 elseif d.equipped then mult=3 end
+			d.xp = d.xp+rate*mult*dt
+			if d.xp>=gt(d.tier).xp then doEvolve(name) end
+		end
+	end
+
+	-- animate evo parts
+	for _,d in pairs(Tools) do
+		if d.tool and d.tool.Parent then
+			local isMax = d.tier>=MAX
+			for _,part in ipairs(d.evo) do
+				if part and part.Parent and part:IsA("BasePart") then
+					local w = part:FindFirstChildWhichIsA("Weld")
+					if w then
+						if part.Name=="e_ring" or part.Name=="e_halo" then
+							local spd = 0.5+d.tier*0.06
+							local pos = w.C0.Position
+							w.C0 = CFrame.new(pos)*CFrame.Angles(math.sin(animT*spd*0.5)*0.3,animT*spd,math.rad(90))
+						elseif part.Name=="e_crys" then
+							local pos = w.C0.Position
+							local bob = math.sin(animT*2+pos.X*4)*0.04
+							w.C0 = CFrame.new(pos.X,pos.Y+bob,pos.Z)*w.C0.Rotation
+						elseif part.Name=="e_wing" then
+							local pos = w.C0.Position
+							w.C0 = CFrame.new(pos)*w.C0.Rotation*CFrame.Angles(0,0,math.sin(animT*2.5)*0.08)
+						end
+					end
+					if part.Name=="e_aura" then
+						part.Transparency = 0.88+math.sin(animT*1.2)*0.04
+					end
+					if isMax then part.Color = rb(animT+(part.Position.X or 0)*0.3) end
+				end
+			end
+			if isMax then
+				local h=getHandle(d.tool)
+				if h then h.Color=rb(animT) end
+			end
+		end
+	end
+
+	-- currency pulse animation
+	if pulseTimer >= 2 then
+		pulseTimer = 0
+		if ui.coinLbl and ui.coinLbl.Parent then
+			local origSize = ui.coinLbl.TextSize
+			tw(ui.coinLbl,{TextSize=origSize+1},0.15)
+			task.delay(0.15,function()
+				if ui.coinLbl and ui.coinLbl.Parent then
+					tw(ui.coinLbl,{TextSize=origSize},0.15)
+				end
+			end)
+		end
+	end
+
+	-- ui refresh
+	if uiTimer>=0.5 then
+		uiTimer=0
+		if ui.coinLbl then ui.coinLbl.Text=fmt(Coins).." coins" end
+		if ui.gemLbl then ui.gemLbl.Text=fmt(Gems).." gems" end
+
+		if curTab=="tools" and ui.content and ui.panel then
+			for name,d in pairs(Tools) do
+				local card = ui.content:FindFirstChild("T_"..name)
+				if card then
+					local td = gt(d.tier)
+					local need = td.xp
+					local ratio = math.clamp(d.xp/need,0,1)
+					for _,c in ipairs(card:GetDescendants()) do
+						if c.Name=="fill" then
+							tw(c,{Size=UDim2.new(math.max(ratio,0.003),0,1,0),BackgroundColor3=td.c},0.4)
+						elseif c.Name=="xt" then
+							if d.tier>=MAX then c.Text="MAX - PERFECTED" c.TextColor3=td.c
+							else c.Text=fmt(d.xp).." / "..fmt(need).." XP" end
+						elseif c.Name=="badge" then
+							c.Text = d.active and "ACTIVE" or (d.equipped and "EQUIPPED" or "IDLE")
+							c.TextColor3 = d.active and Color3.fromRGB(255,200,50) or (d.equipped and Color3.fromRGB(80,220,100) or Color3.fromRGB(80,80,100))
+							c.BackgroundColor3 = d.active and Color3.fromRGB(60,48,10) or (d.equipped and Color3.fromRGB(18,55,25) or Color3.fromRGB(28,28,40))
+						elseif c.Name=="sml" then
+							local s = d.active and "8x" or (d.equipped and "3x" or "1x")
+							c.Text = s.." XP"
+							c.TextColor3 = d.active and Color3.fromRGB(255,200,50) or Color3.fromRGB(70,70,90)
+						end
+					end
+				else
+					buildToolsTab()
+					break
+				end
+			end
+		end
+	end
+end)
+
+-- ═══════════════════════════
+-- INIT
+-- ═══════════════════════════
+buildGUI()
+scanAll()
+
+local bp = P:WaitForChild("Backpack")
+bp.ChildAdded:Connect(function(c) task.wait(0.1) trackTool(c) end)
+P.CharacterAdded:Connect(function(ch)
+	task.wait(1) scanAll()
+	ch.ChildAdded:Connect(function(c) if c:IsA("Tool") then trackTool(c) end end)
+end)
+if P.Character then
+	P.Character.ChildAdded:Connect(function(c) if c:IsA("Tool") then trackTool(c) end end)
+end
+
+print("[EVO] Tool Evolution loaded")
