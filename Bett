@@ -1,0 +1,2005 @@
+--[[
+╔══════════════════════════════════════════════════════════════════╗
+║              🤡 CLOWN MOVESET OVERRIDE V3 🤡                    ║
+║                                                                  ║
+║  FE COMPATIBLE - Uses fling physics for server-sided damage      ║
+║  NO CUSTOM GUI - Replaces existing TSB tools in inventory        ║
+║  REAL PROJECTILES - Actual pie throw, balloon animals            ║
+║  PROCEDURAL CFRAME ANIMS - No animation IDs needed               ║
+║  TSB STYLE OVERRIDE - Hooks into existing moveset system         ║
+╚══════════════════════════════════════════════════════════════════╝
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
+
+local Player = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local Mouse = Player:GetMouse()
+
+-- ═══════════════════════════════════════════════════════════
+-- CHARACTER REFERENCES
+-- ═══════════════════════════════════════════════════════════
+local Char, Hum, Root, Torso, Head
+local RShoulder, LShoulder, RHip, LHip, Neck, RootJoint
+local OG = {} -- Original C0 storage
+
+local function GetJoint(name)
+	if not Char then return nil end
+	for _, v in pairs(Char:GetDescendants()) do
+		if v:IsA("Motor6D") and v.Name == name then
+			return v
+		end
+	end
+	return nil
+end
+
+local function CacheChar(c)
+	Char = c
+	Hum = c:WaitForChild("Humanoid")
+	Root = c:WaitForChild("HumanoidRootPart")
+	Torso = c:FindFirstChild("Torso") or c:FindFirstChild("UpperTorso")
+	Head = c:WaitForChild("Head")
+	
+	wait(0.1)
+	
+	RShoulder = GetJoint("Right Shoulder") or GetJoint("RightShoulder")
+	LShoulder = GetJoint("Left Shoulder") or GetJoint("LeftShoulder")
+	RHip = GetJoint("Right Hip") or GetJoint("RightHip")
+	LHip = GetJoint("Left Hip") or GetJoint("LeftHip")
+	Neck = GetJoint("Neck")
+	RootJoint = GetJoint("RootJoint") or GetJoint("Root")
+	
+	OG = {}
+	if RShoulder then OG.RS = RShoulder.C0 end
+	if LShoulder then OG.LS = LShoulder.C0 end
+	if RHip then OG.RH = RHip.C0 end
+	if LHip then OG.LH = LHip.C0 end
+	if Neck then OG.NK = Neck.C0 end
+	if RootJoint then OG.RJ = RootJoint.C0 end
+end
+
+Char = Player.Character or Player.CharacterAdded:Wait()
+CacheChar(Char)
+
+-- ═══════════════════════════════════════════════════════════
+-- STATE
+-- ═══════════════════════════════════════════════════════════
+local S = {
+	m1 = 0,
+	m1t = 0,
+	busy = false,
+	blocking = false,
+	dashing = false,
+	ult = false,
+	awake = false,
+	cd = {},
+	tweens = {},
+}
+
+local CD = {e = 5, r = 7, t = 9, f = 12, g = 45}
+
+-- ═══════════════════════════════════════════════════════════
+-- FE FLING ENGINE (Server-sided knockback via physics)
+-- ═══════════════════════════════════════════════════════════
+--[[
+	How FE fling works in TSB-style scripts:
+	- We use the LOCAL character's HumanoidRootPart velocity
+	- By rapidly setting our own root CFrame to overlap the target
+	  and applying angular/linear velocity, the Roblox physics engine
+	  replicates the collision server-side
+	- The target gets launched because of physical contact force
+	- This is the standard method used in TSB moveset scripts
+]]
+
+local Fling = {}
+
+function Fling.Launch(targetRoot, power, upward)
+	if not targetRoot or not Root then return end
+	power = power or 80
+	upward = upward or 30
+	
+	local dir = (targetRoot.Position - Root.Position)
+	if dir.Magnitude < 0.1 then
+		dir = Root.CFrame.LookVector
+	else
+		dir = dir.Unit
+	end
+	
+	-- Method: Temporarily boost our velocity to slam into target
+	-- The physics engine handles the rest server-side
+	spawn(function()
+		local ogCF = Root.CFrame
+		local targetPos = targetRoot.Position
+		
+		-- Rapid position overlap to create physics collision
+		for i = 1, 3 do
+			if not Root or not Root.Parent then break end
+			if not targetRoot or not targetRoot.Parent then break end
+			
+			Root.CFrame = targetRoot.CFrame * CFrame.new(0, 0, -0.5)
+			Root.Velocity = dir * power + Vector3.new(0, upward, 0)
+			Root.RotVelocity = Vector3.new(
+				math.random(-5, 5),
+				math.random(-5, 5),
+				math.random(-5, 5)
+			)
+			
+			RunService.Stepped:Wait()
+		end
+		
+		-- Reset our position
+		wait(0.05)
+		if Root and Root.Parent then
+			Root.Velocity = Vector3.new(0, 0, 0)
+			Root.RotVelocity = Vector3.new(0, 0, 0)
+		end
+	end)
+end
+
+function Fling.SmallKnock(targetRoot)
+	Fling.Launch(targetRoot, 40, 15)
+end
+
+function Fling.MediumKnock(targetRoot)
+	Fling.Launch(targetRoot, 70, 25)
+end
+
+function Fling.HeavyKnock(targetRoot)
+	Fling.Launch(targetRoot, 120, 40)
+end
+
+function Fling.Uppercut(targetRoot)
+	Fling.Launch(targetRoot, 30, 90)
+end
+
+function Fling.Slam(targetRoot)
+	if not targetRoot then return end
+	spawn(function()
+		for i = 1, 4 do
+			if not Root or not Root.Parent then break end
+			if not targetRoot or not targetRoot.Parent then break end
+			
+			Root.CFrame = targetRoot.CFrame * CFrame.new(0, 2, 0)
+			Root.Velocity = Vector3.new(0, -200, 0)
+			
+			RunService.Stepped:Wait()
+		end
+		wait(0.05)
+		if Root and Root.Parent then
+			Root.Velocity = Vector3.new()
+			Root.RotVelocity = Vector3.new()
+		end
+	end)
+end
+
+function Fling.MegaFling(targetRoot)
+	Fling.Launch(targetRoot, 200, 60)
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- ANIMATION ENGINE (CFrame Motor6D)
+-- ═══════════════════════════════════════════════════════════
+local A = {}
+
+function A.Stop()
+	for _, tw in pairs(S.tweens) do
+		pcall(function() tw:Cancel() end)
+	end
+	S.tweens = {}
+end
+
+function A.J(joint, c0, dur, style, dir)
+	if not joint then return end
+	local tw = TweenService:Create(joint,
+		TweenInfo.new(dur or 0.15, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out),
+		{C0 = c0}
+	)
+	tw:Play()
+	table.insert(S.tweens, tw)
+	return tw
+end
+
+function A.Reset(spd)
+	A.Stop()
+	if RShoulder and OG.RS then A.J(RShoulder, OG.RS, spd or 0.15) end
+	if LShoulder and OG.LS then A.J(LShoulder, OG.LS, spd or 0.15) end
+	if RHip and OG.RH then A.J(RHip, OG.RH, spd or 0.15) end
+	if LHip and OG.LH then A.J(LHip, OG.LH, spd or 0.15) end
+	if Neck and OG.NK then A.J(Neck, OG.NK, spd or 0.15) end
+	if RootJoint and OG.RJ then A.J(RootJoint, OG.RJ, spd or 0.15) end
+end
+
+-- Idle loop
+local idleConn
+function A.IdleStart()
+	A.IdleStop()
+	if not RootJoint then return end
+	local t = 0
+	idleConn = RunService.Heartbeat:Connect(function(dt)
+		if S.busy or S.blocking then return end
+		t = t + dt
+		
+		local b = math.sin(t * 3) * 0.04
+		local sw = math.sin(t * 1.5) * 0.07
+		
+		if RootJoint and OG.RJ then
+			RootJoint.C0 = OG.RJ * CFrame.new(0, b, 0) * CFrame.Angles(0, sw, 0)
+		end
+		if Neck and OG.NK then
+			Neck.C0 = OG.NK * CFrame.Angles(math.sin(t * 2) * 0.03, math.sin(t * 1.2) * 0.04, 0)
+		end
+		if RShoulder and OG.RS then
+			RShoulder.C0 = OG.RS * CFrame.Angles(math.sin(t * 2) * 0.08, 0, math.rad(12) + math.sin(t * 1.5) * 0.06)
+		end
+		if LShoulder and OG.LS then
+			LShoulder.C0 = OG.LS * CFrame.Angles(math.sin(t * 2 + 1) * 0.08, 0, math.rad(-12) + math.sin(t * 1.5 + 1) * -0.06)
+		end
+	end)
+end
+
+function A.IdleStop()
+	if idleConn then idleConn:Disconnect() idleConn = nil end
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- VFX ENGINE (Lean & Efficient)
+-- ═══════════════════════════════════════════════════════════
+local V = {}
+local C = {
+	R = Color3.fromRGB(255, 50, 50),
+	G = Color3.fromRGB(255, 215, 0),
+	P = Color3.fromRGB(138, 43, 226),
+	HP = Color3.fromRGB(255, 0, 100),
+	CY = Color3.fromRGB(0, 255, 255),
+	OR = Color3.fromRGB(255, 165, 0),
+	PK = Color3.fromRGB(255, 105, 180),
+	CR = Color3.fromRGB(255, 255, 210),
+	W = Color3.fromRGB(255, 255, 255),
+	GR = Color3.fromRGB(0, 255, 100),
+}
+
+function V.Ring(pos, col, sz, dur)
+	local p = Instance.new("Part")
+	p.Anchored = true; p.CanCollide = false
+	p.Transparency = 0.3; p.Material = Enum.Material.Neon
+	p.Color = col; p.Shape = Enum.PartType.Cylinder
+	p.Size = Vector3.new(0.12, 0.1, 0.1)
+	p.CFrame = CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90))
+	p.Parent = workspace.Terrain
+	TweenService:Create(p, TweenInfo.new(dur or 0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.12, sz or 18, sz or 18), Transparency = 1
+	}):Play()
+	Debris:AddItem(p, (dur or 0.4) + 0.05)
+end
+
+function V.Ball(pos, col, sz, dur)
+	local p = Instance.new("Part")
+	p.Anchored = true; p.CanCollide = false
+	p.Transparency = 0.35; p.Material = Enum.Material.ForceField
+	p.Color = col; p.Shape = Enum.PartType.Ball
+	p.Size = Vector3.new(0.3, 0.3, 0.3)
+	p.CFrame = CFrame.new(pos)
+	p.Parent = workspace.Terrain
+	TweenService:Create(p, TweenInfo.new(dur or 0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(sz or 8, sz or 8, sz or 8), Transparency = 1
+	}):Play()
+	Debris:AddItem(p, (dur or 0.35) + 0.05)
+end
+
+function V.Crack(pos, col, range)
+	for i = 1, 8 do
+		local ang = (i / 8) * math.pi * 2 + math.random() * 0.4
+		local len = (range or 10) * (0.4 + math.random() * 0.6)
+		local cr = Instance.new("Part")
+		cr.Anchored = true; cr.CanCollide = false
+		cr.Material = Enum.Material.Neon; cr.Color = col
+		cr.Size = Vector3.new(len, 0.06, 0.15 + math.random() * 0.25)
+		local d = Vector3.new(math.cos(ang), 0, math.sin(ang))
+		cr.CFrame = CFrame.new(pos + d * len / 2, pos + d * len)
+		cr.Parent = workspace.Terrain
+		Debris:AddItem(cr, 1.2)
+		spawn(function()
+			wait(0.7)
+			if cr.Parent then TweenService:Create(cr, TweenInfo.new(0.5), {Transparency = 1}):Play() end
+		end)
+	end
+end
+
+function V.Flash(col, dur)
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.TintColor = col; cc.Brightness = 0.35
+	cc.Parent = Camera
+	TweenService:Create(cc, TweenInfo.new(dur or 0.12), {Brightness = 0}):Play()
+	Debris:AddItem(cc, (dur or 0.12) + 0.03)
+end
+
+function V.Shake(int, dur)
+	spawn(function()
+		local s = tick()
+		while tick() - s < (dur or 0.25) do
+			local p = 1 - ((tick() - s) / (dur or 0.25))
+			Camera.CFrame = Camera.CFrame * CFrame.new(
+				(math.random() - 0.5) * 2 * int * p,
+				(math.random() - 0.5) * 2 * int * p,
+				(math.random() - 0.5) * 2 * int * p
+			)
+			RunService.RenderStepped:Wait()
+		end
+	end)
+end
+
+function V.Beam(a, b, col, dur)
+	local d = (b - a).Magnitude
+	local m = (a + b) / 2
+	local bm = Instance.new("Part")
+	bm.Anchored = true; bm.CanCollide = false
+	bm.Material = Enum.Material.Neon; bm.Color = col
+	bm.Size = Vector3.new(0.25, 0.25, d)
+	bm.CFrame = CFrame.new(m, b); bm.Transparency = 0.15
+	bm.Parent = workspace.Terrain
+	TweenService:Create(bm, TweenInfo.new(dur or 0.25), {Transparency = 1, Size = Vector3.new(0.03, 0.03, d)}):Play()
+	Debris:AddItem(bm, (dur or 0.25) + 0.03)
+end
+
+function V.Ghost(char, col, n)
+	spawn(function()
+		for i = 1, (n or 3) do
+			for _, part in pairs(char:GetChildren()) do
+				if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency < 0.5 then
+					local g = Instance.new("Part")
+					g.Size = part.Size; g.CFrame = part.CFrame
+					g.Anchored = true; g.CanCollide = false
+					g.Material = Enum.Material.Neon; g.Color = col
+					g.Transparency = 0.5
+					g.Parent = workspace.Terrain
+					TweenService:Create(g, TweenInfo.new(0.25), {Transparency = 1, Size = part.Size * 1.15}):Play()
+					Debris:AddItem(g, 0.3)
+				end
+			end
+			wait(0.035)
+		end
+	end)
+end
+
+function V.Rubble(pos, n)
+	for i = 1, (n or 6) do
+		local ch = Instance.new("Part")
+		ch.Size = Vector3.new(math.random() * 2 + 0.4, math.random() * 2 + 0.4, math.random() * 2 + 0.4)
+		ch.Material = Enum.Material.Slate
+		ch.Color = Color3.fromRGB(70 + math.random(30), 70 + math.random(30), 70 + math.random(30))
+		ch.CFrame = CFrame.new(pos) * CFrame.Angles(math.random() * 6, math.random() * 6, 0)
+		ch.Parent = workspace.Terrain
+		ch.Velocity = Vector3.new((math.random() - 0.5) * 70, math.random(25, 65), (math.random() - 0.5) * 70)
+		ch.RotVelocity = Vector3.new(math.random(-8, 8), math.random(-8, 8), math.random(-8, 8))
+		Debris:AddItem(ch, 2.5)
+		spawn(function() wait(1.8) if ch.Parent then TweenService:Create(ch, TweenInfo.new(0.7), {Transparency = 1}):Play() end end)
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- SOUND
+-- ═══════════════════════════════════════════════════════════
+local function SND(id, par, vol, pit)
+	local s = Instance.new("Sound")
+	s.SoundId = "rbxassetid://" .. tostring(id)
+	s.Volume = vol or 1; s.PlaybackSpeed = pit or 1
+	s.Parent = par or Root; s:Play()
+	Debris:AddItem(s, 10)
+	return s
+end
+
+-- Sound IDs
+local SID = {
+	hit = 5765826824,
+	heavy = 6579575873,
+	woosh = 6579546553,
+	honk = 257001402,
+	pop = 3716104522,
+	splat = 3362285462,
+	squeak = 292838651,
+	boom = 6579575873,
+	charge = 1837286840,
+	laugh = 2919713060,
+}
+
+-- ═══════════════════════════════════════════════════════════
+-- TARGET FINDING
+-- ═══════════════════════════════════════════════════════════
+local function FindTarget(range)
+	range = range or 10
+	local best, bestD = nil, range
+	for _, p in pairs(Players:GetPlayers()) do
+		if p ~= Player and p.Character then
+			local r = p.Character:FindFirstChild("HumanoidRootPart")
+			local h = p.Character:FindFirstChild("Humanoid")
+			if r and h and h.Health > 0 then
+				local d = (Root.Position - r.Position).Magnitude
+				if d < bestD then best = p.Character; bestD = d end
+			end
+		end
+	end
+	return best, bestD
+end
+
+local function FindTargetsInRange(pos, range)
+	local t = {}
+	for _, p in pairs(Players:GetPlayers()) do
+		if p ~= Player and p.Character then
+			local r = p.Character:FindFirstChild("HumanoidRootPart")
+			local h = p.Character:FindFirstChild("Humanoid")
+			if r and h and h.Health > 0 and (pos - r.Position).Magnitude <= range then
+				table.insert(t, p.Character)
+			end
+		end
+	end
+	return t
+end
+
+local function FaceDir(targetRoot)
+	if not targetRoot or not Root then return end
+	local d = (targetRoot.Position - Root.Position) * Vector3.new(1, 0, 1)
+	if d.Magnitude > 0.1 then
+		Root.CFrame = CFrame.new(Root.Position, Root.Position + d)
+	end
+end
+
+local function OnCD(key)
+	return S.cd[key] and S.cd[key] > tick()
+end
+
+local function SetCD(key)
+	S.cd[key] = tick() + CD[key]
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- PIE CREATION (Real 3D Pie)
+-- ═══════════════════════════════════════════════════════════
+local function CreatePie(startCF, direction)
+	-- Pie base (tin)
+	local pieModel = Instance.new("Model")
+	pieModel.Name = "ClownPie"
+	pieModel.Parent = workspace.Terrain
+	
+	local tin = Instance.new("Part")
+	tin.Name = "Tin"
+	tin.Size = Vector3.new(3, 0.4, 3)
+	tin.Shape = Enum.PartType.Cylinder
+	tin.Material = Enum.Material.Metal
+	tin.Color = Color3.fromRGB(180, 180, 190)
+	tin.CFrame = startCF * CFrame.Angles(0, 0, math.rad(90))
+	tin.CanCollide = false
+	tin.Parent = pieModel
+	
+	-- Pie filling
+	local filling = Instance.new("Part")
+	filling.Name = "Filling"
+	filling.Size = Vector3.new(2.6, 0.6, 2.6)
+	filling.Shape = Enum.PartType.Cylinder
+	filling.Material = Enum.Material.SmoothPlastic
+	filling.Color = Color3.fromRGB(255, 220, 120)
+	filling.CanCollide = false
+	filling.Massless = true
+	filling.Parent = pieModel
+	
+	local fw = Instance.new("WeldConstraint")
+	fw.Part0 = tin; fw.Part1 = filling; fw.Parent = filling
+	filling.CFrame = tin.CFrame * CFrame.new(0.3, 0, 0)
+	
+	-- Whipped cream top
+	local cream = Instance.new("Part")
+	cream.Name = "Cream"
+	cream.Size = Vector3.new(2.2, 1.8, 2.2)
+	cream.Shape = Enum.PartType.Ball
+	cream.Material = Enum.Material.SmoothPlastic
+	cream.Color = Color3.fromRGB(255, 255, 245)
+	cream.CanCollide = false
+	cream.Massless = true
+	cream.Parent = pieModel
+	
+	local cw = Instance.new("WeldConstraint")
+	cw.Part0 = tin; cw.Part1 = cream; cw.Parent = cream
+	cream.CFrame = tin.CFrame * CFrame.new(0.6, 0, 0)
+	
+	-- Cherry on top
+	local cherry = Instance.new("Part")
+	cherry.Name = "Cherry"
+	cherry.Size = Vector3.new(0.5, 0.5, 0.5)
+	cherry.Shape = Enum.PartType.Ball
+	cherry.Material = Enum.Material.SmoothPlastic
+	cherry.Color = Color3.fromRGB(220, 20, 20)
+	cherry.CanCollide = false
+	cherry.Massless = true
+	cherry.Parent = pieModel
+	
+	local chw = Instance.new("WeldConstraint")
+	chw.Part0 = cream; chw.Part1 = cherry; chw.Parent = cherry
+	cherry.CFrame = cream.CFrame * CFrame.new(0, 0.8, 0)
+	
+	-- Physics
+	local bv = Instance.new("BodyVelocity")
+	bv.Velocity = direction.Unit * 130
+	bv.MaxForce = Vector3.new(1e8, 1e8, 1e8)
+	bv.Parent = tin
+	
+	local spin = Instance.new("BodyAngularVelocity")
+	spin.AngularVelocity = Vector3.new(0, 30, 0)
+	spin.MaxTorque = Vector3.new(1e8, 1e8, 1e8)
+	spin.Parent = tin
+	
+	-- Anti gravity so it flies straight
+	local bf = Instance.new("BodyForce")
+	bf.Force = Vector3.new(0, tin:GetMass() * workspace.Gravity, 0)
+	bf.Parent = tin
+	
+	Debris:AddItem(pieModel, 3)
+	
+	return pieModel, tin
+end
+
+local function PieSplat(pos)
+	-- Cream chunks flying everywhere
+	for i = 1, 16 do
+		local chunk = Instance.new("Part")
+		chunk.Size = Vector3.new(math.random() * 0.8 + 0.2, math.random() * 0.8 + 0.2, math.random() * 0.8 + 0.2)
+		chunk.Shape = Enum.PartType.Ball
+		chunk.Material = Enum.Material.SmoothPlastic
+		chunk.Color = i % 3 == 0 and Color3.fromRGB(255, 220, 120) or Color3.fromRGB(255, 255, 245)
+		chunk.CFrame = CFrame.new(pos)
+		chunk.CanCollide = true
+		chunk.Parent = workspace.Terrain
+		chunk.Velocity = Vector3.new(
+			(math.random() - 0.5) * 55,
+			math.random(8, 35),
+			(math.random() - 0.5) * 55
+		)
+		Debris:AddItem(chunk, 2.5)
+		spawn(function()
+			wait(1.8)
+			if chunk.Parent then TweenService:Create(chunk, TweenInfo.new(0.7), {Transparency = 1}):Play() end
+		end)
+	end
+	
+	-- Splat decal on ground
+	local splat = Instance.new("Part")
+	splat.Anchored = true; splat.CanCollide = false
+	splat.Size = Vector3.new(6, 0.05, 6)
+	splat.Material = Enum.Material.SmoothPlastic
+	splat.Color = Color3.fromRGB(255, 255, 230)
+	splat.CFrame = CFrame.new(pos.X, pos.Y - 2, pos.Z)
+	splat.Shape = Enum.PartType.Cylinder
+	splat.Transparency = 0.3
+	splat.Parent = workspace.Terrain
+	Debris:AddItem(splat, 4)
+	spawn(function()
+		wait(2.5)
+		if splat.Parent then TweenService:Create(splat, TweenInfo.new(1.5), {Transparency = 1}):Play() end
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- BALLOON CREATION (Real Balloon Animals)
+-- ═══════════════════════════════════════════════════════════
+local function CreateBalloon(startPos, dir, col)
+	local balloon = Instance.new("Model")
+	balloon.Name = "BalloonAnimal"
+	balloon.Parent = workspace.Terrain
+	
+	-- Body segments (3 connected spheres = balloon dog)
+	local body = Instance.new("Part")
+	body.Size = Vector3.new(1.8, 1.2, 3)
+	body.Material = Enum.Material.SmoothPlastic
+	body.Color = col
+	body.Transparency = 0.1
+	body.CanCollide = false
+	body.CFrame = CFrame.new(startPos, startPos + dir)
+	body.Parent = balloon
+	
+	local mesh = Instance.new("SpecialMesh")
+	mesh.MeshType = Enum.MeshType.Sphere
+	mesh.Scale = Vector3.new(1, 0.7, 1.6)
+	mesh.Parent = body
+	
+	-- Head
+	local head = Instance.new("Part")
+	head.Size = Vector3.new(1.2, 1.2, 1.2)
+	head.Shape = Enum.PartType.Ball
+	head.Material = Enum.Material.SmoothPlastic
+	head.Color = col
+	head.Transparency = 0.1
+	head.CanCollide = false
+	head.Massless = true
+	head.Parent = balloon
+	
+	local hw = Instance.new("WeldConstraint")
+	hw.Part0 = body; hw.Part1 = head; hw.Parent = head
+	head.CFrame = body.CFrame * CFrame.new(0, 0.3, -2)
+	
+	-- Tail
+	local tail = Instance.new("Part")
+	tail.Size = Vector3.new(0.4, 0.4, 1.5)
+	tail.Material = Enum.Material.SmoothPlastic
+	tail.Color = col
+	tail.Transparency = 0.1
+	tail.CanCollide = false
+	tail.Massless = true
+	tail.Parent = balloon
+	
+	local tw = Instance.new("WeldConstraint")
+	tw.Part0 = body; tw.Part1 = tail; tw.Parent = tail
+	tail.CFrame = body.CFrame * CFrame.new(0, 0.2, 2) * CFrame.Angles(math.rad(-30), 0, 0)
+	
+	-- Legs (4 little cylinders)
+	for i = 1, 4 do
+		local leg = Instance.new("Part")
+		leg.Size = Vector3.new(0.3, 1, 0.3)
+		leg.Material = Enum.Material.SmoothPlastic
+		leg.Color = col
+		leg.Transparency = 0.1
+		leg.CanCollide = false
+		leg.Massless = true
+		leg.Parent = balloon
+		
+		local lw = Instance.new("WeldConstraint")
+		lw.Part0 = body; lw.Part1 = leg; lw.Parent = leg
+		
+		local xOff = (i <= 2) and -0.5 or 0.5
+		local zOff = (i % 2 == 1) and -0.8 or 0.8
+		leg.CFrame = body.CFrame * CFrame.new(xOff, -0.8, zOff)
+	end
+	
+	-- Glow
+	local glow = Instance.new("PointLight")
+	glow.Color = col; glow.Brightness = 2; glow.Range = 6
+	glow.Parent = body
+	
+	-- Physics
+	local bv = Instance.new("BodyVelocity")
+	bv.Velocity = dir.Unit * 90
+	bv.MaxForce = Vector3.new(1e8, 1e8, 1e8)
+	bv.Parent = body
+	
+	local bf = Instance.new("BodyForce")
+	bf.Force = Vector3.new(0, body:GetMass() * workspace.Gravity * 0.95, 0)
+	bf.Parent = body
+	
+	Debris:AddItem(balloon, 2.5)
+	
+	return balloon, body
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- MALLET CREATION (For Ultimate)
+-- ═══════════════════════════════════════════════════════════
+local function CreateMallet(pos)
+	local mallet = Instance.new("Model")
+	mallet.Name = "GiantMallet"
+	mallet.Parent = workspace.Terrain
+	
+	-- Handle
+	local handle = Instance.new("Part")
+	handle.Size = Vector3.new(1.5, 22, 1.5)
+	handle.Material = Enum.Material.Wood
+	handle.Color = Color3.fromRGB(139, 90, 43)
+	handle.Anchored = true; handle.CanCollide = false
+	handle.CFrame = CFrame.new(pos + Vector3.new(0, 35, 0))
+	handle.Parent = mallet
+	
+	-- Stripes on handle
+	for i = 1, 5 do
+		local stripe = Instance.new("Part")
+		stripe.Size = Vector3.new(1.55, 0.4, 1.55)
+		stripe.Material = Enum.Material.SmoothPlastic
+		stripe.Color = i % 2 == 0 and C.R or C.W
+		stripe.Anchored = true; stripe.CanCollide = false
+		stripe.Parent = mallet
+		stripe.CFrame = handle.CFrame * CFrame.new(0, -11 + i * 3.5, 0)
+	end
+	
+	-- Mallet head
+	local head = Instance.new("Part")
+	head.Size = Vector3.new(11, 8, 11)
+	head.Material = Enum.Material.SmoothPlastic
+	head.Color = C.R
+	head.Anchored = true; head.CanCollide = false
+	head.CFrame = handle.CFrame * CFrame.new(0, -15, 0)
+	head.Parent = mallet
+	
+	-- Gold bands on head
+	local band1 = Instance.new("Part")
+	band1.Size = Vector3.new(11.2, 1, 11.2)
+	band1.Material = Enum.Material.Neon
+	band1.Color = C.G
+	band1.Anchored = true; band1.CanCollide = false
+	band1.CFrame = head.CFrame * CFrame.new(0, 3, 0)
+	band1.Parent = mallet
+	
+	local band2 = band1:Clone()
+	band2.CFrame = head.CFrame * CFrame.new(0, -3, 0)
+	band2.Parent = mallet
+	
+	-- Star emblem on front
+	local star = Instance.new("Part")
+	star.Size = Vector3.new(3, 3, 0.5)
+	star.Shape = Enum.PartType.Ball
+	star.Material = Enum.Material.Neon
+	star.Color = C.G
+	star.Anchored = true; star.CanCollide = false
+	star.CFrame = head.CFrame * CFrame.new(0, 0, -5.5)
+	star.Parent = mallet
+	
+	-- Glow
+	local gl = Instance.new("PointLight")
+	gl.Color = C.HP; gl.Brightness = 5; gl.Range = 40
+	gl.Parent = head
+	
+	return mallet, handle, head
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- M1 COMBO (5 Hit Slapstick)
+-- ═══════════════════════════════════════════════════════════
+local function M1()
+	if S.busy then return end
+	
+	local now = tick()
+	if now - S.m1t > 0.85 then S.m1 = 0 end
+	S.m1 = S.m1 + 1
+	if S.m1 > 5 then S.m1 = 1 end
+	S.m1t = now
+	S.busy = true
+	A.IdleStop()
+	
+	local tgt, dist = FindTarget(12)
+	if tgt then FaceDir(tgt:FindFirstChild("HumanoidRootPart")) end
+	
+	local c = S.m1
+	local tRoot = tgt and tgt:FindFirstChild("HumanoidRootPart")
+	
+	-- Lunge toward target
+	if tRoot and dist and dist > 4 and dist <= 12 then
+		local lungeDir = (tRoot.Position - Root.Position).Unit
+		Root.Velocity = lungeDir * 50 + Vector3.new(0, 5, 0)
+	end
+	
+	if c == 1 then
+		-- RIGHT SLAP
+		A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-25), math.rad(35), math.rad(18)), 0.04, Enum.EasingStyle.Back)
+		A.J(RootJoint, OG.RJ * CFrame.Angles(0, math.rad(20), 0), 0.04)
+		wait(0.04)
+		A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(15), math.rad(-55), math.rad(25)), 0.04)
+		A.J(RootJoint, OG.RJ * CFrame.Angles(math.rad(4), math.rad(-25), 0), 0.04)
+		A.J(Neck, OG.NK * CFrame.Angles(math.rad(-3), math.rad(-15), 0), 0.04)
+		
+		if tRoot and dist and dist <= 12 then
+			V.Ball(tRoot.Position, C.R, 3, 0.15)
+			SND(SID.hit, tRoot, 0.8, 1 + math.random() * 0.2)
+			V.Shake(0.3, 0.06)
+			Fling.SmallKnock(tRoot)
+		else SND(SID.woosh, nil, 0.3, 1.1) end
+		
+		wait(0.18)
+		
+	elseif c == 2 then
+		-- LEFT BACKHAND
+		A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-18), math.rad(-45), math.rad(-20)), 0.04, Enum.EasingStyle.Back)
+		A.J(RootJoint, OG.RJ * CFrame.Angles(0, math.rad(-25), 0), 0.04)
+		wait(0.04)
+		A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(25), math.rad(65), math.rad(-18)), 0.04)
+		A.J(RootJoint, OG.RJ * CFrame.Angles(math.rad(4), math.rad(30), 0), 0.04)
+		A.J(Neck, OG.NK * CFrame.Angles(math.rad(-3), math.rad(20), 0), 0.04)
+		
+		if tRoot and dist and dist <= 12 then
+			V.Ball(tRoot.Position, C.R, 3.5, 0.15)
+			SND(SID.hit, tRoot, 0.9, 0.9 + math.random() * 0.2)
+			V.Shake(0.35, 0.07)
+			Fling.SmallKnock(tRoot)
+		else SND(SID.woosh, nil, 0.3, 1) end
+		
+		wait(0.18)
+		
+	elseif c == 3 then
+		-- OVERHEAD BONK
+		A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-165), 0, math.rad(12)), 0.06, Enum.EasingStyle.Back)
+		A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-165), 0, math.rad(-12)), 0.06, Enum.EasingStyle.Back)
+		A.J(RootJoint, OG.RJ * CFrame.new(0, 0.15, 0) * CFrame.Angles(math.rad(-8), 0, 0), 0.06)
+		wait(0.08)
+		
+		A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(35), 0, math.rad(8)), 0.04)
+		A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(35), 0, math.rad(-8)), 0.04)
+		A.J(RootJoint, OG.RJ * CFrame.new(0, -0.25, 0) * CFrame.Angles(math.rad(22), 0, 0), 0.04)
+		A.J(Neck, OG.NK * CFrame.Angles(math.rad(12), 0, 0), 0.04)
+		
+		if tRoot and dist and dist <= 12 then
+			V.Ball(tRoot.Position, C.G, 5, 0.25)
+			V.Ring(tRoot.Position, C.G, 8, 0.2)
+			SND(SID.heavy, tRoot, 1, 0.8)
+			SND(SID.honk, tRoot, 0.4, 1.5)
+			V.Shake(0.8, 0.1)
+			Fling.MediumKnock(tRoot)
+		else SND(SID.woosh, nil, 0.4, 0.9) end
+		
+		wait(0.22)
+		
+	elseif c == 4 then
+		-- SPINNING ELBOW
+		A.J(RootJoint, OG.RJ * CFrame.Angles(0, math.rad(-50), 0), 0.04)
+		A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-85), math.rad(25), math.rad(35)), 0.04)
+		wait(0.04)
+		
+		-- Spin
+		local spinStart = tick()
+		local spinConn
+		spinConn = RunService.Heartbeat:Connect(function(dt)
+			if tick() - spinStart > 0.12 then spinConn:Disconnect() return end
+			if RootJoint and OG.RJ then
+				local prog = (tick() - spinStart) / 0.12
+				RootJoint.C0 = OG.RJ * CFrame.Angles(math.rad(6), math.rad(-50 + 170 * prog), 0)
+			end
+		end)
+		
+		A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-75), math.rad(-45), math.rad(55)), 0.05)
+		
+		wait(0.06)
+		
+		if tRoot and dist and dist <= 12 then
+			V.Ball(tRoot.Position, C.P, 6, 0.25)
+			V.Ring(tRoot.Position, C.P, 10, 0.25)
+			V.Beam(Root.Position, tRoot.Position, C.P, 0.15)
+			SND(SID.heavy, tRoot, 1.1, 0.7)
+			V.Shake(1.2, 0.12)
+			Fling.MediumKnock(tRoot)
+		else SND(SID.woosh, nil, 0.4, 0.8) end
+		
+		wait(0.2)
+		
+	elseif c == 5 then
+		-- MEGA UPPERCUT
+		-- Crouch
+		A.J(RootJoint, OG.RJ * CFrame.new(0, -0.45, 0) * CFrame.Angles(math.rad(18), math.rad(-12), 0), 0.06)
+		A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(25), math.rad(25), math.rad(8)), 0.06)
+		A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(15), math.rad(-8), math.rad(-18)), 0.06)
+		A.J(RHip, OG.RH * CFrame.Angles(math.rad(-18), 0, 0), 0.06)
+		A.J(LHip, OG.LH * CFrame.Angles(math.rad(-22), 0, 0), 0.06)
+		wait(0.08)
+		
+		-- EXPLODE UP
+		A.J(RootJoint, OG.RJ * CFrame.new(0, 0.35, 0) * CFrame.Angles(math.rad(-12), math.rad(15), 0), 0.04, Enum.EasingStyle.Back)
+		A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-155), math.rad(-15), math.rad(20)), 0.04, Enum.EasingStyle.Back)
+		A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(25), 0, math.rad(-35)), 0.04)
+		A.J(Neck, OG.NK * CFrame.Angles(math.rad(-18), math.rad(8), 0), 0.04)
+		A.J(RHip, OG.RH * CFrame.Angles(math.rad(8), 0, 0), 0.04)
+		A.J(LHip, OG.LH * CFrame.Angles(math.rad(-8), 0, math.rad(-4)), 0.04)
+		
+		-- Small hop
+		Root.Velocity = Root.Velocity + Vector3.new(0, 25, 0)
+		
+		if tRoot and dist and dist <= 12 then
+			V.Ball(tRoot.Position, C.R, 12, 0.45)
+			V.Ring(tRoot.Position, C.R, 18, 0.35)
+			V.Ring(tRoot.Position + Vector3.new(0, 2, 0), C.G, 14, 0.3)
+			V.Crack(tRoot.Position, C.R, 10)
+			V.Flash(C.R, 0.08)
+			V.Ghost(Char, C.R, 2)
+			SND(SID.heavy, tRoot, 1.5, 0.5)
+			SND(SID.honk, tRoot, 0.8, 0.6)
+			SND(SID.boom, tRoot, 1, 0.7)
+			V.Shake(2.5, 0.25)
+			V.Rubble(tRoot.Position, 5)
+			
+			-- FLING THE TARGET UP
+			Fling.Uppercut(tRoot)
+		else SND(SID.woosh, nil, 0.5, 0.7) end
+		
+		wait(0.35)
+	end
+	
+	A.Reset(0.12)
+	wait(0.05)
+	S.busy = false
+	A.IdleStart()
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- [E] PIE TO THE FACE
+-- ═══════════════════════════════════════════════════════════
+local function SkillPie()
+	if S.busy or OnCD("e") then return end
+	S.busy = true; SetCD("e")
+	A.IdleStop()
+	
+	-- Windup - reach behind back
+	A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(25), math.rad(55), math.rad(-15)), 0.1, Enum.EasingStyle.Back)
+	A.J(RootJoint, OG.RJ * CFrame.Angles(0, math.rad(25), 0), 0.1)
+	A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(12), 0, math.rad(-12)), 0.1)
+	SND(SID.woosh, nil, 0.4, 0.8)
+	wait(0.15)
+	
+	-- THROW
+	A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-85), math.rad(-25), math.rad(8)), 0.04)
+	A.J(RootJoint, OG.RJ * CFrame.Angles(math.rad(8), math.rad(-35), 0), 0.04)
+	A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(25), math.rad(8), math.rad(-25)), 0.04)
+	A.J(Neck, OG.NK * CFrame.Angles(math.rad(5), math.rad(-10), 0), 0.04)
+	
+	SND(SID.woosh, nil, 1, 1.2)
+	
+	-- Create the actual pie
+	local startPos = Root.Position + Root.CFrame.LookVector * 3 + Vector3.new(0, 3, 0)
+	local dir = Root.CFrame.LookVector
+	
+	-- Aim at mouse target or nearest enemy
+	local tgt = FindTarget(50)
+	if tgt then
+		local tR = tgt:FindFirstChild("HumanoidRootPart")
+		if tR then
+			dir = (tR.Position - startPos).Unit
+		end
+	end
+	
+	local pieModel, pieTin = CreatePie(CFrame.new(startPos, startPos + dir), dir)
+	
+	-- Hit detection
+	local hasHit = false
+	local touchConn
+	touchConn = pieTin.Touched:Connect(function(part)
+		if hasHit then return end
+		if not part or not part.Parent then return end
+		if part:IsDescendantOf(Char) then return end
+		if part.Parent == pieModel then return end
+		
+		local hitChar = part.Parent
+		local hitHum = hitChar:FindFirstChild("Humanoid")
+		local hitRoot = hitChar:FindFirstChild("HumanoidRootPart")
+		
+		if hitHum and hitRoot and hitHum.Health > 0 then
+			hasHit = true
+			local hitPos = pieTin.Position
+			
+			-- SPLAT VFX
+			PieSplat(hitPos)
+			V.Ball(hitPos, C.CR, 8, 0.4)
+			V.Ball(hitPos, C.W, 6, 0.35)
+			V.Ring(hitPos, C.G, 12, 0.35)
+			V.Flash(C.CR, 0.08)
+			V.Shake(2.5, 0.25)
+			
+			SND(SID.splat, nil, 2, 0.7 + math.random() * 0.3)
+			SND(SID.honk, nil, 0.8, 1.2)
+			
+			-- FLING
+			Fling.HeavyKnock(hitRoot)
+			
+			pieModel:Destroy()
+		elseif not hitHum then
+			-- Hit terrain/wall
+			hasHit = true
+			PieSplat(pieTin.Position)
+			V.Ball(pieTin.Position, C.CR, 5, 0.3)
+			SND(SID.splat, nil, 1.5, 0.8)
+			pieModel:Destroy()
+		end
+	end)
+	
+	wait(0.25)
+	A.Reset(0.15)
+	wait(0.05)
+	S.busy = false
+	A.IdleStart()
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- [R] BALLOON ANIMAL BARRAGE
+-- ═══════════════════════════════════════════════════════════
+local function SkillBalloons()
+	if S.busy or OnCD("r") then return end
+	S.busy = true; SetCD("r")
+	A.IdleStop()
+	
+	-- Twist animation
+	A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-55), math.rad(-35), math.rad(8)), 0.08)
+	A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-55), math.rad(35), math.rad(-8)), 0.08)
+	A.J(RootJoint, OG.RJ * CFrame.Angles(math.rad(-4), 0, 0), 0.08)
+	
+	SND(SID.squeak, nil, 0.6, 1)
+	wait(0.12)
+	SND(SID.squeak, nil, 0.5, 1.3)
+	wait(0.1)
+	SND(SID.squeak, nil, 0.4, 0.8)
+	wait(0.08)
+	
+	-- Launch pose
+	A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-95), math.rad(-8), math.rad(25)), 0.04, Enum.EasingStyle.Back)
+	A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-95), math.rad(8), math.rad(-25)), 0.04, Enum.EasingStyle.Back)
+	A.J(RootJoint, OG.RJ * CFrame.Angles(math.rad(12), 0, 0), 0.04)
+	
+	SND(SID.woosh, nil, 1, 0.8)
+	
+	local baseDir = Root.CFrame.LookVector
+	local startPos = Root.Position + baseDir * 2.5 + Vector3.new(0, 3.5, 0)
+	
+	local colors = {C.PK, C.CY, C.G, C.GR, C.OR, C.P}
+	
+	-- Find target to aim at
+	local tgt = FindTarget(50)
+	local aimPos = nil
+	if tgt then
+		local tR = tgt:FindFirstChild("HumanoidRootPart")
+		if tR then aimPos = tR.Position end
+	end
+	
+	for i = 1, 6 do
+		spawn(function()
+			wait((i - 1) * 0.06)
+			
+			local spread = ((i - 3.5) / 6) * math.rad(30)
+			local dir
+			if aimPos then
+				dir = (aimPos - startPos).Unit
+				dir = (CFrame.new(Vector3.new(), dir) * CFrame.Angles(spread * 0.5, spread, 0)).LookVector
+			else
+				dir = (CFrame.new(Vector3.new(), baseDir) * CFrame.Angles(0, spread, 0)).LookVector
+			end
+			
+			local sPos = startPos + Vector3.new((math.random() - 0.5) * 2, (math.random() - 0.5), 0)
+			local balloonModel, balloonBody = CreateBalloon(sPos, dir, colors[i])
+			
+			-- Hit detection
+			local hit = false
+			balloonBody.Touched:Connect(function(part)
+				if hit then return end
+				if not part or not part.Parent then return end
+				if part:IsDescendantOf(Char) then return end
+				if part.Parent == balloonModel then return end
+				
+				local hChar = part.Parent
+				local hHum = hChar:FindFirstChild("Humanoid")
+				local hRoot = hChar:FindFirstChild("HumanoidRootPart")
+				
+				if hHum and hRoot and hHum.Health > 0 then
+					hit = true
+					
+					-- POP!
+					V.Ball(balloonBody.Position, colors[i], 5, 0.2)
+					V.Ring(balloonBody.Position, colors[i], 7, 0.15)
+					SND(SID.pop, hRoot, 1, 0.7 + math.random() * 0.5)
+					V.Shake(0.4, 0.05)
+					
+					-- Fling
+					Fling.SmallKnock(hRoot)
+					
+					balloonModel:Destroy()
+				end
+			end)
+		end)
+	end
+	
+	wait(0.35)
+	A.Reset(0.15)
+	wait(0.05)
+	S.busy = false
+	A.IdleStart()
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- [T] HONK SHOCKWAVE
+-- ═══════════════════════════════════════════════════════════
+local function SkillHonk()
+	if S.busy or OnCD("t") then return end
+	S.busy = true; SetCD("t")
+	A.IdleStop()
+	
+	-- Inhale - lean back puff up
+	A.J(RootJoint, OG.RJ * CFrame.new(0, 0.15, 0) * CFrame.Angles(math.rad(-18), 0, 0), 0.12)
+	A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-25), 0, math.rad(45)), 0.12)
+	A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-25), 0, math.rad(-45)), 0.12)
+	A.J(Neck, OG.NK * CFrame.Angles(math.rad(-12), 0, 0), 0.12)
+	
+	SND(SID.charge, nil, 0.8, 1.5)
+	
+	-- Charge sphere
+	local chg = Instance.new("Part")
+	chg.Anchored = true; chg.CanCollide = false
+	chg.Transparency = 0.5; chg.Material = Enum.Material.ForceField
+	chg.Color = C.OR; chg.Shape = Enum.PartType.Ball
+	chg.Size = Vector3.new(1, 1, 1)
+	chg.CFrame = CFrame.new(Root.Position)
+	chg.Parent = workspace.Terrain
+	
+	TweenService:Create(chg, TweenInfo.new(0.45), {Size = Vector3.new(7, 7, 7), Transparency = 0.25}):Play()
+	
+	-- Charge shakes
+	spawn(function()
+		for j = 1, 4 do
+			V.Shake(0.15 + j * 0.08, 0.04)
+			wait(0.08)
+		end
+	end)
+	
+	wait(0.5)
+	
+	-- HONK RELEASE
+	A.J(RootJoint, OG.RJ * CFrame.new(0, -0.25, 0) * CFrame.Angles(math.rad(28), 0, 0), 0.03, Enum.EasingStyle.Back)
+	A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(8), 0, math.rad(75)), 0.03, Enum.EasingStyle.Back)
+	A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(8), 0, math.rad(-75)), 0.03, Enum.EasingStyle.Back)
+	A.J(Neck, OG.NK * CFrame.Angles(math.rad(18), 0, 0), 0.03)
+	
+	chg:Destroy()
+	
+	-- THE HONK
+	SND(SID.honk, nil, 3, 0.35)
+	SND(SID.boom, nil, 2.5, 0.4)
+	
+	local pos = Root.Position
+	
+	-- Massive shockwave VFX
+	for j = 1, 7 do
+		spawn(function()
+			wait(j * 0.03)
+			V.Ring(pos + Vector3.new(0, (j - 3.5) * 1.8, 0), C.OR, 28 + j * 3, 0.6)
+		end)
+	end
+	
+	V.Ball(pos, C.G, 22, 0.45)
+	V.Ball(pos, C.OR, 16, 0.35)
+	V.Crack(pos, C.OR, 18)
+	V.Flash(C.OR, 0.12)
+	V.Shake(4.5, 0.45)
+	V.Rubble(pos, 10)
+	
+	-- Fling all nearby enemies
+	local targets = FindTargetsInRange(pos, 22)
+	for _, t in pairs(targets) do
+		local tR = t:FindFirstChild("HumanoidRootPart")
+		if tR then
+			V.Ball(tR.Position, C.OR, 5, 0.2)
+			V.Beam(pos, tR.Position, C.G, 0.2)
+			Fling.HeavyKnock(tR)
+		end
+	end
+	
+	wait(0.35)
+	A.Reset(0.2)
+	wait(0.08)
+	S.busy = false
+	A.IdleStart()
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- [F] JUGGLING FRENZY
+-- ═══════════════════════════════════════════════════════════
+local function SkillJuggle()
+	if S.busy or OnCD("f") then return end
+	
+	local tgt, dist = FindTarget(15)
+	if not tgt then return end
+	local tR = tgt:FindFirstChild("HumanoidRootPart")
+	if not tR then return end
+	
+	S.busy = true; SetCD("f")
+	A.IdleStop()
+	FaceDir(tR)
+	
+	-- Lunge grab
+	A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-85), math.rad(-18), math.rad(8)), 0.06)
+	A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-85), math.rad(18), math.rad(-8)), 0.06)
+	A.J(RootJoint, OG.RJ * CFrame.Angles(math.rad(18), 0, 0), 0.06)
+	
+	SND(SID.woosh, nil, 1, 0.8)
+	SND(SID.laugh, nil, 0.4, 1.3)
+	V.Ring(Root.Position, C.G, 8, 0.2)
+	V.Ghost(Char, C.G, 2)
+	
+	-- Dash to target
+	local dashDir = (tR.Position - Root.Position).Unit
+	Root.Velocity = dashDir * 80 + Vector3.new(0, 10, 0)
+	
+	wait(0.12)
+	
+	-- Stars around target
+	local stars = {}
+	for j = 1, 5 do
+		local s = Instance.new("Part")
+		s.Size = Vector3.new(0.6, 0.1, 0.6)
+		s.Material = Enum.Material.Neon
+		s.Color = C.G; s.Anchored = true; s.CanCollide = false
+		s.Parent = workspace.Terrain
+		table.insert(stars, s)
+	end
+	
+	-- 5 juggles
+	local jColors = {C.G, C.PK, C.CY, C.P, C.R}
+	
+	for j = 1, 5 do
+		if not tR or not tR.Parent then break end
+		FaceDir(tR)
+		
+		-- Update stars
+		for si, star in pairs(stars) do
+			if tR and tR.Parent then
+				local a = (si / 5) * math.pi * 2 + j * 1.5
+				star.CFrame = CFrame.new(tR.Position + Vector3.new(math.cos(a) * 2.5, math.sin(j * 2 + si) * 1.5, math.sin(a) * 2.5))
+				star.Color = jColors[j]
+			end
+		end
+		
+		if j < 5 then
+			-- Toss animations alternating sides
+			local isRight = j % 2 == 1
+			
+			if isRight then
+				A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-140) + math.rad(math.random(-15, 15)), math.rad(25), math.rad(12)), 0.06, Enum.EasingStyle.Back)
+				A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-130), math.rad(-10), math.rad(-12)), 0.06)
+			else
+				A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-140) + math.rad(math.random(-15, 15)), math.rad(-25), math.rad(-12)), 0.06, Enum.EasingStyle.Back)
+				A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-130), math.rad(10), math.rad(12)), 0.06)
+			end
+			
+			V.Ball(tR.Position + Vector3.new(0, j * 1.5, 0), jColors[j], 4 + j * 0.5, 0.2)
+			SND(SID.hit, tR, 0.7 + j * 0.05, 0.7 + j * 0.12)
+			
+			if j % 2 == 0 then SND(SID.honk, tR, 0.25, 1 + j * 0.15) end
+			
+			V.Shake(0.4 + j * 0.15, 0.06)
+			
+			-- Fling up each toss
+			Fling.Launch(tR, 15, 45)
+			
+			wait(0.18)
+		else
+			-- FINAL SLAM
+			-- Arms up
+			A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-170), 0, math.rad(12)), 0.06, Enum.EasingStyle.Back)
+			A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-170), 0, math.rad(-12)), 0.06, Enum.EasingStyle.Back)
+			A.J(RootJoint, OG.RJ * CFrame.new(0, 0.2, 0) * CFrame.Angles(math.rad(-8), 0, 0), 0.06)
+			wait(0.08)
+			
+			-- SLAM DOWN
+			A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(45), 0, math.rad(15)), 0.03)
+			A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(45), 0, math.rad(-15)), 0.03)
+			A.J(RootJoint, OG.RJ * CFrame.new(0, -0.4, 0) * CFrame.Angles(math.rad(30), 0, 0), 0.03)
+			A.J(Neck, OG.NK * CFrame.Angles(math.rad(15), 0, 0), 0.03)
+			
+			SND(SID.heavy, tR, 2, 0.45)
+			SND(SID.boom, tR, 1.5, 0.55)
+			SND(SID.honk, tR, 1, 0.45)
+			
+			V.Ball(tR.Position, C.R, 16, 0.45)
+			V.Ring(tR.Position, C.G, 22, 0.35)
+			V.Ring(tR.Position + Vector3.new(0, 1, 0), C.R, 18, 0.3)
+			V.Crack(tR.Position, C.R, 15)
+			V.Flash(C.G, 0.1)
+			V.Shake(4, 0.35)
+			V.Rubble(tR.Position, 8)
+			
+			-- MEGA FLING
+			Fling.MegaFling(tR)
+			
+			wait(0.12)
+		end
+	end
+	
+	-- Clean stars
+	for _, star in pairs(stars) do
+		TweenService:Create(star, TweenInfo.new(0.2), {Transparency = 1}):Play()
+		Debris:AddItem(star, 0.25)
+	end
+	
+	wait(0.15)
+	A.Reset(0.2)
+	wait(0.08)
+	S.busy = false
+	A.IdleStart()
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- [G] ULTIMATE: 🎪 THE BIG TOP 🎪
+-- ═══════════════════════════════════════════════════════════
+local function Ultimate()
+	if S.ult or S.busy then return end
+	if OnCD("g") then return end
+	
+	S.ult = true; S.busy = true; SetCD("g")
+	A.IdleStop()
+	
+	-- ═══ PHASE 1: BOW ═══
+	A.J(RootJoint, OG.RJ * CFrame.Angles(math.rad(40), 0, 0), 0.25, Enum.EasingStyle.Sine)
+	A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(15), 0, math.rad(55)), 0.25, Enum.EasingStyle.Sine)
+	A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(15), 0, math.rad(-55)), 0.25, Enum.EasingStyle.Sine)
+	A.J(Neck, OG.NK * CFrame.Angles(math.rad(18), 0, 0), 0.25)
+	
+	SND(SID.charge, nil, 1.5, 0.5)
+	
+	-- Darken
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.Brightness = 0; cc.Saturation = 0; cc.Contrast = 0
+	cc.Parent = Camera
+	TweenService:Create(cc, TweenInfo.new(0.35), {Brightness = -0.5, Saturation = -0.65, Contrast = 0.15}):Play()
+	
+	-- Spotlight
+	local spot = Instance.new("Part")
+	spot.Anchored = true; spot.CanCollide = false; spot.Transparency = 1
+	spot.Position = Root.Position + Vector3.new(0, 22, 0)
+	spot.Parent = workspace.Terrain
+	local sl = Instance.new("SpotLight")
+	sl.Brightness = 8; sl.Range = 45; sl.Angle = 38
+	sl.Color = C.HP; sl.Face = Enum.NormalId.Bottom
+	sl.Parent = spot
+	
+	wait(0.7)
+	
+	-- ═══ PHASE 2: AWAKENING ═══
+	-- T-Pose float
+	A.J(RootJoint, OG.RJ * CFrame.new(0, 0.8, 0) * CFrame.Angles(math.rad(-8), 0, 0), 0.15, Enum.EasingStyle.Back)
+	A.J(RShoulder, OG.RS * CFrame.Angles(0, 0, math.rad(85)), 0.12, Enum.EasingStyle.Back)
+	A.J(LShoulder, OG.LS * CFrame.Angles(0, 0, math.rad(-85)), 0.12, Enum.EasingStyle.Back)
+	A.J(Neck, OG.NK * CFrame.Angles(math.rad(-22), 0, 0), 0.12)
+	
+	SND(SID.laugh, nil, 2.5, 0.55)
+	SND(SID.boom, nil, 2.5, 0.3)
+	
+	-- Explosion VFX
+	V.Ball(Root.Position, C.HP, 45, 0.7)
+	V.Ball(Root.Position, C.CY, 28, 0.55)
+	
+	for j = 1, 10 do
+		spawn(function()
+			wait(j * 0.025)
+			V.Ring(Root.Position + Vector3.new(0, j * 2 - 10, 0), C.HP, 32, 0.45 + j * 0.03)
+		end)
+	end
+	
+	V.Crack(Root.Position, C.HP, 25)
+	V.Flash(C.HP, 0.15)
+	V.Shake(6, 0.8)
+	V.Rubble(Root.Position, 15)
+	
+	-- Lightning
+	for j = 1, 10 do
+		local a = (j / 10) * math.pi * 2
+		local ep = Root.Position + Vector3.new(math.cos(a) * 15, 18, math.sin(a) * 15)
+		V.Beam(Root.Position, ep, C.CY, 0.4)
+	end
+	
+	-- Aura orbs
+	S.awake = true
+	local auraOrbs = {}
+	for j = 1, 8 do
+		local orb = Instance.new("Part")
+		orb.Size = Vector3.new(0.7, 0.7, 0.7)
+		orb.Shape = Enum.PartType.Ball
+		orb.Material = Enum.Material.Neon
+		orb.Color = j % 2 == 0 and C.HP or C.CY
+		orb.Anchored = true; orb.CanCollide = false; orb.Transparency = 0.25
+		orb.Parent = workspace.Terrain
+		
+		local gl = Instance.new("PointLight")
+		gl.Color = orb.Color; gl.Brightness = 2; gl.Range = 7
+		gl.Parent = orb
+		
+		table.insert(auraOrbs, orb)
+	end
+	
+	local mainGlow = Instance.new("PointLight")
+	mainGlow.Color = C.HP; mainGlow.Brightness = 4; mainGlow.Range = 28
+	mainGlow.Parent = Root
+	
+	-- Aura update
+	local at = 0
+	local auraConn = RunService.Heartbeat:Connect(function(dt)
+		at = at + dt
+		for i, orb in ipairs(auraOrbs) do
+			if orb.Parent and Root and Root.Parent then
+				local a = (i / #auraOrbs) * math.pi * 2 + at * 3
+				local h = math.sin(at * 4 + i) * 1.8
+				local r = 3.2 + math.sin(at * 2 + i * 0.5) * 0.4
+				orb.CFrame = CFrame.new(Root.Position + Vector3.new(math.cos(a) * r, h, math.sin(a) * r))
+				orb.Size = Vector3.new(0.55 + math.sin(at * 5 + i) * 0.15, 0.55 + math.sin(at * 5 + i) * 0.15, 0.55 + math.sin(at * 5 + i) * 0.15)
+			end
+		end
+	end)
+	
+	TweenService:Create(cc, TweenInfo.new(0.25), {Brightness = 0.04, Saturation = 0.5, Contrast = 0.12}):Play()
+	
+	-- Ult text
+	spawn(function()
+		local pg = Player:FindFirstChild("PlayerGui")
+		if not pg then return end
+		local sg = Instance.new("ScreenGui"); sg.Name = "UltText"; sg.DisplayOrder = 200; sg.Parent = pg
+		local lb = Instance.new("TextLabel")
+		lb.Size = UDim2.new(1, 0, 0.22, 0); lb.Position = UDim2.new(0, 0, 0.39, 0)
+		lb.BackgroundTransparency = 1; lb.Text = "🎪 THE BIG TOP 🎪"
+		lb.TextColor3 = C.HP; lb.TextStrokeColor3 = Color3.new(0, 0, 0)
+		lb.TextStrokeTransparency = 0; lb.Font = Enum.Font.GothamBlack
+		lb.TextSize = 0; lb.Parent = sg
+		TweenService:Create(lb, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {TextSize = 68}):Play()
+		
+		local cols = {C.HP, C.CY, C.G, C.P}
+		for j = 1, 6 do
+			wait(0.2)
+			if lb.Parent then TweenService:Create(lb, TweenInfo.new(0.15), {TextColor3 = cols[(j % #cols) + 1]}):Play() end
+		end
+		wait(0.5)
+		TweenService:Create(lb, TweenInfo.new(0.3), {TextTransparency = 1, TextStrokeTransparency = 1, TextSize = 90}):Play()
+		Debris:AddItem(sg, 2.5)
+	end)
+	
+	wait(0.4)
+	
+	-- ═══ PHASE 3: FIND TARGET & RUSH ═══
+	local tgt, tdist = FindTarget(60)
+	
+	if tgt then
+		local tR = tgt:FindFirstChild("HumanoidRootPart")
+		
+		if tR then
+			-- Vanish
+			V.Ball(Root.Position, C.HP, 8, 0.25)
+			V.Ghost(Char, C.HP, 3)
+			SND(SID.woosh, nil, 1.5, 0.4)
+			
+			wait(0.06)
+			
+			-- Teleport behind
+			local behind = tR.Position - tR.CFrame.LookVector * 4.5
+			Root.CFrame = CFrame.new(behind, tR.Position)
+			
+			V.Ball(Root.Position, C.CY, 6, 0.18)
+			SND(SID.honk, nil, 0.6, 0.25)
+			
+			wait(0.08)
+			
+			-- ═══ BARRAGE ═══
+			-- Rapid CFrame barrage animation
+			for j = 1, 20 do
+				if not tR or not tR.Parent or not Root or not Root.Parent then break end
+				
+				local side = j % 2 == 0
+				
+				-- Raw Motor6D manipulation for speed
+				if RShoulder and OG.RS then
+					RShoulder.C0 = OG.RS * CFrame.Angles(
+						math.rad(-85) + math.rad(math.random(-18, 18)),
+						math.rad(side and -25 or 8),
+						math.rad(math.random(-8, 8))
+					)
+				end
+				if LShoulder and OG.LS then
+					LShoulder.C0 = OG.LS * CFrame.Angles(
+						math.rad(-85) + math.rad(math.random(-18, 18)),
+						math.rad(side and -8 or 25),
+						math.rad(math.random(-8, 8))
+					)
+				end
+				if RootJoint and OG.RJ then
+					RootJoint.C0 = OG.RJ * CFrame.Angles(math.rad(8), math.rad(side and 12 or -12), 0)
+				end
+				
+				-- Stay near target
+				FaceDir(tR)
+				local toTarget = (tR.Position - Root.Position)
+				if toTarget.Magnitude > 5 then
+					Root.CFrame = CFrame.new(tR.Position - toTarget.Unit * 3, tR.Position)
+				end
+				
+				-- VFX per hit
+				local col = j % 3 == 0 and C.CY or (j % 2 == 0 and C.HP or C.P)
+				local hitPos = tR.Position + Vector3.new(
+					(math.random() - 0.5) * 2.5,
+					(math.random() - 0.5) * 2.5,
+					(math.random() - 0.5) * 2.5
+				)
+				
+				V.Ball(hitPos, col, 2.5 + math.random() * 1.5, 0.1)
+				
+				if j % 3 == 0 then
+					V.Ring(hitPos, col, 6, 0.12)
+					SND(SID.honk, tR, 0.15, 0.7 + math.random() * 1)
+				end
+				if j % 4 == 0 then
+					V.Beam(Root.Position, hitPos, col, 0.08)
+				end
+				
+				SND(SID.hit, tR, 0.2 + (j / 20) * 0.25, 0.7 + math.random() * 0.5)
+				V.Shake(0.25 + (j / 20) * 0.4, 0.025)
+				
+				-- Small fling each hit to keep target in place but hurt
+				Fling.Launch(tR, 8, 5)
+				
+				wait(0.045)
+			end
+			
+			wait(0.1)
+			
+			-- ═══ PHASE 4: MALLET FINISHER ═══
+			-- Arms up
+			A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-172), math.rad(-8), math.rad(12)), 0.1, Enum.EasingStyle.Back)
+			A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-172), math.rad(8), math.rad(-12)), 0.1, Enum.EasingStyle.Back)
+			A.J(RootJoint, OG.RJ * CFrame.new(0, 0.4, 0) * CFrame.Angles(math.rad(-12), 0, 0), 0.1)
+			
+			SND(SID.charge, nil, 1.2, 2)
+			
+			-- Create giant mallet above target
+			local malletModel, malletHandle, malletHead = CreateMallet(tR.Position)
+			
+			wait(0.2)
+			
+			-- SLAM!
+			A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(55), 0, math.rad(8)), 0.03)
+			A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(55), 0, math.rad(-8)), 0.03)
+			A.J(RootJoint, OG.RJ * CFrame.new(0, -0.7, 0) * CFrame.Angles(math.rad(35), 0, 0), 0.03)
+			A.J(Neck, OG.NK * CFrame.Angles(math.rad(22), 0, 0), 0.03)
+			
+			SND(SID.woosh, nil, 2.5, 0.25)
+			
+			local slamPos = tR.Position
+			
+			-- Mallet comes down
+			for _, part in pairs(malletModel:GetDescendants()) do
+				if part:IsA("BasePart") then
+					TweenService:Create(part, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+						CFrame = part.CFrame * CFrame.new(0, -33, 0)
+					}):Play()
+				end
+			end
+			
+			wait(0.2)
+			
+			-- ═══ IMPACT ═══
+			SND(SID.heavy, nil, 3, 0.25)
+			SND(SID.boom, nil, 3, 0.18)
+			SND(SID.honk, nil, 3, 0.18)
+			SND(SID.splat, nil, 2, 0.4)
+			
+			V.Flash(C.W, 0.25)
+			V.Shake(12, 1.2)
+			
+			-- Rising rings
+			for j = 1, 14 do
+				spawn(function()
+					wait(j * 0.02)
+					V.Ring(slamPos + Vector3.new(0, j * 2.5, 0),
+						j % 2 == 0 and C.HP or C.CY, 28, 0.35 + j * 0.015)
+				end)
+			end
+			
+			-- Massive spheres
+			V.Ball(slamPos, C.HP, 55, 1)
+			V.Ball(slamPos, C.CY, 38, 0.85)
+			V.Ball(slamPos, C.G, 25, 0.65)
+			
+			-- Giant crater
+			V.Crack(slamPos, C.HP, 35)
+			
+			-- Tons of rubble
+			V.Rubble(slamPos, 25)
+			
+			-- Lightning from impact
+			for j = 1, 14 do
+				local a = (j / 14) * math.pi * 2
+				local ep = slamPos + Vector3.new(math.cos(a) * 22, math.random(5, 18), math.sin(a) * 22)
+				V.Beam(slamPos, ep, C.CY, 0.35)
+			end
+			
+			-- MEGA FLING THE TARGET
+			Fling.MegaFling(tR)
+			
+			-- Mallet shatters
+			spawn(function()
+				wait(0.35)
+				
+				for _, part in pairs(malletModel:GetDescendants()) do
+					if part:IsA("BasePart") then
+						local piece = part:Clone()
+						piece.Anchored = false
+						piece.CanCollide = true
+						piece.Parent = workspace.Terrain
+						piece.Velocity = Vector3.new(
+							(math.random() - 0.5) * 90,
+							math.random(35, 80),
+							(math.random() - 0.5) * 90
+						)
+						piece.RotVelocity = Vector3.new(math.random(-10, 10), math.random(-10, 10), math.random(-10, 10))
+						
+						local lg = Instance.new("PointLight")
+						lg.Color = piece.Color; lg.Brightness = 2; lg.Range = 5
+						lg.Parent = piece
+						
+						Debris:AddItem(piece, 3)
+						spawn(function()
+							wait(2)
+							if piece.Parent then TweenService:Create(piece, TweenInfo.new(1), {Transparency = 1}):Play() end
+						end)
+					end
+				end
+				
+				SND(SID.pop, nil, 2, 0.4)
+				malletModel:Destroy()
+			end)
+		end
+	end
+	
+	-- ═══ PHASE 5: COOLDOWN ═══
+	wait(1.8)
+	
+	S.awake = false
+	
+	-- Remove aura
+	if auraConn then auraConn:Disconnect() end
+	for _, orb in pairs(auraOrbs) do
+		if orb.Parent then
+			TweenService:Create(orb, TweenInfo.new(0.3), {Transparency = 1}):Play()
+			Debris:AddItem(orb, 0.35)
+		end
+	end
+	if mainGlow and mainGlow.Parent then mainGlow:Destroy() end
+	
+	-- Remove spotlight
+	if spot and spot.Parent then spot:Destroy() end
+	
+	-- Restore visuals
+	TweenService:Create(cc, TweenInfo.new(0.6), {Brightness = 0, Saturation = 0, Contrast = 0}):Play()
+	Debris:AddItem(cc, 0.65)
+	
+	-- Victory bow
+	A.Reset(0.2)
+	wait(0.1)
+	A.J(RootJoint, OG.RJ * CFrame.Angles(math.rad(35), 0, 0), 0.2, Enum.EasingStyle.Sine)
+	A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(12), 0, math.rad(50)), 0.2)
+	A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(12), 0, math.rad(-50)), 0.2)
+	
+	SND(SID.laugh, nil, 1.2, 0.85)
+	
+	wait(0.8)
+	
+	A.Reset(0.25)
+	wait(0.1)
+	S.ult = false; S.busy = false
+	A.IdleStart()
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- DASH [Q]
+-- ═══════════════════════════════════════════════════════════
+local function Dash()
+	if S.dashing or S.ult then return end
+	S.dashing = true
+	A.IdleStop()
+	
+	local dir = Hum.MoveDirection
+	if dir.Magnitude < 0.1 then dir = Root.CFrame.LookVector end
+	
+	V.Ghost(Char, C.P, 3)
+	V.Ring(Root.Position, C.P, 8, 0.2)
+	SND(SID.woosh, nil, 0.7, 1.3)
+	
+	-- Cartwheel spin
+	spawn(function()
+		local start = tick()
+		local dur = 0.22
+		while tick() - start < dur do
+			local prog = (tick() - start) / dur
+			if RootJoint and OG.RJ then
+				RootJoint.C0 = OG.RJ * CFrame.Angles(0, 0, prog * math.pi * 2)
+			end
+			RunService.Heartbeat:Wait()
+		end
+		if RootJoint and OG.RJ then RootJoint.C0 = OG.RJ end
+	end)
+	
+	local bv = Instance.new("BodyVelocity")
+	bv.Velocity = dir * 90
+	bv.MaxForce = Vector3.new(1e8, 0, 1e8)
+	bv.Parent = Root
+	Debris:AddItem(bv, 0.18)
+	
+	wait(0.25)
+	S.dashing = false
+	A.IdleStart()
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- BLOCK
+-- ═══════════════════════════════════════════════════════════
+local blockShield
+
+local function StartBlock()
+	if S.busy or S.blocking then return end
+	S.blocking = true
+	A.IdleStop()
+	
+	A.J(RShoulder, OG.RS * CFrame.Angles(math.rad(-65), math.rad(-45), math.rad(12)), 0.08)
+	A.J(LShoulder, OG.LS * CFrame.Angles(math.rad(-65), math.rad(45), math.rad(-12)), 0.08)
+	A.J(RootJoint, OG.RJ * CFrame.new(0, -0.12, 0) * CFrame.Angles(math.rad(6), 0, 0), 0.08)
+	
+	blockShield = Instance.new("Part")
+	blockShield.Shape = Enum.PartType.Ball
+	blockShield.Size = Vector3.new(6.5, 6.5, 6.5)
+	blockShield.Material = Enum.Material.ForceField
+	blockShield.Color = C.G; blockShield.Transparency = 0.55
+	blockShield.CanCollide = false; blockShield.Massless = true
+	blockShield.Anchored = false
+	blockShield.Parent = workspace.Terrain
+	
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = Root; weld.Part1 = blockShield
+	weld.Parent = blockShield
+	blockShield.CFrame = Root.CFrame
+	
+	spawn(function()
+		while S.blocking and blockShield and blockShield.Parent do
+			TweenService:Create(blockShield, TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+				Transparency = 0.4, Size = Vector3.new(7.2, 7.2, 7.2)
+			}):Play()
+			wait(0.35)
+			if not S.blocking then break end
+			TweenService:Create(blockShield, TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+				Transparency = 0.65, Size = Vector3.new(6, 6, 6)
+			}):Play()
+			wait(0.35)
+		end
+	end)
+end
+
+local function StopBlock()
+	S.blocking = false
+	if blockShield and blockShield.Parent then
+		TweenService:Create(blockShield, TweenInfo.new(0.12), {Transparency = 1}):Play()
+		Debris:AddItem(blockShield, 0.15)
+		blockShield = nil
+	end
+	A.Reset(0.12)
+	A.IdleStart()
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- TOOL CREATION (Replace existing TSB tools)
+-- ═══════════════════════════════════════════════════════════
+local function MakeTool(name, tipText)
+	local tool = Instance.new("Tool")
+	tool.Name = name
+	tool.CanBeDropped = false
+	tool.RequiresHandle = true
+	tool.ToolTip = tipText
+	
+	local handle = Instance.new("Part")
+	handle.Name = "Handle"
+	handle.Size = Vector3.new(0.01, 0.01, 0.01)
+	handle.Transparency = 1
+	handle.CanCollide = false
+	handle.Massless = true
+	handle.Parent = tool
+	
+	return tool
+end
+
+local function SetupTools()
+	local bp = Player:WaitForChild("Backpack")
+	
+	-- Wait then clear existing tools
+	wait(2)
+	
+	for _, item in pairs(bp:GetChildren()) do
+		if item:IsA("Tool") then item:Destroy() end
+	end
+	if Char then
+		for _, item in pairs(Char:GetChildren()) do
+			if item:IsA("Tool") then item:Destroy() end
+		end
+	end
+	
+	wait(0.3)
+	
+	-- Create clown tools
+	local t1 = MakeTool("🥧 Pie to the Face", "Throw a cream pie - Stuns & Flings")
+	t1.Parent = bp
+	t1.Activated:Connect(SkillPie)
+	
+	local t2 = MakeTool("🎈 Balloon Barrage", "Launch 6 balloon animals")
+	t2.Parent = bp
+	t2.Activated:Connect(SkillBalloons)
+	
+	local t3 = MakeTool("📯 Honk Shockwave", "AoE shockwave that flings everyone")
+	t3.Parent = bp
+	t3.Activated:Connect(SkillHonk)
+	
+	local t4 = MakeTool("🤹 Juggling Frenzy", "Grab and juggle enemy into a slam")
+	t4.Parent = bp
+	t4.Activated:Connect(SkillJuggle)
+	
+	local t5 = MakeTool("🎪 THE BIG TOP", "ULTIMATE - Cinematic clown finisher")
+	t5.Parent = bp
+	t5.Activated:Connect(Ultimate)
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- CLOWN APPEARANCE
+-- ═══════════════════════════════════════════════════════════
+local function ApplyClownLook()
+	wait(0.3)
+	if not Char or not Head then return end
+	
+	-- Red nose
+	local oldNose = Char:FindFirstChild("ClownNose")
+	if oldNose then oldNose:Destroy() end
+	
+	local nose = Instance.new("Part")
+	nose.Name = "ClownNose"
+	nose.Size = Vector3.new(0.5, 0.5, 0.5)
+	nose.Shape = Enum.PartType.Ball
+	nose.Material = Enum.Material.SmoothPlastic
+	nose.Color = Color3.fromRGB(255, 0, 0)
+	nose.CanCollide = false; nose.Massless = true
+	nose.Parent = Char
+	
+	local nw = Instance.new("WeldConstraint")
+	nw.Part0 = Head; nw.Part1 = nose; nw.Parent = nose
+	nose.CFrame = Head.CFrame * CFrame.new(0, -0.15, -0.6)
+	
+	local ng = Instance.new("PointLight")
+	ng.Color = Color3.fromRGB(255, 0, 0)
+	ng.Brightness = 0.7; ng.Range = 4
+	ng.Parent = nose
+	
+	-- Overhead emoji
+	local oldTag = Head:FindFirstChild("ClownTag")
+	if oldTag then oldTag:Destroy() end
+	
+	local tag = Instance.new("BillboardGui")
+	tag.Name = "ClownTag"
+	tag.Size = UDim2.new(0, 120, 0, 35)
+	tag.StudsOffset = Vector3.new(0, 2.5, 0)
+	tag.Parent = Head
+	
+	local tl = Instance.new("TextLabel")
+	tl.Size = UDim2.new(1, 0, 1, 0)
+	tl.BackgroundTransparency = 1
+	tl.Text = "🤡"; tl.TextSize = 26
+	tl.Font = Enum.Font.GothamBlack
+	tl.TextColor3 = C.R
+	tl.TextStrokeTransparency = 0
+	tl.Parent = tag
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- OVERRIDE EXISTING TSB UI ICONS
+-- ═══════════════════════════════════════════════════════════
+local function OverrideTSBUI()
+	spawn(function()
+		local pg = Player:WaitForChild("PlayerGui")
+		wait(4)
+		
+		-- Continuously check for UI elements to replace
+		local function scanAndReplace()
+			for _, gui in pairs(pg:GetChildren()) do
+				if gui:IsA("ScreenGui") then
+					for _, desc in pairs(gui:GetDescendants()) do
+						if desc:IsA("ImageLabel") or desc:IsA("ImageButton") then
+							local n = desc.Name:lower()
+							if n:find("icon") or n:find("char") or n:find("avatar")
+							   or n:find("portrait") or n:find("saitama") or n:find("punch")
+							   or n:find("thumb") or n:find("select") then
+								if not desc:FindFirstChild("_CReplaced") then
+									desc.ImageTransparency = 1
+									local rep = Instance.new("TextLabel")
+									rep.Name = "_CReplaced"
+									rep.Size = UDim2.new(1, 0, 1, 0)
+									rep.BackgroundTransparency = 1
+									rep.Text = "🤡"
+									rep.TextScaled = true
+									rep.Font = Enum.Font.GothamBlack
+									rep.TextColor3 = C.W
+									rep.ZIndex = desc.ZIndex + 1
+									rep.Parent = desc
+								end
+							end
+						end
+						
+						if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+							local t = desc.Text:lower()
+							if (t:find("saitama") or t:find("one punch") or t:find("normal series")
+							    or t:find("serious") or t:find("consecutive")) 
+							   and not desc:FindFirstChild("_CTextReplaced") then
+								
+								local marker = Instance.new("BoolValue")
+								marker.Name = "_CTextReplaced"
+								marker.Parent = desc
+								
+								if t:find("saitama") or t:find("one punch") then
+									desc.Text = "🤡 THE CLOWN"
+								elseif t:find("normal") then
+									desc.Text = "🥧 Pie to the Face"
+								elseif t:find("serious") then
+									desc.Text = "🎪 THE BIG TOP"
+								elseif t:find("consecutive") then
+									desc.Text = "🤹 Juggling Frenzy"
+								end
+								desc.TextColor3 = C.R
+							end
+						end
+					end
+				end
+			end
+		end
+		
+		-- Run periodically to catch dynamically created UI
+		while true do
+			pcall(scanAndReplace)
+			wait(2)
+		end
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- INPUT
+-- ═══════════════════════════════════════════════════════════
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		M1()
+	end
+	
+	if input.UserInputType == Enum.UserInputType.Keyboard then
+		local k = input.KeyCode
+		if k == Enum.KeyCode.E then SkillPie()
+		elseif k == Enum.KeyCode.R then SkillBalloons()
+		elseif k == Enum.KeyCode.T then SkillHonk()
+		elseif k == Enum.KeyCode.F then SkillJuggle()
+		elseif k == Enum.KeyCode.G then Ultimate()
+		elseif k == Enum.KeyCode.Q then Dash()
+		end
+	end
+	
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		StartBlock()
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		StopBlock()
+	end
+end)
+
+-- ═══════════════════════════════════════════════════════════
+-- INIT
+-- ═══════════════════════════════════════════════════════════
+print("════════════════════════════")
+print("🤡 CLOWN MOVESET V3 LOADING")
+print("════════════════════════════")
+
+wait(1.5)
+
+SetupTools()
+ApplyClownLook()
+OverrideTSBUI()
+A.IdleStart()
+
+Player.CharacterAdded:Connect(function(c)
+	wait(0.8)
+	CacheChar(c)
+	
+	S.m1 = 0; S.busy = false; S.blocking = false
+	S.dashing = false; S.ult = false; S.awake = false
+	
+	wait(0.5)
+	SetupTools()
+	ApplyClownLook()
+	A.IdleStart()
+end)
+
+print("════════════════════════════")
+print("🤡 CLOWN MOVESET V3 LOADED!")
+print("════════════════════════════")
+print("LMB  = Slapstick Combo")
+print("[E]  = 🥧 Pie to the Face")
+print("[R]  = 🎈 Balloon Barrage")
+print("[T]  = 📯 Honk Shockwave")
+print("[F]  = 🤹 Juggling Frenzy")
+print("[G]  = 🎪 THE BIG TOP")
+print("[Q]  = Cartwheel Dash")
+print("RMB  = Block")
