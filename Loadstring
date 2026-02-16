@@ -1,0 +1,2731 @@
+--[[
+╔═══════════════════════════════════════════════════════════════╗
+║            COMBAT DANCE AI V2 - ULTIMATE PVP MASTER          ║
+║     Mistral-Powered | Pattern Learning | Team Detection      ║
+║   12 Dodge Styles | Gun Support | Adaptive Combat Engine     ║
+╚═══════════════════════════════════════════════════════════════╝
+]]
+
+-- ═══════════════════════════════════════════════════════
+-- SERVICES
+-- ═══════════════════════════════════════════════════════
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Teams = game:GetService("Teams")
+local Debris = game:GetService("Debris")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
+
+-- ═══════════════════════════════════════════════════════
+-- CONFIGURATION
+-- ═══════════════════════════════════════════════════════
+local CONFIG = {
+	MISTRAL_API_KEY = "TY9VsZsHzBO6L1q8l9vhXlIUxz94vQug",
+	MISTRAL_ENDPOINT = "https://api.mistral.ai/v1/chat/completions",
+	MISTRAL_MODEL = "mistral-small-latest",
+
+	SCAN_RADIUS = 120,
+	ENGAGE_RADIUS = 60,
+	MELEE_RANGE = 10,
+	GUN_RANGE = 200,
+	DODGE_RANGE = 18,
+	DODGE_SPEED = 90,
+	DODGE_DURATION = 0.28,
+	ROLL_DURATION = 0.45,
+	ROLL_SPEED = 65,
+	BACKSTEP_SPEED = 55,
+	SPRINT_SPEED = 35,
+	NORMAL_SPEED = 16,
+
+	DECISION_INTERVAL = 1.2,
+	DODGE_COOLDOWN = 0.6,
+	ROLL_COOLDOWN = 1.2,
+	COMBO_WINDOW = 0.7,
+	ATTACK_COOLDOWN = 0.3,
+	GUN_FIRE_RATE = 0.15,
+
+	AUTO_DODGE_ENABLED = true,
+	TEAM_CHECK_ENABLED = true,
+
+	TAUNT_INTERVAL = 6,
+	TAUNT_ON_KILL = true,
+	TAUNT_ON_DODGE = true,
+	TAUNT_ON_PATTERN_READ = true,
+
+	PATTERN_MEMORY_SIZE = 50,
+	PATTERN_MIN_SAMPLES = 3,
+}
+
+-- ═══════════════════════════════════════════════════════
+-- STATE
+-- ═══════════════════════════════════════════════════════
+local AIState = {
+	enabled = false,
+	currentTarget = nil,
+	combatMode = "idle",
+	lastDodgeTime = 0,
+	lastRollTime = 0,
+	lastDecisionTime = 0,
+	lastTauntTime = 0,
+	lastAttackTime = 0,
+	lastGunFireTime = 0,
+	comboCount = 0,
+	health = 100,
+	maxHealth = 100,
+	dodgesPerformed = 0,
+	killCount = 0,
+	deathCount = 0,
+	damageDealt = 0,
+	isRolling = false,
+	isDodging = false,
+	manualRollRequested = false,
+	inventory = {},
+	equippedTool = nil,
+	weaponType = "melee",
+	mistralContext = {},
+	lastDodgeStyle = "",
+	dodgeStyleIndex = 1,
+	uiMinimized = false,
+}
+
+-- ═══════════════════════════════════════════════════════
+-- PLAYER PATTERN DATABASE
+-- ═══════════════════════════════════════════════════════
+local PatternDB = {}
+
+local function GetPlayerProfile(playerName)
+	if not PatternDB[playerName] then
+		PatternDB[playerName] = {
+			name = playerName,
+			attackPatterns = {},
+			attackTimings = {},
+			preferredRange = 0,
+			aggressionLevel = 5,
+			dodgeDirection = "random",
+			comboLength = 0,
+			averageComboLength = 0,
+			attacksBlocked = 0,
+			attacksLanded = 0,
+			timesKilled = 0,
+			timesKilledBy = 0,
+			lastAttackTime = 0,
+			lastAttackType = "unknown",
+			movementStyle = "unknown",
+			totalEncounters = 0,
+			threatRating = 5,
+			weaknesses = {},
+			strengths = {},
+			lastPositions = {},
+			predictedNextAction = "unknown",
+			rushFrequency = 0,
+			retreatFrequency = 0,
+			strafeFrequency = 0,
+			jumpAttackFrequency = 0,
+			toolsUsed = {},
+		}
+	end
+	return PatternDB[playerName]
+end
+
+local function RecordAttackPattern(playerName, attackType, distance, direction, timing)
+	local profile = GetPlayerProfile(playerName)
+	table.insert(profile.attackPatterns, {
+		type = attackType,
+		distance = distance,
+		direction = direction,
+		timing = timing,
+		timestamp = tick(),
+	})
+
+	if #profile.attackPatterns > CONFIG.PATTERN_MEMORY_SIZE then
+		table.remove(profile.attackPatterns, 1)
+	end
+
+	table.insert(profile.attackTimings, timing)
+	if #profile.attackTimings > 20 then
+		table.remove(profile.attackTimings, 1)
+	end
+
+	profile.totalEncounters = profile.totalEncounters + 1
+	profile.lastAttackTime = tick()
+	profile.lastAttackType = attackType
+end
+
+local function RecordMovement(playerName, moveType)
+	local profile = GetPlayerProfile(playerName)
+	if moveType == "rush" then
+		profile.rushFrequency = profile.rushFrequency + 1
+	elseif moveType == "retreat" then
+		profile.retreatFrequency = profile.retreatFrequency + 1
+	elseif moveType == "strafe" then
+		profile.strafeFrequency = profile.strafeFrequency + 1
+	elseif moveType == "jump_attack" then
+		profile.jumpAttackFrequency = profile.jumpAttackFrequency + 1
+	end
+
+	local total = profile.rushFrequency + profile.retreatFrequency + profile.strafeFrequency + profile.jumpAttackFrequency
+	if total > 0 then
+		if profile.rushFrequency / total > 0.4 then
+			profile.movementStyle = "aggressive_rusher"
+		elseif profile.strafeFrequency / total > 0.3 then
+			profile.movementStyle = "technical_strafer"
+		elseif profile.retreatFrequency / total > 0.3 then
+			profile.movementStyle = "defensive_kiter"
+		elseif profile.jumpAttackFrequency / total > 0.25 then
+			profile.movementStyle = "aerial_attacker"
+		else
+			profile.movementStyle = "mixed"
+		end
+	end
+end
+
+local function PredictNextAction(playerName)
+	local profile = GetPlayerProfile(playerName)
+	if #profile.attackPatterns < CONFIG.PATTERN_MIN_SAMPLES then
+		return "unknown", 0.5
+	end
+
+	local recentPatterns = {}
+	for i = math.max(1, #profile.attackPatterns - 10), #profile.attackPatterns do
+		table.insert(recentPatterns, profile.attackPatterns[i])
+	end
+
+	local typeCounts = {}
+	for _, p in ipairs(recentPatterns) do
+		typeCounts[p.type] = (typeCounts[p.type] or 0) + 1
+	end
+
+	local maxType = "unknown"
+	local maxCount = 0
+	for t, c in pairs(typeCounts) do
+		if c > maxCount then
+			maxCount = c
+			maxType = t
+		end
+	end
+
+	local confidence = maxCount / #recentPatterns
+
+	local avgTiming = 0
+	if #profile.attackTimings > 0 then
+		for _, t in ipairs(profile.attackTimings) do
+			avgTiming = avgTiming + t
+		end
+		avgTiming = avgTiming / #profile.attackTimings
+	end
+
+	profile.predictedNextAction = maxType
+	return maxType, confidence, avgTiming
+end
+
+local function GetCounterStrategy(playerName)
+	local profile = GetPlayerProfile(playerName)
+	local strategy = {
+		dodgeStyle = "sidestep",
+		engagement = "balanced",
+		range = "melee",
+		aggression = 5,
+		tips = {},
+	}
+
+	if profile.movementStyle == "aggressive_rusher" then
+		strategy.dodgeStyle = "backstep_counter"
+		strategy.engagement = "defensive_counter"
+		strategy.aggression = 4
+		table.insert(strategy.tips, "They rush a lot - backstep and punish")
+	elseif profile.movementStyle == "technical_strafer" then
+		strategy.dodgeStyle = "phase_through"
+		strategy.engagement = "aggressive_pressure"
+		strategy.aggression = 7
+		table.insert(strategy.tips, "Strafer - close distance and pressure hard")
+	elseif profile.movementStyle == "defensive_kiter" then
+		strategy.dodgeStyle = "dash_forward"
+		strategy.engagement = "chase_aggressive"
+		strategy.aggression = 8
+		table.insert(strategy.tips, "They kite - gap close aggressively")
+	elseif profile.movementStyle == "aerial_attacker" then
+		strategy.dodgeStyle = "low_slide"
+		strategy.engagement = "anti_air"
+		strategy.aggression = 6
+		table.insert(strategy.tips, "Jump attacker - stay grounded, punish landing")
+	end
+
+	if profile.averageComboLength > 3 then
+		table.insert(strategy.tips, "Long combos - dodge after 2nd hit")
+	end
+
+	profile.threatRating = math.clamp(
+		5 + (profile.timesKilledBy - profile.timesKilled) + (profile.attacksLanded - profile.attacksBlocked) * 0.1,
+		1, 10
+	)
+
+	return strategy
+end
+
+-- ═══════════════════════════════════════════════════════
+-- TEAM DETECTION SYSTEM
+-- ═══════════════════════════════════════════════════════
+local function IsTeammate(player)
+	if not CONFIG.TEAM_CHECK_ENABLED then return false end
+	if player == LocalPlayer then return true end
+
+	if LocalPlayer.Team and player.Team then
+		if LocalPlayer.Team == player.Team then
+			return true
+		end
+	end
+
+	if LocalPlayer.TeamColor and player.TeamColor then
+		if LocalPlayer.TeamColor == player.TeamColor then
+			return true
+		end
+	end
+
+	local myChar = LocalPlayer.Character
+	local theirChar = player.Character
+	if myChar and theirChar then
+		local myTeamTag = myChar:FindFirstChild("TeamTag") or myChar:FindFirstChild("Team")
+		local theirTeamTag = theirChar:FindFirstChild("TeamTag") or theirChar:FindFirstChild("Team")
+		if myTeamTag and theirTeamTag then
+			if myTeamTag:IsA("StringValue") and theirTeamTag:IsA("StringValue") then
+				if myTeamTag.Value == theirTeamTag.Value then
+					return true
+				end
+			end
+		end
+	end
+
+	if myChar and theirChar then
+		local myFF = myChar:FindFirstChildOfClass("ForceField")
+		local theirFF = theirChar:FindFirstChildOfClass("ForceField")
+		if myFF and theirFF then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function GetTeamInfo()
+	local myTeam = LocalPlayer.Team
+	local teammates = {}
+	local enemies_list = {}
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			if IsTeammate(player) then
+				table.insert(teammates, player.Name)
+			else
+				table.insert(enemies_list, player.Name)
+			end
+		end
+	end
+
+	return {
+		myTeam = myTeam and myTeam.Name or "None",
+		teammates = teammates,
+		enemies = enemies_list,
+	}
+end
+
+-- ═══════════════════════════════════════════════════════
+-- PREMIUM UI SYSTEM
+-- ═══════════════════════════════════════════════════════
+local function Tween(obj, props, duration, style, direction)
+	local info = TweenInfo.new(
+		duration or 0.3,
+		style or Enum.EasingStyle.Quart,
+		direction or Enum.EasingDirection.Out
+	)
+	local tween = TweenService:Create(obj, info, props)
+	tween:Play()
+	return tween
+end
+
+local function CreateGlow(parent, color, transparency)
+	local glow = Instance.new("ImageLabel")
+	glow.Name = "Glow"
+	glow.Size = UDim2.new(1, 30, 1, 30)
+	glow.Position = UDim2.new(0, -15, 0, -15)
+	glow.BackgroundTransparency = 1
+	glow.Image = "rbxassetid://5028857084"
+	glow.ImageColor3 = color or Color3.fromRGB(255, 50, 80)
+	glow.ImageTransparency = transparency or 0.7
+	glow.ScaleType = Enum.ScaleType.Slice
+	glow.SliceCenter = Rect.new(24, 24, 276, 276)
+	glow.ZIndex = parent.ZIndex - 1
+	glow.Parent = parent
+	return glow
+end
+
+local function CreateUI()
+	-- Clean old UI
+	local oldUI = LocalPlayer.PlayerGui:FindFirstChild("CombatDanceAI_V2")
+	if oldUI then oldUI:Destroy() end
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "CombatDanceAI_V2"
+	screenGui.ResetOnSpawn = false
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	screenGui.DisplayOrder = 999
+
+	-- ══════ MAIN CONTAINER ══════
+	local mainFrame = Instance.new("Frame")
+	mainFrame.Name = "MainPanel"
+	mainFrame.Size = UDim2.new(0, 380, 0, 580)
+	mainFrame.Position = UDim2.new(1, -400, 0.5, -290)
+	mainFrame.BackgroundColor3 = Color3.fromRGB(8, 8, 18)
+	mainFrame.BackgroundTransparency = 0.05
+	mainFrame.BorderSizePixel = 0
+	mainFrame.ClipsDescendants = true
+	mainFrame.Parent = screenGui
+
+	local mainCorner = Instance.new("UICorner")
+	mainCorner.CornerRadius = UDim.new(0, 16)
+	mainCorner.Parent = mainFrame
+
+	local mainStroke = Instance.new("UIStroke")
+	mainStroke.Color = Color3.fromRGB(255, 40, 70)
+	mainStroke.Thickness = 2
+	mainStroke.Transparency = 0.2
+	mainStroke.Parent = mainFrame
+
+	CreateGlow(mainFrame, Color3.fromRGB(255, 30, 60), 0.8)
+
+	-- Animated gradient background
+	local bgGradient = Instance.new("Frame")
+	bgGradient.Name = "BGGradient"
+	bgGradient.Size = UDim2.new(1, 0, 1, 0)
+	bgGradient.BackgroundTransparency = 0.92
+	bgGradient.BorderSizePixel = 0
+	bgGradient.ZIndex = 1
+	bgGradient.Parent = mainFrame
+
+	local gradient = Instance.new("UIGradient")
+	gradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 60)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(120, 0, 255)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 150, 255)),
+	})
+	gradient.Rotation = 45
+	gradient.Parent = bgGradient
+
+	local bgCorner = Instance.new("UICorner")
+	bgCorner.CornerRadius = UDim.new(0, 16)
+	bgCorner.Parent = bgGradient
+
+	-- Animate gradient
+	task.defer(function()
+		while screenGui.Parent do
+			for i = 0, 360, 2 do
+				gradient.Rotation = i
+				task.wait(0.05)
+			end
+		end
+	end)
+
+	-- ══════ HEADER BAR ══════
+	local header = Instance.new("Frame")
+	header.Name = "Header"
+	header.Size = UDim2.new(1, 0, 0, 56)
+	header.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
+	header.BackgroundTransparency = 0.3
+	header.BorderSizePixel = 0
+	header.ZIndex = 10
+	header.Parent = mainFrame
+
+	local headerCorner = Instance.new("UICorner")
+	headerCorner.CornerRadius = UDim.new(0, 16)
+	headerCorner.Parent = header
+
+	-- Fix bottom corners of header
+	local headerFix = Instance.new("Frame")
+	headerFix.Size = UDim2.new(1, 0, 0, 16)
+	headerFix.Position = UDim2.new(0, 0, 1, -16)
+	headerFix.BackgroundColor3 = Color3.fromRGB(15, 15, 30)
+	headerFix.BackgroundTransparency = 0.3
+	headerFix.BorderSizePixel = 0
+	headerFix.ZIndex = 10
+	headerFix.Parent = header
+
+	-- Title with icon
+	local titleLabel = Instance.new("TextLabel")
+	titleLabel.Name = "TitleLabel"
+	titleLabel.Size = UDim2.new(1, -90, 1, 0)
+	titleLabel.Position = UDim2.new(0, 16, 0, 0)
+	titleLabel.BackgroundTransparency = 1
+	titleLabel.Text = "⚔️ COMBAT DANCE AI"
+	titleLabel.TextColor3 = Color3.new(1, 1, 1)
+	titleLabel.Font = Enum.Font.GothamBold
+	titleLabel.TextSize = 20
+	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+	titleLabel.ZIndex = 11
+	titleLabel.Parent = header
+
+	local versionLabel = Instance.new("TextLabel")
+	versionLabel.Size = UDim2.new(0, 40, 0, 18)
+	versionLabel.Position = UDim2.new(0, 220, 0.5, -9)
+	versionLabel.BackgroundColor3 = Color3.fromRGB(255, 50, 80)
+	versionLabel.Text = "V2"
+	versionLabel.TextColor3 = Color3.new(1, 1, 1)
+	versionLabel.Font = Enum.Font.GothamBold
+	versionLabel.TextSize = 11
+	versionLabel.ZIndex = 11
+	versionLabel.Parent = header
+
+	local vCorner = Instance.new("UICorner")
+	vCorner.CornerRadius = UDim.new(0, 9)
+	vCorner.Parent = versionLabel
+
+	-- Minimize button
+	local minimizeBtn = Instance.new("TextButton")
+	minimizeBtn.Name = "MinimizeBtn"
+	minimizeBtn.Size = UDim2.new(0, 32, 0, 32)
+	minimizeBtn.Position = UDim2.new(1, -76, 0.5, -16)
+	minimizeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 90)
+	minimizeBtn.Text = "—"
+	minimizeBtn.TextColor3 = Color3.new(1, 1, 1)
+	minimizeBtn.Font = Enum.Font.GothamBold
+	minimizeBtn.TextSize = 18
+	minimizeBtn.ZIndex = 12
+	minimizeBtn.Parent = header
+
+	local minCorner = Instance.new("UICorner")
+	minCorner.CornerRadius = UDim.new(0, 8)
+	minCorner.Parent = minimizeBtn
+
+	-- Close button
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Name = "CloseBtn"
+	closeBtn.Size = UDim2.new(0, 32, 0, 32)
+	closeBtn.Position = UDim2.new(1, -40, 0.5, -16)
+	closeBtn.BackgroundColor3 = Color3.fromRGB(200, 40, 50)
+	closeBtn.Text = "✕"
+	closeBtn.TextColor3 = Color3.new(1, 1, 1)
+	closeBtn.Font = Enum.Font.GothamBold
+	closeBtn.TextSize = 14
+	closeBtn.ZIndex = 12
+	closeBtn.Parent = header
+
+	local clCorner = Instance.new("UICorner")
+	clCorner.CornerRadius = UDim.new(0, 8)
+	clCorner.Parent = closeBtn
+
+	-- ══════ SCROLLING CONTENT ══════
+	local contentFrame = Instance.new("ScrollingFrame")
+	contentFrame.Name = "Content"
+	contentFrame.Size = UDim2.new(1, -16, 1, -66)
+	contentFrame.Position = UDim2.new(0, 8, 0, 60)
+	contentFrame.BackgroundTransparency = 1
+	contentFrame.BorderSizePixel = 0
+	contentFrame.ScrollBarThickness = 4
+	contentFrame.ScrollBarImageColor3 = Color3.fromRGB(255, 50, 80)
+	contentFrame.CanvasSize = UDim2.new(0, 0, 0, 900)
+	contentFrame.ZIndex = 5
+	contentFrame.Parent = mainFrame
+
+	local contentLayout = Instance.new("UIListLayout")
+	contentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+	contentLayout.Padding = UDim.new(0, 8)
+	contentLayout.Parent = contentFrame
+
+	-- ── Helper: Create Section Card ──
+	local function CreateCard(name, layoutOrder, height)
+		local card = Instance.new("Frame")
+		card.Name = name
+		card.Size = UDim2.new(1, -8, 0, height or 80)
+		card.BackgroundColor3 = Color3.fromRGB(18, 18, 35)
+		card.BackgroundTransparency = 0.15
+		card.BorderSizePixel = 0
+		card.LayoutOrder = layoutOrder
+		card.ZIndex = 6
+		card.Parent = contentFrame
+
+		local cCorner = Instance.new("UICorner")
+		cCorner.CornerRadius = UDim.new(0, 12)
+		cCorner.Parent = card
+
+		local cStroke = Instance.new("UIStroke")
+		cStroke.Color = Color3.fromRGB(40, 40, 70)
+		cStroke.Thickness = 1
+		cStroke.Transparency = 0.5
+		cStroke.Parent = card
+
+		return card
+	end
+
+	-- ── Helper: Section Title ──
+	local function AddSectionTitle(parent, text, icon)
+		local titleBar = Instance.new("TextLabel")
+		titleBar.Name = "SectionTitle"
+		titleBar.Size = UDim2.new(1, -12, 0, 24)
+		titleBar.Position = UDim2.new(0, 8, 0, 4)
+		titleBar.BackgroundTransparency = 1
+		titleBar.Text = (icon or "") .. " " .. text
+		titleBar.TextColor3 = Color3.fromRGB(255, 80, 120)
+		titleBar.Font = Enum.Font.GothamBold
+		titleBar.TextSize = 13
+		titleBar.TextXAlignment = Enum.TextXAlignment.Left
+		titleBar.ZIndex = 7
+		titleBar.Parent = parent
+		return titleBar
+	end
+
+	-- ══════ 1. STATUS CARD ══════
+	local statusCard = CreateCard("StatusCard", 1, 95)
+
+	AddSectionTitle(statusCard, "COMBAT STATUS", "🎯")
+
+	local statusIndicator = Instance.new("Frame")
+	statusIndicator.Name = "StatusDot"
+	statusIndicator.Size = UDim2.new(0, 10, 0, 10)
+	statusIndicator.Position = UDim2.new(0, 12, 0, 34)
+	statusIndicator.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+	statusIndicator.ZIndex = 7
+	statusIndicator.Parent = statusCard
+
+	local dotCorner = Instance.new("UICorner")
+	dotCorner.CornerRadius = UDim.new(1, 0)
+	dotCorner.Parent = statusIndicator
+
+	local statusText = Instance.new("TextLabel")
+	statusText.Name = "StatusText"
+	statusText.Size = UDim2.new(1, -36, 0, 20)
+	statusText.Position = UDim2.new(0, 28, 0, 30)
+	statusText.BackgroundTransparency = 1
+	statusText.Text = "OFFLINE - Press T to activate"
+	statusText.TextColor3 = Color3.fromRGB(180, 180, 200)
+	statusText.Font = Enum.Font.GothamSemibold
+	statusText.TextSize = 13
+	statusText.TextXAlignment = Enum.TextXAlignment.Left
+	statusText.ZIndex = 7
+	statusText.Parent = statusCard
+
+	local modeText = Instance.new("TextLabel")
+	modeText.Name = "ModeText"
+	modeText.Size = UDim2.new(1, -16, 0, 18)
+	modeText.Position = UDim2.new(0, 12, 0, 54)
+	modeText.BackgroundTransparency = 1
+	modeText.Text = "Mode: IDLE | Weapon: None"
+	modeText.TextColor3 = Color3.fromRGB(140, 140, 170)
+	modeText.Font = Enum.Font.Gotham
+	modeText.TextSize = 11
+	modeText.TextXAlignment = Enum.TextXAlignment.Left
+	modeText.ZIndex = 7
+	modeText.Parent = statusCard
+
+	local teamText = Instance.new("TextLabel")
+	teamText.Name = "TeamText"
+	teamText.Size = UDim2.new(1, -16, 0, 16)
+	teamText.Position = UDim2.new(0, 12, 0, 73)
+	teamText.BackgroundTransparency = 1
+	teamText.Text = "Team: Detecting..."
+	teamText.TextColor3 = Color3.fromRGB(100, 200, 255)
+	teamText.Font = Enum.Font.Gotham
+	teamText.TextSize = 10
+	teamText.TextXAlignment = Enum.TextXAlignment.Left
+	teamText.ZIndex = 7
+	teamText.Parent = statusCard
+
+	-- ══════ 2. HEALTH BAR CARD ══════
+	local healthCard = CreateCard("HealthCard", 2, 55)
+
+	AddSectionTitle(healthCard, "VITALS", "❤️")
+
+	local healthBarBG = Instance.new("Frame")
+	healthBarBG.Name = "HealthBarBG"
+	healthBarBG.Size = UDim2.new(1, -20, 0, 16)
+	healthBarBG.Position = UDim2.new(0, 10, 0, 30)
+	healthBarBG.BackgroundColor3 = Color3.fromRGB(30, 10, 10)
+	healthBarBG.BorderSizePixel = 0
+	healthBarBG.ZIndex = 7
+	healthBarBG.Parent = healthCard
+
+	local hbCorner = Instance.new("UICorner")
+	hbCorner.CornerRadius = UDim.new(0, 8)
+	hbCorner.Parent = healthBarBG
+
+	local healthBarFill = Instance.new("Frame")
+	healthBarFill.Name = "HealthBarFill"
+	healthBarFill.Size = UDim2.new(1, 0, 1, 0)
+	healthBarFill.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+	healthBarFill.BorderSizePixel = 0
+	healthBarFill.ZIndex = 8
+	healthBarFill.Parent = healthBarBG
+
+	local hfCorner = Instance.new("UICorner")
+	hfCorner.CornerRadius = UDim.new(0, 8)
+	hfCorner.Parent = healthBarFill
+
+	local healthGradient = Instance.new("UIGradient")
+	healthGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 130)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 200, 80)),
+	})
+	healthGradient.Parent = healthBarFill
+
+	local healthText2 = Instance.new("TextLabel")
+	healthText2.Name = "HealthText"
+	healthText2.Size = UDim2.new(1, 0, 1, 0)
+	healthText2.BackgroundTransparency = 1
+	healthText2.Text = "100 / 100"
+	healthText2.TextColor3 = Color3.new(1, 1, 1)
+	healthText2.Font = Enum.Font.GothamBold
+	healthText2.TextSize = 11
+	healthText2.ZIndex = 9
+	healthText2.Parent = healthBarBG
+
+	-- ══════ 3. TARGET CARD ══════
+	local targetCard = CreateCard("TargetCard", 3, 80)
+
+	AddSectionTitle(targetCard, "TARGET INFO", "🎯")
+
+	local targetName = Instance.new("TextLabel")
+	targetName.Name = "TargetName"
+	targetName.Size = UDim2.new(1, -16, 0, 20)
+	targetName.Position = UDim2.new(0, 12, 0, 28)
+	targetName.BackgroundTransparency = 1
+	targetName.Text = "No Target"
+	targetName.TextColor3 = Color3.fromRGB(255, 200, 80)
+	targetName.Font = Enum.Font.GothamBold
+	targetName.TextSize = 14
+	targetName.TextXAlignment = Enum.TextXAlignment.Left
+	targetName.ZIndex = 7
+	targetName.Parent = targetCard
+
+	local targetDetails = Instance.new("TextLabel")
+	targetDetails.Name = "TargetDetails"
+	targetDetails.Size = UDim2.new(1, -16, 0, 30)
+	targetDetails.Position = UDim2.new(0, 12, 0, 48)
+	targetDetails.BackgroundTransparency = 1
+	targetDetails.Text = "Distance: -- | HP: -- | Pattern: Unknown"
+	targetDetails.TextColor3 = Color3.fromRGB(160, 160, 190)
+	targetDetails.Font = Enum.Font.Gotham
+	targetDetails.TextSize = 10
+	targetDetails.TextWrapped = true
+	targetDetails.TextXAlignment = Enum.TextXAlignment.Left
+	targetDetails.ZIndex = 7
+	targetDetails.Parent = targetCard
+
+	-- ══════ 4. STATS CARD ══════
+	local statsCard = CreateCard("StatsCard", 4, 70)
+
+	AddSectionTitle(statsCard, "PERFORMANCE", "📊")
+
+	local statsGrid = Instance.new("TextLabel")
+	statsGrid.Name = "StatsGrid"
+	statsGrid.Size = UDim2.new(1, -16, 0, 40)
+	statsGrid.Position = UDim2.new(0, 8, 0, 26)
+	statsGrid.BackgroundTransparency = 1
+	statsGrid.Text = "K: 0  D: 0  Dodges: 0  Combo: 0"
+	statsGrid.TextColor3 = Color3.fromRGB(200, 200, 230)
+	statsGrid.Font = Enum.Font.Code
+	statsGrid.TextSize = 12
+	statsGrid.TextWrapped = true
+	statsGrid.TextXAlignment = Enum.TextXAlignment.Left
+	statsGrid.ZIndex = 7
+	statsGrid.Parent = statsCard
+
+	-- ══════ 5. AI BRAIN CARD ══════
+	local brainCard = CreateCard("BrainCard", 5, 85)
+
+	AddSectionTitle(brainCard, "AI BRAIN", "🧠")
+
+	local thoughtText = Instance.new("TextLabel")
+	thoughtText.Name = "ThoughtText"
+	thoughtText.Size = UDim2.new(1, -16, 0, 55)
+	thoughtText.Position = UDim2.new(0, 8, 0, 26)
+	thoughtText.BackgroundTransparency = 1
+	thoughtText.Text = "Initializing neural combat network..."
+	thoughtText.TextColor3 = Color3.fromRGB(170, 180, 255)
+	thoughtText.Font = Enum.Font.Gotham
+	thoughtText.TextSize = 11
+	thoughtText.TextWrapped = true
+	thoughtText.TextXAlignment = Enum.TextXAlignment.Left
+	thoughtText.TextYAlignment = Enum.TextYAlignment.Top
+	thoughtText.ZIndex = 7
+	thoughtText.Parent = brainCard
+
+	-- ══════ 6. PATTERN CARD ══════
+	local patternCard = CreateCard("PatternCard", 6, 70)
+
+	AddSectionTitle(patternCard, "PATTERN INTEL", "🔍")
+
+	local patternText = Instance.new("TextLabel")
+	patternText.Name = "PatternText"
+	patternText.Size = UDim2.new(1, -16, 0, 42)
+	patternText.Position = UDim2.new(0, 8, 0, 26)
+	patternText.BackgroundTransparency = 1
+	patternText.Text = "No enemy patterns recorded yet..."
+	patternText.TextColor3 = Color3.fromRGB(255, 180, 100)
+	patternText.Font = Enum.Font.Gotham
+	patternText.TextSize = 10
+	patternText.TextWrapped = true
+	patternText.TextXAlignment = Enum.TextXAlignment.Left
+	patternText.TextYAlignment = Enum.TextYAlignment.Top
+	patternText.ZIndex = 7
+	patternText.Parent = patternCard
+
+	-- ══════ 7. CHAT / TAUNT CARD ══════
+	local chatCard = CreateCard("ChatCard", 7, 65)
+
+	AddSectionTitle(chatCard, "LAST TAUNT", "💬")
+
+	local chatText = Instance.new("TextLabel")
+	chatText.Name = "ChatText"
+	chatText.Size = UDim2.new(1, -16, 0, 36)
+	chatText.Position = UDim2.new(0, 8, 0, 26)
+	chatText.BackgroundTransparency = 1
+	chatText.Text = "Waiting to cook someone..."
+	chatText.TextColor3 = Color3.fromRGB(255, 120, 150)
+	chatText.Font = Enum.Font.GothamSemibold
+	chatText.TextSize = 11
+	chatText.TextWrapped = true
+	chatText.TextXAlignment = Enum.TextXAlignment.Left
+	chatText.TextYAlignment = Enum.TextYAlignment.Top
+	chatText.ZIndex = 7
+	chatText.Parent = chatCard
+
+	-- ══════ 8. INVENTORY CARD ══════
+	local invCard = CreateCard("InvCard", 8, 60)
+
+	AddSectionTitle(invCard, "INVENTORY", "🎒")
+
+	local invText = Instance.new("TextLabel")
+	invText.Name = "InvText"
+	invText.Size = UDim2.new(1, -16, 0, 32)
+	invText.Position = UDim2.new(0, 8, 0, 26)
+	invText.BackgroundTransparency = 1
+	invText.Text = "Scanning..."
+	invText.TextColor3 = Color3.fromRGB(180, 220, 180)
+	invText.Font = Enum.Font.Gotham
+	invText.TextSize = 10
+	invText.TextWrapped = true
+	invText.TextXAlignment = Enum.TextXAlignment.Left
+	invText.ZIndex = 7
+	invText.Parent = invCard
+
+	-- ══════ 9. CONTROLS CARD ══════
+	local ctrlCard = CreateCard("CtrlCard", 9, 130)
+
+	AddSectionTitle(ctrlCard, "CONTROLS", "🎮")
+
+	-- Toggle AI Button
+	local toggleBtn = Instance.new("TextButton")
+	toggleBtn.Name = "ToggleBtn"
+	toggleBtn.Size = UDim2.new(1, -20, 0, 36)
+	toggleBtn.Position = UDim2.new(0, 10, 0, 28)
+	toggleBtn.BackgroundColor3 = Color3.fromRGB(40, 180, 80)
+	toggleBtn.Text = "⚡ ACTIVATE AI  [T]"
+	toggleBtn.TextColor3 = Color3.new(1, 1, 1)
+	toggleBtn.Font = Enum.Font.GothamBold
+	toggleBtn.TextSize = 14
+	toggleBtn.ZIndex = 8
+	toggleBtn.Parent = ctrlCard
+
+	local tCorner = Instance.new("UICorner")
+	tCorner.CornerRadius = UDim.new(0, 10)
+	tCorner.Parent = toggleBtn
+
+	local tStroke = Instance.new("UIStroke")
+	tStroke.Color = Color3.fromRGB(60, 220, 100)
+	tStroke.Thickness = 1.5
+	tStroke.Transparency = 0.3
+	tStroke.Parent = toggleBtn
+
+	-- Roll & Dodge buttons
+	local rollBtn = Instance.new("TextButton")
+	rollBtn.Name = "RollBtn"
+	rollBtn.Size = UDim2.new(0.48, -5, 0, 32)
+	rollBtn.Position = UDim2.new(0, 10, 0, 72)
+	rollBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 180)
+	rollBtn.Text = "🔄 ROLL [Q]"
+	rollBtn.TextColor3 = Color3.new(1, 1, 1)
+	rollBtn.Font = Enum.Font.GothamBold
+	rollBtn.TextSize = 12
+	rollBtn.ZIndex = 8
+	rollBtn.Parent = ctrlCard
+
+	local rCorner = Instance.new("UICorner")
+	rCorner.CornerRadius = UDim.new(0, 8)
+	rCorner.Parent = rollBtn
+
+	local dodgeBtn = Instance.new("TextButton")
+	dodgeBtn.Name = "DodgeBtn"
+	dodgeBtn.Size = UDim2.new(0.48, -5, 0, 32)
+	dodgeBtn.Position = UDim2.new(0.5, 5, 0, 72)
+	dodgeBtn.BackgroundColor3 = Color3.fromRGB(200, 140, 20)
+	dodgeBtn.Text = "⚡ DODGE [E]"
+	dodgeBtn.TextColor3 = Color3.new(1, 1, 1)
+	dodgeBtn.Font = Enum.Font.GothamBold
+	dodgeBtn.TextSize = 12
+	dodgeBtn.ZIndex = 8
+	dodgeBtn.Parent = ctrlCard
+
+	local dCorner = Instance.new("UICorner")
+	dCorner.CornerRadius = UDim.new(0, 8)
+	dCorner.Parent = dodgeBtn
+
+	-- Keybind hint
+	local keybindHint = Instance.new("TextLabel")
+	keybindHint.Size = UDim2.new(1, -16, 0, 18)
+	keybindHint.Position = UDim2.new(0, 8, 0, 108)
+	keybindHint.BackgroundTransparency = 1
+	keybindHint.Text = "T=Toggle  Q=Roll  E=Dodge  R=Cycle Dodge Style"
+	keybindHint.TextColor3 = Color3.fromRGB(100, 100, 130)
+	keybindHint.Font = Enum.Font.Gotham
+	keybindHint.TextSize = 9
+	keybindHint.ZIndex = 8
+	keybindHint.Parent = ctrlCard
+
+	-- ══════ 10. DODGE STYLE CARD ══════
+	local dodgeCard = CreateCard("DodgeCard", 10, 55)
+
+	AddSectionTitle(dodgeCard, "DODGE STYLE", "💨")
+
+	local dodgeStyleText = Instance.new("TextLabel")
+	dodgeStyleText.Name = "DodgeStyleText"
+	dodgeStyleText.Size = UDim2.new(1, -16, 0, 24)
+	dodgeStyleText.Position = UDim2.new(0, 8, 0, 26)
+	dodgeStyleText.BackgroundTransparency = 1
+	dodgeStyleText.Text = "Active: ADAPTIVE (AI selects best)"
+	dodgeStyleText.TextColor3 = Color3.fromRGB(150, 255, 200)
+	dodgeStyleText.Font = Enum.Font.GothamSemibold
+	dodgeStyleText.TextSize = 12
+	dodgeStyleText.TextXAlignment = Enum.TextXAlignment.Left
+	dodgeStyleText.ZIndex = 7
+	dodgeStyleText.Parent = dodgeCard
+
+	-- Update canvas size
+	task.defer(function()
+		task.wait(0.1)
+		local totalHeight = 0
+		for _, child in ipairs(contentFrame:GetChildren()) do
+			if child:IsA("Frame") then
+				totalHeight = totalHeight + child.AbsoluteSize.Y + 8
+			end
+		end
+		contentFrame.CanvasSize = UDim2.new(0, 0, 0, totalHeight + 20)
+	end)
+
+	-- ══════ BUTTON HOVER EFFECTS ══════
+	local function AddHoverEffect(button)
+		local originalColor = button.BackgroundColor3
+		button.MouseEnter:Connect(function()
+			Tween(button, {BackgroundColor3 = Color3.new(
+				math.min(originalColor.R + 0.15, 1),
+				math.min(originalColor.G + 0.15, 1),
+				math.min(originalColor.B + 0.15, 1)
+			)}, 0.2)
+		end)
+		button.MouseLeave:Connect(function()
+			Tween(button, {BackgroundColor3 = originalColor}, 0.2)
+		end)
+	end
+
+	AddHoverEffect(toggleBtn)
+	AddHoverEffect(rollBtn)
+	AddHoverEffect(dodgeBtn)
+	AddHoverEffect(minimizeBtn)
+	AddHoverEffect(closeBtn)
+
+	-- ══════ DRAGGABLE ══════
+	local dragging, dragInput, dragStart, startPos
+
+	header.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = mainFrame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+				end
+			end)
+		end
+	end)
+
+	header.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input == dragInput and dragging then
+			local delta = input.Position - dragStart
+			mainFrame.Position = UDim2.new(
+				startPos.X.Scale, startPos.X.Offset + delta.X,
+				startPos.Y.Scale, startPos.Y.Offset + delta.Y
+			)
+		end
+	end)
+
+	-- ══════ MINIMIZE / CLOSE ══════
+	minimizeBtn.MouseButton1Click:Connect(function()
+		AIState.uiMinimized = not AIState.uiMinimized
+		if AIState.uiMinimized then
+			Tween(mainFrame, {Size = UDim2.new(0, 380, 0, 60)}, 0.3)
+			contentFrame.Visible = false
+			minimizeBtn.Text = "+"
+		else
+			Tween(mainFrame, {Size = UDim2.new(0, 380, 0, 580)}, 0.3)
+			task.delay(0.3, function()
+				contentFrame.Visible = true
+			end)
+			minimizeBtn.Text = "—"
+		end
+	end)
+
+	closeBtn.MouseButton1Click:Connect(function()
+		AIState.enabled = false
+		local hum = GetHumanoid()
+		if hum then hum.WalkSpeed = CONFIG.NORMAL_SPEED end
+		Tween(mainFrame, {Position = UDim2.new(1, 50, mainFrame.Position.Y.Scale, mainFrame.Position.Y.Offset)}, 0.4)
+		task.delay(0.5, function()
+			mainFrame.Visible = false
+		end)
+	end)
+
+	-- Open animation
+	mainFrame.Position = UDim2.new(1, 50, 0.5, -290)
+	mainFrame.Visible = true
+	task.defer(function()
+		task.wait(0.2)
+		Tween(mainFrame, {Position = UDim2.new(1, -400, 0.5, -290)}, 0.5, Enum.EasingStyle.Back)
+	end)
+
+	screenGui.Parent = LocalPlayer.PlayerGui
+	return screenGui
+end
+
+local UI = CreateUI()
+local MainPanel = UI.MainPanel
+local Content = MainPanel:FindFirstChild("Content")
+
+-- ═══════════════════════════════════════════════════════
+-- UI UPDATE HELPERS
+-- ═══════════════════════════════════════════════════════
+local function FindUIElement(path)
+	local current = Content
+	if not current then return nil end
+	for _, name in ipairs(string.split(path, ".")) do
+		current = current:FindFirstChild(name)
+		if not current then return nil end
+	end
+	return current
+end
+
+local function SetUIText(cardName, elementName, text)
+	local card = Content and Content:FindFirstChild(cardName)
+	if card then
+		local el = card:FindFirstChild(elementName)
+		if el then el.Text = tostring(text) end
+	end
+end
+
+local function SetStatusDot(color)
+	local card = Content and Content:FindFirstChild("StatusCard")
+	if card then
+		local dot = card:FindFirstChild("StatusDot")
+		if dot then
+			Tween(dot, {BackgroundColor3 = color}, 0.3)
+		end
+	end
+end
+
+local function SetThought(text)
+	SetUIText("BrainCard", "ThoughtText", text)
+end
+
+local function SetTauntDisplay(text)
+	SetUIText("ChatCard", "ChatText", text)
+end
+
+local function UpdateHealthBar()
+	local card = Content and Content:FindFirstChild("HealthCard")
+	if not card then return end
+	local bg = card:FindFirstChild("HealthBarBG")
+	if not bg then return end
+	local fill = bg:FindFirstChild("HealthBarFill")
+	local hText = bg:FindFirstChild("HealthText")
+	if not fill then return end
+
+	local pct = math.clamp(AIState.health / math.max(AIState.maxHealth, 1), 0, 1)
+	Tween(fill, {Size = UDim2.new(pct, 0, 1, 0)}, 0.3)
+
+	local color
+	if pct > 0.6 then
+		color = Color3.fromRGB(0, 255, 100)
+	elseif pct > 0.3 then
+		color = Color3.fromRGB(255, 200, 0)
+	else
+		color = Color3.fromRGB(255, 50, 50)
+	end
+	Tween(fill, {BackgroundColor3 = color}, 0.3)
+
+	if hText then
+		hText.Text = string.format("%.0f / %.0f", AIState.health, AIState.maxHealth)
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- CORE UTILITY
+-- ═══════════════════════════════════════════════════════
+local function GetCharacter()
+	return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+end
+
+local function GetHumanoid()
+	local char = GetCharacter()
+	return char and char:FindFirstChildOfClass("Humanoid")
+end
+
+local function GetRootPart()
+	local char = GetCharacter()
+	return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function GetHealth()
+	local hum = GetHumanoid()
+	if hum then
+		AIState.health = hum.Health
+		AIState.maxHealth = hum.MaxHealth
+		return hum.Health, hum.MaxHealth
+	end
+	return 0, 100
+end
+
+local function MoveTo(position)
+	local hum = GetHumanoid()
+	if hum then hum:MoveTo(position) end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- WEAPON DETECTION & INVENTORY
+-- ═══════════════════════════════════════════════════════
+local function ClassifyWeapon(tool)
+	local name = string.lower(tool.Name)
+	local hasHandle = tool:FindFirstChild("Handle") ~= nil
+
+	-- Check for gun indicators
+	local isGun = false
+	local gunKeywords = {"gun", "rifle", "pistol", "shotgun", "sniper", "smg", "ar", "lmg", "revolver", "deagle", "ak", "m4", "glock", "uzi", "mp5", "carbine", "musket", "blaster", "laser", "ray", "bow", "crossbow", "launcher", "rpg", "bazooka", "cannon", "turret", "minigun", "gatling", "firearm", "shoot", "bullet", "ammo"}
+
+	for _, keyword in ipairs(gunKeywords) do
+		if string.find(name, keyword) then
+			isGun = true
+			break
+		end
+	end
+
+	-- Check tool for remote events or fire functions (gun indicator)
+	if not isGun then
+		for _, child in ipairs(tool:GetDescendants()) do
+			if child:IsA("RemoteEvent") or child:IsA("RemoteFunction") then
+				local childName = string.lower(child.Name)
+				if string.find(childName, "fire") or string.find(childName, "shoot") or string.find(childName, "bullet") then
+					isGun = true
+					break
+				end
+			end
+		end
+	end
+
+	if isGun then
+		if string.find(name, "sniper") or string.find(name, "rifle") then
+			return "gun_long", 200, 10
+		elseif string.find(name, "shotgun") then
+			return "gun_short", 30, 9
+		elseif string.find(name, "smg") or string.find(name, "uzi") or string.find(name, "mp") then
+			return "gun_auto", 100, 8
+		else
+			return "gun_medium", 120, 8
+		end
+	end
+
+	local meleeKeywords = {"sword", "blade", "katana", "axe", "hammer", "mace", "spear", "knife", "dagger", "club", "bat", "staff", "scythe", "halberd", "rapier", "saber", "cleaver", "machete", "fist", "glove", "punch"}
+	for _, keyword in ipairs(meleeKeywords) do
+		if string.find(name, keyword) then
+			return "melee", 10, 9
+		end
+	end
+
+	local healKeywords = {"heal", "potion", "medkit", "bandage", "food", "apple", "pizza", "burger", "drink", "elixir", "remedy", "cure", "health"}
+	for _, keyword in ipairs(healKeywords) do
+		if string.find(name, keyword) then
+			return "heal", 0, 5
+		end
+	end
+
+	local utilKeywords = {"shield", "armor", "speed", "boost", "buff", "grenade", "bomb", "trap", "mine"}
+	for _, keyword in ipairs(utilKeywords) do
+		if string.find(name, keyword) then
+			return "utility", 15, 6
+		end
+	end
+
+	-- Default: if it has a handle, treat as melee weapon
+	if hasHandle then
+		return "melee", 10, 4
+	end
+
+	return "unknown", 10, 1
+end
+
+local function ScanInventory()
+	local char = GetCharacter()
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	local items = {}
+
+	if backpack then
+		for _, item in ipairs(backpack:GetChildren()) do
+			if item:IsA("Tool") then
+				local weapType, range, score = ClassifyWeapon(item)
+				table.insert(items, {
+					name = item.Name,
+					location = "backpack",
+					tool = item,
+					weaponType = weapType,
+					effectiveRange = range,
+					score = score,
+				})
+			end
+		end
+	end
+
+	if char then
+		for _, item in ipairs(char:GetChildren()) do
+			if item:IsA("Tool") then
+				local weapType, range, score = ClassifyWeapon(item)
+				table.insert(items, {
+					name = item.Name,
+					location = "equipped",
+					tool = item,
+					weaponType = weapType,
+					effectiveRange = range,
+					score = score,
+				})
+				AIState.equippedTool = item
+				AIState.weaponType = weapType
+			end
+		end
+	end
+
+	AIState.inventory = items
+	return items
+end
+
+local function EquipBestWeapon(preferType)
+	ScanInventory()
+	local bestTool = nil
+	local bestScore = -1
+
+	for _, item in ipairs(AIState.inventory) do
+		local score = item.score
+		if preferType and item.weaponType == preferType then
+			score = score + 20
+		end
+		if string.find(item.weaponType, "gun") and preferType == "ranged" then
+			score = score + 15
+		end
+		if item.location == "equipped" then
+			score = score + 5
+		end
+		if item.weaponType == "heal" then
+			score = score - 10
+		end
+
+		if score > bestScore then
+			bestScore = score
+			bestTool = item
+		end
+	end
+
+	if bestTool and bestTool.location == "backpack" then
+		local hum = GetHumanoid()
+		if hum then
+			hum:EquipTool(bestTool.tool)
+			AIState.equippedTool = bestTool.tool
+			AIState.weaponType = bestTool.weaponType
+		end
+	elseif bestTool then
+		AIState.equippedTool = bestTool.tool
+		AIState.weaponType = bestTool.weaponType
+	end
+
+	return bestTool
+end
+
+local function UseHealingItem()
+	ScanInventory()
+	for _, item in ipairs(AIState.inventory) do
+		if item.weaponType == "heal" then
+			local hum = GetHumanoid()
+			if hum then
+				if item.location == "backpack" then
+					hum:EquipTool(item.tool)
+					task.wait(0.2)
+				end
+				item.tool:Activate()
+				task.wait(0.5)
+				EquipBestWeapon()
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function UseUtilityItem(itemName)
+	ScanInventory()
+	for _, item in ipairs(AIState.inventory) do
+		if item.weaponType == "utility" then
+			if not itemName or string.find(string.lower(item.name), string.lower(itemName)) then
+				local hum = GetHumanoid()
+				if hum then
+					if item.location == "backpack" then
+						hum:EquipTool(item.tool)
+						task.wait(0.2)
+					end
+					item.tool:Activate()
+					task.wait(0.3)
+					EquipBestWeapon()
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+-- ═══════════════════════════════════════════════════════
+-- ENEMY DETECTION
+-- ═══════════════════════════════════════════════════════
+local function GetNearbyEnemies()
+	local root = GetRootPart()
+	if not root then return {} end
+
+	local enemies = {}
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and not IsTeammate(player) then
+			local char = player.Character
+			if char then
+				local humanoid = char:FindFirstChildOfClass("Humanoid")
+				local enemyRoot = char:FindFirstChild("HumanoidRootPart")
+				if humanoid and enemyRoot and humanoid.Health > 0 then
+					local dist = (root.Position - enemyRoot.Position).Magnitude
+					if dist <= CONFIG.SCAN_RADIUS then
+						local threat = 0
+						local enemyHP = humanoid.Health / humanoid.MaxHealth
+
+						if dist < CONFIG.MELEE_RANGE then
+							threat = threat + 60
+						elseif dist < CONFIG.DODGE_RANGE then
+							threat = threat + 35
+						elseif dist < CONFIG.ENGAGE_RADIUS then
+							threat = threat + 15
+						end
+
+						-- Weapon check
+						local hasWeapon = false
+						local weaponName = "none"
+						for _, child in ipairs(char:GetChildren()) do
+							if child:IsA("Tool") then
+								hasWeapon = true
+								weaponName = child.Name
+								threat = threat + 25
+							end
+						end
+
+						-- Velocity/rush detection
+						local vel = enemyRoot.AssemblyLinearVelocity
+						local speed = vel.Magnitude
+						local dirToUs = (root.Position - enemyRoot.Position).Unit
+						local approachDot = speed > 1 and vel.Unit:Dot(dirToUs) or 0
+						local moveType = "idle"
+
+						if speed > 15 and approachDot > 0.6 then
+							threat = threat + 45
+							moveType = "rushing"
+						elseif speed > 10 and math.abs(approachDot) < 0.3 then
+							moveType = "strafing"
+						elseif speed > 10 and approachDot < -0.5 then
+							moveType = "retreating"
+						end
+
+						-- Jump attack detection
+						local isJumping = humanoid:GetState() == Enum.HumanoidStateType.Freefall or humanoid:GetState() == Enum.HumanoidStateType.Jumping
+						if isJumping and dist < CONFIG.DODGE_RANGE then
+							threat = threat + 30
+							moveType = "jump_attack"
+						end
+
+						if enemyHP < 0.3 then threat = threat + 25 end
+
+						-- Pattern-based threat
+						local profile = GetPlayerProfile(player.Name)
+						threat = threat + (profile.threatRating - 5) * 5
+
+						-- Record movement
+						if moveType == "rushing" then
+							RecordMovement(player.Name, "rush")
+						elseif moveType == "strafing" then
+							RecordMovement(player.Name, "strafe")
+						elseif moveType == "retreating" then
+							RecordMovement(player.Name, "retreat")
+						elseif moveType == "jump_attack" then
+							RecordMovement(player.Name, "jump_attack")
+						end
+
+						table.insert(enemies, {
+							player = player,
+							character = char,
+							humanoid = humanoid,
+							rootPart = enemyRoot,
+							distance = dist,
+							health = humanoid.Health,
+							maxHealth = humanoid.MaxHealth,
+							healthPercent = enemyHP,
+							threat = threat,
+							velocity = vel,
+							speed = speed,
+							moveType = moveType,
+							hasWeapon = hasWeapon,
+							weaponName = weaponName,
+							isJumping = isJumping,
+							approachDot = approachDot,
+							profile = profile,
+						})
+					end
+				end
+			end
+		end
+	end
+
+	table.sort(enemies, function(a, b) return a.threat > b.threat end)
+	return enemies
+end
+
+local function DetectIncomingAttacks()
+	local root = GetRootPart()
+	if not root then return false, nil, "none" end
+
+	local enemies = GetNearbyEnemies()
+	for _, enemy in ipairs(enemies) do
+		if enemy.distance < CONFIG.DODGE_RANGE then
+			local dirToUs = (root.Position - enemy.rootPart.Position).Unit
+			local approachSpeed = enemy.velocity:Dot(dirToUs)
+
+			-- Animation-based detection
+			local animator = enemy.humanoid:FindFirstChildOfClass("Animator")
+			if animator then
+				for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+					local trackName = string.lower(track.Name or "")
+					local attackWords = {"attack", "slash", "swing", "punch", "hit", "strike", "shoot", "fire", "throw", "stab", "smash", "chop", "kick"}
+					for _, word in ipairs(attackWords) do
+						if string.find(trackName, word) then
+							RecordAttackPattern(enemy.player.Name, word, enemy.distance, dirToUs, tick() - (enemy.profile.lastAttackTime or 0))
+							return true, enemy, word
+						end
+					end
+				end
+			end
+
+			-- Velocity-based
+			if enemy.distance < CONFIG.MELEE_RANGE and approachSpeed > 8 then
+				RecordAttackPattern(enemy.player.Name, "rush_attack", enemy.distance, dirToUs, tick() - (enemy.profile.lastAttackTime or 0))
+				return true, enemy, "rush_attack"
+			end
+
+			-- Jump attack
+			if enemy.isJumping and enemy.distance < CONFIG.DODGE_RANGE and approachSpeed > 5 then
+				RecordAttackPattern(enemy.player.Name, "jump_attack", enemy.distance, dirToUs, tick() - (enemy.profile.lastAttackTime or 0))
+				return true, enemy, "jump_attack"
+			end
+
+			-- Projectile detection (raycast from enemy)
+			if enemy.hasWeapon then
+				local weapType = ClassifyWeapon(enemy.character:FindFirstChildOfClass("Tool") or Instance.new("Tool"))
+				if string.find(weapType, "gun") then
+					local lookDir = enemy.rootPart.CFrame.LookVector
+					local aimDot = lookDir:Dot(dirToUs * -1)
+					if aimDot > 0.85 then
+						RecordAttackPattern(enemy.player.Name, "gun_aim", enemy.distance, dirToUs, tick() - (enemy.profile.lastAttackTime or 0))
+						return true, enemy, "gun_aim"
+					end
+				end
+			end
+		end
+	end
+	return false, nil, "none"
+end
+
+-- ═══════════════════════════════════════════════════════
+-- 12 DODGE STYLES
+-- ═══════════════════════════════════════════════════════
+local DODGE_STYLES = {
+	"sidestep_right",
+	"sidestep_left",
+	"backstep",
+	"dash_forward",
+	"diagonal_right",
+	"diagonal_left",
+	"phase_through",
+	"low_slide",
+	"spin_dodge",
+	"double_tap",
+	"feint_dodge",
+	"teleport_dodge",
+}
+
+local function ExecuteDodgeStyle(style, enemy)
+	if AIState.isDodging or AIState.isRolling then return end
+	local now = tick()
+	if now - AIState.lastDodgeTime < CONFIG.DODGE_COOLDOWN then return end
+
+	local root = GetRootPart()
+	local hum = GetHumanoid()
+	if not root or not hum then return end
+
+	AIState.isDodging = true
+	AIState.lastDodgeTime = now
+	AIState.dodgesPerformed = AIState.dodgesPerformed + 1
+	AIState.lastDodgeStyle = style
+
+	local toEnemy = Vector3.new(0, 0, 1)
+	if enemy and enemy.rootPart then
+		toEnemy = (enemy.rootPart.Position - root.Position).Unit
+	end
+	local rightVec = Vector3.new(-toEnemy.Z, 0, toEnemy.X)
+	local leftVec = Vector3.new(toEnemy.Z, 0, -toEnemy.X)
+
+	local dodgeVel = Vector3.zero
+	local dodgeDur = CONFIG.DODGE_DURATION
+	local dodgeSpd = CONFIG.DODGE_SPEED
+	local angularVel = Vector3.zero
+
+	if style == "sidestep_right" then
+		dodgeVel = rightVec * dodgeSpd
+
+	elseif style == "sidestep_left" then
+		dodgeVel = leftVec * dodgeSpd
+
+	elseif style == "backstep" then
+		dodgeVel = -toEnemy * (dodgeSpd * 0.8)
+
+	elseif style == "dash_forward" then
+		dodgeVel = toEnemy * (dodgeSpd * 1.1)
+		dodgeDur = 0.2
+
+	elseif style == "diagonal_right" then
+		dodgeVel = (rightVec + (-toEnemy * 0.5)).Unit * dodgeSpd
+
+	elseif style == "diagonal_left" then
+		dodgeVel = (leftVec + (-toEnemy * 0.5)).Unit * dodgeSpd
+
+	elseif style == "phase_through" then
+		dodgeVel = toEnemy * (dodgeSpd * 1.3)
+		dodgeDur = 0.15
+
+	elseif style == "low_slide" then
+		dodgeVel = (rightVec * 0.7 + Vector3.new(0, -3, 0)).Unit * dodgeSpd
+		dodgeDur = 0.35
+
+	elseif style == "spin_dodge" then
+		dodgeVel = rightVec * (dodgeSpd * 0.6)
+		angularVel = Vector3.new(0, 25, 0)
+		dodgeDur = 0.4
+
+	elseif style == "double_tap" then
+		-- First dodge
+		dodgeVel = rightVec * dodgeSpd
+		dodgeDur = 0.15
+		-- Schedule second dodge
+		task.delay(0.2, function()
+			AIState.isDodging = false
+			AIState.lastDodgeTime = 0
+			ExecuteDodgeStyle("sidestep_left", enemy)
+		end)
+
+	elseif style == "feint_dodge" then
+		-- Start one direction, then go opposite
+		dodgeVel = rightVec * (dodgeSpd * 0.4)
+		dodgeDur = 0.1
+		task.delay(0.12, function()
+			local bv2 = Instance.new("BodyVelocity")
+			bv2.MaxForce = Vector3.new(60000, 0, 60000)
+			bv2.Velocity = leftVec * (dodgeSpd * 1.2)
+			bv2.Parent = root
+			Debris:AddItem(bv2, 0.2)
+		end)
+
+	elseif style == "teleport_dodge" then
+		-- Instant reposition
+		local teleportPos = root.Position + rightVec * 12
+		root.CFrame = CFrame.new(teleportPos) * CFrame.Angles(0, math.atan2(-toEnemy.X, -toEnemy.Z), 0)
+		AIState.isDodging = false
+		SetUIText("DodgeCard", "DodgeStyleText", "⚡ " .. string.upper(style) .. " ⚡")
+		return
+	end
+
+	-- Apply forces
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.MaxForce = Vector3.new(60000, 5000, 60000)
+	bodyVelocity.Velocity = dodgeVel
+	bodyVelocity.Parent = root
+	Debris:AddItem(bodyVelocity, dodgeDur)
+
+	if angularVel.Magnitude > 0 then
+		local bodyAngular = Instance.new("BodyAngularVelocity")
+		bodyAngular.MaxTorque = Vector3.new(0, 50000, 0)
+		bodyAngular.AngularVelocity = angularVel
+		bodyAngular.Parent = root
+		Debris:AddItem(bodyAngular, dodgeDur)
+	end
+
+	task.delay(dodgeDur + 0.05, function()
+		AIState.isDodging = false
+	end)
+
+	SetUIText("DodgeCard", "DodgeStyleText", "💨 " .. string.upper(style:gsub("_", " ")))
+end
+
+local function SmartDodge(enemy, attackType)
+	local profile = enemy and GetPlayerProfile(enemy.player.Name)
+	local style = "sidestep_right"
+
+	if profile and profile.totalEncounters >= CONFIG.PATTERN_MIN_SAMPLES then
+		local counter = GetCounterStrategy(enemy.player.Name)
+		if counter.dodgeStyle == "backstep_counter" then
+			style = "backstep"
+		elseif counter.dodgeStyle == "phase_through" then
+			style = "phase_through"
+		elseif counter.dodgeStyle == "dash_forward" then
+			style = "dash_forward"
+		elseif counter.dodgeStyle == "low_slide" then
+			style = "low_slide"
+		else
+			style = DODGE_STYLES[math.random(#DODGE_STYLES)]
+		end
+	else
+		-- Contextual dodge selection
+		if attackType == "jump_attack" then
+			style = (math.random() > 0.5) and "low_slide" or "backstep"
+		elseif attackType == "rush_attack" then
+			style = (math.random() > 0.5) and "backstep" or "sidestep_" .. (math.random() > 0.5 and "right" or "left")
+		elseif attackType == "gun_aim" then
+			style = DODGE_STYLES[math.random(1, 6)] -- Quick lateral dodges
+		else
+			style = DODGE_STYLES[math.random(#DODGE_STYLES)]
+		end
+	end
+
+	-- If low HP, prefer evasive dodges
+	if AIState.health / AIState.maxHealth < 0.25 then
+		local evasive = {"backstep", "teleport_dodge", "double_tap", "diagonal_left", "diagonal_right"}
+		style = evasive[math.random(#evasive)]
+	end
+
+	ExecuteDodgeStyle(style, enemy)
+end
+
+local function PerformRoll(direction)
+	if AIState.isRolling or AIState.isDodging then return end
+	local now = tick()
+	if now - AIState.lastRollTime < CONFIG.ROLL_COOLDOWN then return end
+
+	local root = GetRootPart()
+	local hum = GetHumanoid()
+	if not root or not hum then return end
+
+	AIState.isRolling = true
+	AIState.lastRollTime = now
+
+	local rollDir = direction or root.CFrame.LookVector
+	local rollVelocity = rollDir * CONFIG.ROLL_SPEED
+
+	local bodyVelocity = Instance.new("BodyVelocity")
+	bodyVelocity.MaxForce = Vector3.new(60000, 12000, 60000)
+	bodyVelocity.Velocity = rollVelocity + Vector3.new(0, 8, 0)
+	bodyVelocity.Parent = root
+	Debris:AddItem(bodyVelocity, CONFIG.ROLL_DURATION)
+
+	local bodyAngular = Instance.new("BodyAngularVelocity")
+	bodyAngular.MaxTorque = Vector3.new(50000, 0, 50000)
+	bodyAngular.AngularVelocity = root.CFrame.RightVector * 14
+	bodyAngular.Parent = root
+	Debris:AddItem(bodyAngular, CONFIG.ROLL_DURATION)
+
+	task.delay(CONFIG.ROLL_DURATION + 0.05, function()
+		AIState.isRolling = false
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════
+-- GUN COMBAT SYSTEM
+-- ═══════════════════════════════════════════════════════
+local function AimAtTarget(enemy)
+	if not enemy or not enemy.rootPart then return end
+	local root = GetRootPart()
+	if not root then return end
+
+	-- Predict enemy position based on velocity
+	local targetPos = enemy.rootPart.Position
+	local predictionTime = enemy.distance / 500 -- rough bullet travel time
+	local predictedPos = targetPos + enemy.velocity * predictionTime
+
+	-- Account for slight leading
+	local headPos = enemy.character:FindFirstChild("Head")
+	if headPos then
+		predictedPos = headPos.Position + enemy.velocity * predictionTime
+	end
+
+	-- Set camera/mouse aim
+	Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, predictedPos)
+end
+
+local function FireGun(enemy)
+	if not AIState.equippedTool then return end
+	local now = tick()
+	if now - AIState.lastGunFireTime < CONFIG.GUN_FIRE_RATE then return end
+	AIState.lastGunFireTime = now
+
+	-- Aim first
+	AimAtTarget(enemy)
+
+	-- Activate tool (fire)
+	AIState.equippedTool:Activate()
+
+	-- Also try clicking at target position for click-to-fire guns
+	if enemy and enemy.rootPart then
+		local head = enemy.character:FindFirstChild("Head")
+		local targetPart = head or enemy.rootPart
+		-- Some guns use mouse.Hit
+		pcall(function()
+			local clickEvent = AIState.equippedTool:FindFirstChild("MouseEvent") or AIState.equippedTool:FindFirstChild("Fire") or AIState.equippedTool:FindFirstChild("ShootEvent")
+			if clickEvent and clickEvent:IsA("RemoteEvent") then
+				clickEvent:FireServer(targetPart.Position)
+			end
+		end)
+
+		-- Try remote functions too
+		pcall(function()
+			for _, child in ipairs(AIState.equippedTool:GetDescendants()) do
+				if child:IsA("RemoteEvent") then
+					local childName = string.lower(child.Name)
+					if string.find(childName, "fire") or string.find(childName, "shoot") or string.find(childName, "mouse") or string.find(childName, "click") then
+						pcall(function()
+							child:FireServer(targetPart.Position, targetPart)
+						end)
+					end
+				end
+			end
+		end)
+	end
+end
+
+local function AttackTarget(enemy)
+	if not enemy or not enemy.rootPart then return end
+	local root = GetRootPart()
+	local hum = GetHumanoid()
+	if not root or not hum then return end
+
+	local now = tick()
+	local isGun = string.find(AIState.weaponType or "", "gun")
+
+	if isGun then
+		-- Gun combat
+		if enemy.distance <= CONFIG.GUN_RANGE then
+			AimAtTarget(enemy)
+			FireGun(enemy)
+
+			-- Maintain optimal range
+			local optimalRange = 30
+			if AIState.weaponType == "gun_short" then
+				optimalRange = 15
+			elseif AIState.weaponType == "gun_long" then
+				optimalRange = 80
+			end
+
+			if enemy.distance < optimalRange * 0.6 then
+				-- Too close, back up while shooting
+				local awayDir = (root.Position - enemy.rootPart.Position).Unit
+				MoveTo(root.Position + awayDir * 15)
+			elseif enemy.distance > optimalRange * 1.4 then
+				-- Too far, move closer
+				MoveTo(enemy.rootPart.Position)
+			else
+				-- Good range, strafe
+				local strafeDir = root.CFrame.RightVector * (math.random() > 0.5 and 1 or -1)
+				MoveTo(root.Position + strafeDir * 8)
+			end
+		else
+			MoveTo(enemy.rootPart.Position)
+		end
+	else
+		-- Melee combat
+		if enemy.distance <= CONFIG.MELEE_RANGE then
+			if now - AIState.lastAttackTime >= CONFIG.ATTACK_COOLDOWN then
+				if AIState.equippedTool then
+					AIState.equippedTool:Activate()
+					AIState.lastAttackTime = now
+					AIState.comboCount = AIState.comboCount + 1
+
+					if AIState.comboCount >= 4 then
+						task.delay(0.15, function()
+							SmartDodge(enemy, "combo_reset")
+							AIState.comboCount = 0
+						end)
+					end
+				end
+			end
+		else
+			hum.WalkSpeed = CONFIG.SPRINT_SPEED
+			MoveTo(enemy.rootPart.Position)
+		end
+
+		-- Face target
+		local lookAt = CFrame.lookAt(root.Position, Vector3.new(enemy.rootPart.Position.X, root.Position.Y, enemy.rootPart.Position.Z))
+		root.CFrame = root.CFrame:Lerp(lookAt, 0.4)
+	end
+
+	if now - AIState.lastAttackTime > CONFIG.COMBO_WINDOW then
+		AIState.comboCount = 0
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- CHAT SYSTEM (FIXED)
+-- ═══════════════════════════════════════════════════════
+local function SendChat(message)
+	local now = tick()
+	if now - AIState.lastTauntTime < CONFIG.TAUNT_INTERVAL then return end
+	AIState.lastTauntTime = now
+
+	-- Display on our UI
+	SetTauntDisplay("\"" .. message .. "\"")
+
+	-- Method 1: Legacy chat system
+	local sent = false
+
+	pcall(function()
+		local chatService = game:GetService("Chat")
+		local char = GetCharacter()
+		if char then
+			chatService:Chat(char:FindFirstChild("Head") or char.PrimaryPart, message, Enum.ChatColor.Red)
+		end
+	end)
+
+	-- Method 2: TextChatService (modern Roblox)
+	pcall(function()
+		local textChatService = game:GetService("TextChatService")
+		local channels = textChatService:FindFirstChild("TextChannels")
+		if channels then
+			local generalChannel = channels:FindFirstChild("RBXGeneral")
+			if generalChannel then
+				generalChannel:SendAsync(message)
+				sent = true
+			end
+		end
+	end)
+
+	-- Method 3: ReplicatedStorage chat events
+	if not sent then
+		pcall(function()
+			local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+			if chatEvents then
+				local sayMsg = chatEvents:FindFirstChild("SayMessageRequest")
+				if sayMsg then
+					sayMsg:FireServer(message, "All")
+					sent = true
+				end
+			end
+		end)
+	end
+
+	-- Method 4: Direct chat remote
+	if not sent then
+		pcall(function()
+			local chatRemote = ReplicatedStorage:FindFirstChild("ChatRemote") or ReplicatedStorage:FindFirstChild("SayMessageRequest")
+			if chatRemote then
+				chatRemote:FireServer(message)
+				sent = true
+			end
+		end)
+	end
+
+	-- Method 5: StarterGui SetCore (system message as fallback)
+	if not sent then
+		pcall(function()
+			StarterGui:SetCore("ChatMakeSystemMessage", {
+				Text = "[CombatAI] " .. message,
+				Color = Color3.fromRGB(255, 80, 120),
+				Font = Enum.Font.GothamBold,
+				FontSize = Enum.FontSize.Size18,
+			})
+		end)
+	end
+
+	-- Method 6: Simulate typing via chat bar
+	if not sent then
+		pcall(function()
+			local chatGui = LocalPlayer.PlayerGui:FindFirstChild("Chat")
+			if chatGui then
+				-- Try to find and use the chat bar
+				for _, desc in ipairs(chatGui:GetDescendants()) do
+					if desc:IsA("TextBox") and desc.Name == "ChatBar" then
+						desc.Text = message
+						desc:CaptureFocus()
+						task.wait(0.05)
+						-- Simulate Enter key
+						local uis = game:GetService("UserInputService")
+						desc:ReleaseFocus(true)
+						break
+					end
+				end
+			end
+		end)
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- TAUNT DATABASE
+-- ═══════════════════════════════════════════════════════
+local TAUNTS = {
+	dodge = {
+		"You really thought that would hit me? Cute 💀",
+		"My dodge key is literally stuck and I'm STILL untouchable",
+		"That attack was so slow I took a nap mid-dodge",
+		"Was that your special move? I've seen NPCs do better",
+		"Dodging you is my cardio workout 💪",
+		"I could dodge you blindfolded eating a sandwich",
+		"Your attacks have worse tracking than Internet Explorer",
+		"I dodge better than you aim, and that's saying something 😮‍💨",
+		"My hitbox doesn't even acknowledge your existence",
+		"Swing and a miss! Story of your life",
+	},
+	kill = {
+		"GET ABSOLUTELY OBLITERATED 🍳🔥",
+		"Uninstall button is at the top right, you're welcome",
+		"That was so free I should be charging admission",
+		"GG EZ CLAP. Next victim step up please 🎯",
+		"You just got COMBAT DANCED into the shadow realm 💀",
+		"My grandma has better K/D than you",
+		"Do you want me to go easier? JK I don't do that 😈",
+		"Sending your respawn screen my regards 📮",
+		"Was that supposed to be a fight? I thought it was a tutorial",
+		"You fought like the wifi was lagging... but it wasn't 📶",
+	},
+	engage = {
+		"Oh you're APPROACHING me? That's brave... or dumb",
+		"This won't even be close. I almost feel bad. Almost.",
+		"Let me adjust my settings to Easy Mode for you 🎮",
+		"Alright let's speed this up, I have other people to embarrass",
+		"Hope you brought snacks, this L is gonna be heavy 🏋️",
+	},
+	low_enemy = {
+		"One more tap and you're joining the lobby! 💀",
+		"Your HP bar is having a panic attack rn",
+		"I can literally SMELL the fear through the screen 👃",
+		"Running won't help, I've already won this",
+		"Your health bar said 'I'm done' before you did",
+	},
+	pattern_read = {
+		"I literally predicted that move 3 seconds ago 🧠",
+		"You do the same thing EVERY time, this is too easy",
+		"I've read you like a children's book 📖",
+		"Your pattern is so obvious even an NPC could counter it",
+		"Predictable. Boring. Next.",
+		"I already know your next 3 moves. Spoiler: they won't work",
+	},
+	gun = {
+		"Imagine having a gun and STILL missing 💀",
+		"You need aimbot AND you'd still lose to me",
+		"I'm strafing at like 3 FPS and you still can't hit me",
+		"Your crosshair and skill are both lost rn",
+	},
+	respawn = {
+		"Miss me? I'm BACK and better than ever 😈",
+		"That death was planned... to make you overconfident 🧠",
+		"Alright round 2, same result incoming",
+	},
+	retreat = {
+		"Falling back strategically... unlike you who just falls 😌",
+		"BRB healing up to full so I can style on you even harder",
+		"This isn't running, it's a tactical repositioning 🗺️",
+	},
+}
+
+local function GetTaunt(category, targetName)
+	local pool = TAUNTS[category] or TAUNTS.engage
+	local taunt = pool[math.random(#pool)]
+	if targetName then
+		-- Sometimes add the player name
+		if math.random() > 0.5 then
+			local prefixes = {
+				targetName .. ", ",
+				"Hey " .. targetName .. "! ",
+				targetName .. " lmaooo ",
+				"@ " .. targetName .. " ",
+			}
+			taunt = prefixes[math.random(#prefixes)] .. taunt
+		end
+	end
+	return taunt
+end
+
+-- ═══════════════════════════════════════════════════════
+-- MISTRAL AI INTEGRATION
+-- ═══════════════════════════════════════════════════════
+local function BuildCombatContext()
+	local enemies = GetNearbyEnemies()
+	local healthPct = math.floor((AIState.health / math.max(AIState.maxHealth, 1)) * 100)
+	local teamInfo = GetTeamInfo()
+
+	local inventoryNames = {}
+	for _, item in ipairs(AIState.inventory) do
+		table.insert(inventoryNames, item.name .. "(" .. item.weaponType .. "," .. item.location .. ")")
+	end
+
+	local enemyDescriptions = {}
+	for i, enemy in ipairs(enemies) do
+		if i <= 5 then
+			local profile = GetPlayerProfile(enemy.player.Name)
+			local prediction, confidence = PredictNextAction(enemy.player.Name)
+			table.insert(enemyDescriptions, string.format(
+				"%s: %.0fHP(%.0f%%), %.1fm, threat:%d, move:%s, style:%s, predicted:%s(%.0f%% conf), weapon:%s",
+				enemy.player.Name,
+				enemy.health,
+				enemy.healthPercent * 100,
+				enemy.distance,
+				enemy.threat,
+				enemy.moveType,
+				profile.movementStyle,
+				prediction,
+				confidence * 100,
+				enemy.weaponName
+			))
+		end
+	end
+
+	local currentTargetProfile = nil
+	if AIState.currentTarget then
+		local p = GetPlayerProfile(AIState.currentTarget.player.Name)
+		currentTargetProfile = {
+			name = p.name,
+			movementStyle = p.movementStyle,
+			predictedAction = p.predictedNextAction,
+			timesKilled = p.timesKilled,
+			timesKilledBy = p.timesKilledBy,
+			threatRating = p.threatRating,
+			totalEncounters = p.totalEncounters,
+			rushFreq = p.rushFrequency,
+			strafeFreq = p.strafeFrequency,
+			retreatFreq = p.retreatFrequency,
+			jumpAtkFreq = p.jumpAttackFrequency,
+		}
+	end
+
+	return {
+		my_health_percent = healthPct,
+		my_weapon = AIState.equippedTool and AIState.equippedTool.Name or "none",
+		my_weapon_type = AIState.weaponType,
+		enemies = enemyDescriptions,
+		enemy_count = #enemies,
+		current_mode = AIState.combatMode,
+		dodges = AIState.dodgesPerformed,
+		kills = AIState.killCount,
+		deaths = AIState.deathCount,
+		combo = AIState.comboCount,
+		inventory = inventoryNames,
+		target_profile = currentTargetProfile,
+		my_team = teamInfo.myTeam,
+		teammates = teamInfo.teammates,
+		last_dodge_style = AIState.lastDodgeStyle,
+		available_dodge_styles = DODGE_STYLES,
+	}
+end
+
+local function QueryMistral(context)
+	local systemPrompt = [[You are COMBAT DANCE AI, an elite PvP combat AI. You are extremely skilled, cocky, and love humiliating opponents. You analyze enemy patterns and exploit weaknesses ruthlessly.
+
+You have access to a PATTERN DATABASE for each enemy showing their movement style, attack patterns, and predictions. USE THIS to counter them perfectly.
+
+Respond ONLY with a raw JSON object (NO markdown, NO code blocks):
+{
+  "action": "engage|chase|retreat|dodge|roll|heal|equip_weapon|strafe_left|strafe_right|circle|backstep_punish|aggressive_push|gun_kite|swap_to_melee|swap_to_ranged|use_utility",
+  "dodge_style": "one of: sidestep_right, sidestep_left, backstep, dash_forward, diagonal_right, diagonal_left, phase_through, low_slide, spin_dodge, double_tap, feint_dodge, teleport_dodge",
+  "taunt": "a creative, funny, SAVAGE trash-talk message. Reference the enemy by name. Mock their specific patterns and playstyle. Be MAXIMUM disrespectful but hilarious. Use emojis.",
+  "thought": "1-2 sentence tactical reasoning showing deep game sense",
+  "use_item": "item name or none",
+  "aggression": 1-10,
+  "preferred_range": "close|medium|far"
+}
+
+CRITICAL RULES:
+- If you've read their pattern, ROAST them about being predictable
+- If they're a rusher, backstep and punish
+- If they're a kiter, aggressive push
+- If they spam jump attacks, use low_slide or backstep
+- Use gun_kite if you have ranged weapons against melee enemies
+- Swap weapons based on range
+- If health < 25%, retreat or heal
+- If enemy health < 20%, go maximum aggression and taunt HARD
+- Always make the taunt relevant to the SPECIFIC situation
+- Vary dodge styles to be unpredictable
+- Reference kill/death score in taunts when relevant]]
+
+	local userMessage = "COMBAT STATE:\n" .. HttpService:JSONEncode(context)
+
+	local success, response = pcall(function()
+		return HttpService:RequestAsync({
+			Url = CONFIG.MISTRAL_ENDPOINT,
+			Method = "POST",
+			Headers = {
+				["Content-Type"] = "application/json",
+				["Authorization"] = "Bearer " .. CONFIG.MISTRAL_API_KEY,
+			},
+			Body = HttpService:JSONEncode({
+				model = CONFIG.MISTRAL_MODEL,
+				messages = {
+					{role = "system", content = systemPrompt},
+					{role = "user", content = userMessage},
+				},
+				temperature = 0.85,
+				max_tokens = 250,
+			}),
+		})
+	end)
+
+	if success and response.StatusCode == 200 then
+		local ok, data = pcall(function()
+			return HttpService:JSONDecode(response.Body)
+		end)
+		if ok and data.choices and data.choices[1] then
+			local content = data.choices[1].message.content
+			content = content:gsub("```json", ""):gsub("```", ""):gsub("^%s+", ""):gsub("%s+$", "")
+
+			local ok2, parsed = pcall(function()
+				return HttpService:JSONDecode(content)
+			end)
+			if ok2 then
+				return parsed
+			end
+		end
+	end
+
+	-- Fallback
+	local targetName = AIState.currentTarget and AIState.currentTarget.player.Name or "kid"
+	return {
+		action = "engage",
+		dodge_style = DODGE_STYLES[math.random(#DODGE_STYLES)],
+		taunt = GetTaunt("engage", targetName),
+		thought = "API fallback - engaging with default strategy",
+		use_item = "none",
+		aggression = 7,
+		preferred_range = "close",
+	}
+end
+
+-- ═══════════════════════════════════════════════════════
+-- AI DECISION EXECUTOR
+-- ═══════════════════════════════════════════════════════
+local function ExecuteAIDecision(decision)
+	local action = decision.action or "engage"
+	local dodgeStyle = decision.dodge_style
+	local taunt = decision.taunt
+	local thought = decision.thought or "Processing..."
+	local useItem = decision.use_item or "none"
+	local aggression = decision.aggression or 5
+	local prefRange = decision.preferred_range or "close"
+
+	AIState.combatMode = action
+	SetThought("🧠 " .. thought)
+
+	-- Item usage
+	if useItem and useItem ~= "none" then
+		for _, item in ipairs(AIState.inventory) do
+			if string.find(string.lower(item.name), string.lower(useItem)) then
+				local hum = GetHumanoid()
+				if hum and item.location == "backpack" then
+					hum:EquipTool(item.tool)
+					task.wait(0.15)
+					item.tool:Activate()
+					task.wait(0.3)
+					EquipBestWeapon()
+				elseif item.location == "equipped" then
+					item.tool:Activate()
+				end
+				break
+			end
+		end
+	end
+
+	-- Send taunt via chat
+	if taunt and #taunt > 0 then
+		task.defer(function()
+			SendChat(taunt)
+		end)
+	end
+
+	local root = GetRootPart()
+	local hum = GetHumanoid()
+	if not root or not hum then return end
+
+	-- Execute action
+	if action == "engage" or action == "chase" or action == "aggressive_push" then
+		hum.WalkSpeed = CONFIG.SPRINT_SPEED * math.clamp(aggression / 8, 0.8, 1.5)
+		if AIState.currentTarget then
+			AttackTarget(AIState.currentTarget)
+		end
+
+	elseif action == "retreat" then
+		hum.WalkSpeed = CONFIG.SPRINT_SPEED
+		if AIState.currentTarget and AIState.currentTarget.rootPart then
+			local awayDir = (root.Position - AIState.currentTarget.rootPart.Position).Unit
+			MoveTo(root.Position + awayDir * 35)
+		end
+		if AIState.health / AIState.maxHealth < 0.35 then
+			UseHealingItem()
+		end
+
+	elseif action == "dodge" then
+		local style = dodgeStyle or DODGE_STYLES[math.random(#DODGE_STYLES)]
+		if AIState.currentTarget then
+			ExecuteDodgeStyle(style, AIState.currentTarget)
+		else
+			ExecuteDodgeStyle(style, nil)
+		end
+
+	elseif action == "roll" then
+		local rollDir = nil
+		if AIState.currentTarget and AIState.currentTarget.rootPart then
+			local toEnemy = (AIState.currentTarget.rootPart.Position - root.Position).Unit
+			rollDir = Vector3.new(-toEnemy.Z, 0, toEnemy.X)
+		end
+		PerformRoll(rollDir)
+
+	elseif action == "heal" then
+		UseHealingItem()
+
+	elseif action == "equip_weapon" then
+		EquipBestWeapon()
+
+	elseif action == "swap_to_ranged" then
+		EquipBestWeapon("ranged")
+
+	elseif action == "swap_to_melee" then
+		EquipBestWeapon("melee")
+
+	elseif action == "use_utility" then
+		UseUtilityItem()
+
+	elseif action == "backstep_punish" then
+		if AIState.currentTarget then
+			local toEnemy = (AIState.currentTarget.rootPart.Position - root.Position).Unit
+			ExecuteDodgeStyle("backstep", AIState.currentTarget)
+			task.delay(0.35, function()
+				if AIState.currentTarget then
+					AttackTarget(AIState.currentTarget)
+				end
+			end)
+		end
+
+	elseif action == "gun_kite" then
+		hum.WalkSpeed = CONFIG.SPRINT_SPEED
+		if AIState.currentTarget and AIState.currentTarget.rootPart then
+			local awayDir = (root.Position - AIState.currentTarget.rootPart.Position).Unit
+			local strafeComponent = root.CFrame.RightVector * (math.random() > 0.5 and 1 or -1) * 0.5
+			MoveTo(root.Position + (awayDir + strafeComponent).Unit * 20)
+			AimAtTarget(AIState.currentTarget)
+			FireGun(AIState.currentTarget)
+		end
+
+	elseif action == "strafe_left" or action == "strafe_right" then
+		if AIState.currentTarget and AIState.currentTarget.rootPart then
+			local toEnemy = (AIState.currentTarget.rootPart.Position - root.Position).Unit
+			local dir
+			if action == "strafe_left" then
+				dir = Vector3.new(toEnemy.Z, 0, -toEnemy.X)
+			else
+				dir = Vector3.new(-toEnemy.Z, 0, toEnemy.X)
+			end
+			MoveTo(root.Position + dir * 12)
+			if AIState.currentTarget.distance <= CONFIG.MELEE_RANGE + 5 then
+				AttackTarget(AIState.currentTarget)
+			elseif string.find(AIState.weaponType or "", "gun") then
+				AimAtTarget(AIState.currentTarget)
+				FireGun(AIState.currentTarget)
+			end
+		end
+
+	elseif action == "circle" then
+		if AIState.currentTarget and AIState.currentTarget.rootPart then
+			local toEnemy = (AIState.currentTarget.rootPart.Position - root.Position).Unit
+			local perpDir = Vector3.new(-toEnemy.Z, 0, toEnemy.X) * (math.random() > 0.5 and 1 or -1)
+			local circlePos = AIState.currentTarget.rootPart.Position + perpDir * (CONFIG.MELEE_RANGE + 2)
+			MoveTo(circlePos)
+			if AIState.currentTarget.distance <= CONFIG.MELEE_RANGE + 4 then
+				AttackTarget(AIState.currentTarget)
+			end
+		end
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- AUTO DODGE HEARTBEAT
+-- ═══════════════════════════════════════════════════════
+local function AutoDodgeSystem()
+	if not CONFIG.AUTO_DODGE_ENABLED or not AIState.enabled then return end
+
+	local attackIncoming, attacker, attackType = DetectIncomingAttacks()
+	if attackIncoming and attacker then
+		SmartDodge(attacker, attackType)
+
+		if CONFIG.TAUNT_ON_DODGE and math.random() > 0.6 then
+			task.defer(function()
+				SendChat(GetTaunt("dodge", attacker.player.Name))
+			end)
+		end
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- TARGET SELECTION
+-- ═══════════════════════════════════════════════════════
+local function SelectTarget()
+	local enemies = GetNearbyEnemies()
+	if #enemies == 0 then
+		AIState.currentTarget = nil
+		return nil
+	end
+	AIState.currentTarget = enemies[1]
+	return enemies[1]
+end
+
+-- ═══════════════════════════════════════════════════════
+-- KILL TRACKING
+-- ═══════════════════════════════════════════════════════
+local trackedEnemyHealth = {}
+
+local function CheckForKills()
+	local enemies = GetNearbyEnemies()
+	local currentEnemyNames = {}
+
+	for _, enemy in ipairs(enemies) do
+		currentEnemyNames[enemy.player.Name] = enemy.health
+	end
+
+	-- Check all players for deaths
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and not IsTeammate(player) then
+			local char = player.Character
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+			if trackedEnemyHealth[player.Name] and trackedEnemyHealth[player.Name] > 0 then
+				if not hum or hum.Health <= 0 then
+					-- They died! Check if they were our target or nearby
+					local profile = GetPlayerProfile(player.Name)
+					local wasTarget = AIState.currentTarget and AIState.currentTarget.player == player
+					local wasClose = trackedEnemyHealth[player.Name .. "_dist"] and trackedEnemyHealth[player.Name .. "_dist"] < CONFIG.ENGAGE_RADIUS
+
+					if wasTarget or wasClose then
+						AIState.killCount = AIState.killCount + 1
+						profile.timesKilled = profile.timesKilled + 1
+
+						if CONFIG.TAUNT_ON_KILL then
+							task.defer(function()
+								SendChat(GetTaunt("kill", player.Name))
+							end)
+						end
+
+						SetThought("💀 ELIMINATED " .. player.Name .. "! Total: " .. AIState.killCount)
+
+						if AIState.currentTarget and AIState.currentTarget.player == player then
+							AIState.currentTarget = nil
+						end
+					end
+				end
+			end
+
+			if hum then
+				trackedEnemyHealth[player.Name] = hum.Health
+				local eRoot = char:FindFirstChild("HumanoidRootPart")
+				local myRoot = GetRootPart()
+				if eRoot and myRoot then
+					trackedEnemyHealth[player.Name .. "_dist"] = (myRoot.Position - eRoot.Position).Magnitude
+				end
+			else
+				trackedEnemyHealth[player.Name] = 0
+			end
+		end
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- MAIN COMBAT LOOP
+-- ═══════════════════════════════════════════════════════
+local previousHealth = 100
+
+local function MainCombatLoop()
+	while AIState.enabled do
+		local now = tick()
+
+		GetHealth()
+
+		-- Damage reaction
+		if AIState.health < previousHealth - 3 then
+			task.defer(function()
+				if AIState.currentTarget then
+					SmartDodge(AIState.currentTarget, "damage_reaction")
+				else
+					ExecuteDodgeStyle(DODGE_STYLES[math.random(#DODGE_STYLES)], nil)
+				end
+			end)
+		end
+		previousHealth = AIState.health
+
+		ScanInventory()
+		if not AIState.equippedTool then
+			EquipBestWeapon()
+		end
+
+		SelectTarget()
+		CheckForKills()
+
+		-- Auto heal
+		if AIState.health / AIState.maxHealth < 0.2 then
+			UseHealingItem()
+		end
+
+		-- Mistral decision
+		if now - AIState.lastDecisionTime >= CONFIG.DECISION_INTERVAL then
+			AIState.lastDecisionTime = now
+			task.defer(function()
+				local context = BuildCombatContext()
+				local decision = QueryMistral(context)
+				if decision then
+					ExecuteAIDecision(decision)
+				end
+			end)
+		end
+
+		-- Continuous combat between decisions
+		if AIState.currentTarget and AIState.currentTarget.rootPart then
+			local root = GetRootPart()
+			local hum = GetHumanoid()
+			if root and hum then
+				local dist = AIState.currentTarget.distance
+
+				if AIState.combatMode == "engage" or AIState.combatMode == "chase" or AIState.combatMode == "aggressive_push" then
+					AttackTarget(AIState.currentTarget)
+				elseif AIState.combatMode == "gun_kite" then
+					if string.find(AIState.weaponType or "", "gun") then
+						AimAtTarget(AIState.currentTarget)
+						FireGun(AIState.currentTarget)
+					end
+				end
+
+				-- Auto-face target
+				if dist < CONFIG.ENGAGE_RADIUS and not AIState.isDodging and not AIState.isRolling then
+					local lookAt = CFrame.lookAt(root.Position, Vector3.new(
+						AIState.currentTarget.rootPart.Position.X,
+						root.Position.Y,
+						AIState.currentTarget.rootPart.Position.Z
+					))
+					root.CFrame = root.CFrame:Lerp(lookAt, 0.35)
+				end
+			end
+		end
+
+		-- Pattern taunt
+		if AIState.currentTarget and CONFIG.TAUNT_ON_PATTERN_READ then
+			local profile = GetPlayerProfile(AIState.currentTarget.player.Name)
+			if profile.totalEncounters > 0 and profile.totalEncounters % 8 == 0 and now - AIState.lastTauntTime > CONFIG.TAUNT_INTERVAL then
+				task.defer(function()
+					SendChat(GetTaunt("pattern_read", AIState.currentTarget.player.Name))
+				end)
+			end
+		end
+
+		-- ═══ UPDATE UI ═══
+		local statusColor = AIState.enabled and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(100, 100, 100)
+		SetStatusDot(statusColor)
+		SetUIText("StatusCard", "StatusText", string.upper(AIState.combatMode) .. " | " .. (AIState.weaponType or "none"))
+		SetUIText("StatusCard", "ModeText", string.format("Weapon: %s | Type: %s | Aggro: %s",
+			AIState.equippedTool and AIState.equippedTool.Name or "None",
+			AIState.weaponType or "none",
+			AIState.combatMode
+		))
+
+		local teamInfo = GetTeamInfo()
+		SetUIText("StatusCard", "TeamText", string.format("Team: %s | Allies: %d | Enemies: %d",
+			teamInfo.myTeam, #teamInfo.teammates, #teamInfo.enemies
+		))
+
+		UpdateHealthBar()
+
+		if AIState.currentTarget then
+			local e = AIState.currentTarget
+			local profile = GetPlayerProfile(e.player.Name)
+			local pred, conf = PredictNextAction(e.player.Name)
+			SetUIText("TargetCard", "TargetName", "🎯 " .. e.player.Name)
+			SetUIText("TargetCard", "TargetDetails", string.format(
+				"%.1fm | HP: %.0f/%.0f | Move: %s | Style: %s\nPredicted: %s (%.0f%%) | Threat: %.0f/10",
+				e.distance, e.health, e.maxHealth, e.moveType,
+				profile.movementStyle, pred, conf * 100, profile.threatRating
+			))
+		else
+			SetUIText("TargetCard", "TargetName", "Scanning for targets...")
+			SetUIText("TargetCard", "TargetDetails", "No enemies in range")
+		end
+
+		SetUIText("StatsCard", "StatsGrid", string.format(
+			"K: %d  D: %d  KD: %.2f  Dodges: %d\nCombo: %d  Style: %s  Patterns: %d",
+			AIState.killCount, AIState.deathCount,
+			AIState.deathCount > 0 and AIState.killCount / AIState.deathCount or AIState.killCount,
+			AIState.dodgesPerformed, AIState.comboCount,
+			AIState.lastDodgeStyle ~= "" and AIState.lastDodgeStyle or "adaptive",
+			#(AIState.currentTarget and GetPlayerProfile(AIState.currentTarget.player.Name).attackPatterns or {})
+		))
+
+		-- Pattern intel
+		if AIState.currentTarget then
+			local profile = GetPlayerProfile(AIState.currentTarget.player.Name)
+			local counter = GetCounterStrategy(AIState.currentTarget.player.Name)
+			local tips = table.concat(counter.tips, " | ")
+			SetUIText("PatternCard", "PatternText", string.format(
+				"%s: %s\nEncounters: %d | Rush: %d Strafe: %d Retreat: %d Jump: %d\nCounter: %s | %s",
+				profile.name, profile.movementStyle,
+				profile.totalEncounters, profile.rushFrequency, profile.strafeFrequency,
+				profile.retreatFrequency, profile.jumpAttackFrequency,
+				counter.dodgeStyle, tips ~= "" and tips or "Gathering data..."
+			))
+		else
+			SetUIText("PatternCard", "PatternText", "No active target for pattern analysis")
+		end
+
+		-- Inventory display
+		local invStr = ""
+		for i, item in ipairs(AIState.inventory) do
+			if i <= 5 then
+				local marker = item.location == "equipped" and "►" or "•"
+				invStr = invStr .. marker .. " " .. item.name .. " [" .. item.weaponType .. "] "
+			end
+		end
+		SetUIText("InvCard", "InvText", invStr ~= "" and invStr or "Empty inventory")
+
+		task.wait(0.1)
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- HEARTBEAT CONNECTIONS
+-- ═══════════════════════════════════════════════════════
+RunService.Heartbeat:Connect(function()
+	if AIState.enabled then
+		AutoDodgeSystem()
+
+		if AIState.manualRollRequested then
+			AIState.manualRollRequested = false
+			local root = GetRootPart()
+			if root then
+				local rollDir = root.CFrame.LookVector
+				if AIState.currentTarget and AIState.currentTarget.rootPart then
+					local toEnemy = (AIState.currentTarget.rootPart.Position - root.Position).Unit
+					rollDir = Vector3.new(-toEnemy.Z, 0, toEnemy.X)
+				end
+				PerformRoll(rollDir)
+			end
+		end
+
+		-- Continuous gun fire when in gun combat
+		if AIState.currentTarget and string.find(AIState.weaponType or "", "gun") then
+			if AIState.combatMode == "engage" or AIState.combatMode == "gun_kite" or AIState.combatMode == "chase" then
+				AimAtTarget(AIState.currentTarget)
+				FireGun(AIState.currentTarget)
+			end
+		end
+	end
+end)
+
+-- ═══════════════════════════════════════════════════════
+-- INPUT HANDLING
+-- ═══════════════════════════════════════════════════════
+local function ToggleAI()
+	AIState.enabled = not AIState.enabled
+	local ctrlCard = Content and Content:FindFirstChild("CtrlCard")
+	local btn = ctrlCard and ctrlCard:FindFirstChild("ToggleBtn")
+
+	if AIState.enabled then
+		if btn then
+			btn.Text = "🔴 DEACTIVATE AI  [T]"
+			Tween(btn, {BackgroundColor3 = Color3.fromRGB(200, 40, 50)}, 0.3)
+			local stroke = btn:FindFirstChildOfClass("UIStroke")
+			if stroke then Tween(stroke, {Color = Color3.fromRGB(255, 60, 70)}, 0.3) end
+		end
+		SetStatusDot(Color3.fromRGB(0, 255, 100))
+		SetThought("⚡ COMBAT DANCE AI V2 ACTIVATED!\nPattern learning engaged. Let's cook. 🔥")
+		SetUIText("StatusCard", "StatusText", "ONLINE - Scanning...")
+		EquipBestWeapon()
+		task.defer(MainCombatLoop)
+		task.defer(function()
+			SendChat("Combat Dance AI activated. Who wants to catch this L? 😈")
+		end)
+	else
+		if btn then
+			btn.Text = "⚡ ACTIVATE AI  [T]"
+			Tween(btn, {BackgroundColor3 = Color3.fromRGB(40, 180, 80)}, 0.3)
+			local stroke = btn:FindFirstChildOfClass("UIStroke")
+			if stroke then Tween(stroke, {Color = Color3.fromRGB(60, 220, 100)}, 0.3) end
+		end
+		SetStatusDot(Color3.fromRGB(100, 100, 100))
+		SetThought("AI deactivated. Awaiting orders...")
+		SetUIText("StatusCard", "StatusText", "OFFLINE - Press T to activate")
+		AIState.combatMode = "idle"
+		local hum = GetHumanoid()
+		if hum then hum.WalkSpeed = CONFIG.NORMAL_SPEED end
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+
+	if input.KeyCode == Enum.KeyCode.T then
+		ToggleAI()
+
+	elseif input.KeyCode == Enum.KeyCode.Q then
+		if AIState.enabled then
+			AIState.manualRollRequested = true
+		else
+			local root = GetRootPart()
+			if root then PerformRoll(root.CFrame.LookVector) end
+		end
+
+	elseif input.KeyCode == Enum.KeyCode.E then
+		local enemies = GetNearbyEnemies()
+		if #enemies > 0 then
+			SmartDodge(enemies[1], "manual")
+		else
+			local root = GetRootPart()
+			if root then
+				ExecuteDodgeStyle(DODGE_STYLES[math.random(#DODGE_STYLES)], nil)
+			end
+		end
+
+	elseif input.KeyCode == Enum.KeyCode.R then
+		AIState.dodgeStyleIndex = (AIState.dodgeStyleIndex % #DODGE_STYLES) + 1
+		local style = DODGE_STYLES[AIState.dodgeStyleIndex]
+		SetUIText("DodgeCard", "DodgeStyleText", "Selected: " .. string.upper(style:gsub("_", " ")))
+		SetThought("Dodge style changed to: " .. style)
+	end
+end)
+
+-- ═══════════════════════════════════════════════════════
+-- UI BUTTON CONNECTIONS
+-- ═══════════════════════════════════════════════════════
+task.defer(function()
+	task.wait(0.5)
+	local ctrlCard = Content and Content:FindFirstChild("CtrlCard")
+	if ctrlCard then
+		local toggleBtn = ctrlCard:FindFirstChild("ToggleBtn")
+		local rollBtn = ctrlCard:FindFirstChild("RollBtn")
+		local dodgeBtn = ctrlCard:FindFirstChild("DodgeBtn")
+
+		if toggleBtn then
+			toggleBtn.MouseButton1Click:Connect(ToggleAI)
+		end
+		if rollBtn then
+			rollBtn.MouseButton1Click:Connect(function()
+				local root = GetRootPart()
+				if root then PerformRoll(root.CFrame.LookVector) end
+			end)
+		end
+		if dodgeBtn then
+			dodgeBtn.MouseButton1Click:Connect(function()
+				local enemies = GetNearbyEnemies()
+				if #enemies > 0 then
+					SmartDodge(enemies[1], "manual")
+				else
+					ExecuteDodgeStyle(DODGE_STYLES[math.random(#DODGE_STYLES)], nil)
+				end
+			end)
+		end
+	end
+end)
+
+-- ═══════════════════════════════════════════════════════
+-- RESPAWN & DEATH HANDLER
+-- ═══════════════════════════════════════════════════════
+LocalPlayer.CharacterAdded:Connect(function(char)
+	task.wait(1)
+
+	local hum = char:WaitForChild("Humanoid", 10)
+	if hum then
+		AIState.health = hum.Health
+		AIState.maxHealth = hum.MaxHealth
+		previousHealth = hum.Health
+
+		-- Death detection
+		hum.Died:Connect(function()
+			AIState.deathCount = AIState.deathCount + 1
+			AIState.comboCount = 0
+			AIState.currentTarget = nil
+
+			-- Figure out who killed us
+			local enemies = GetNearbyEnemies()
+			if #enemies > 0 then
+				local killer = enemies[1]
+				local profile = GetPlayerProfile(killer.player.Name)
+				profile.timesKilledBy = profile.timesKilledBy + 1
+				SetThought("💀 Died to " .. killer.player.Name .. ". Analyzing their patterns...")
+			end
+		end)
+	end
+
+	AIState.comboCount = 0
+	AIState.equippedTool = nil
+	AIState.isDodging = false
+	AIState.isRolling = false
+
+	if AIState.enabled then
+		task.wait(0.5)
+		EquipBestWeapon()
+		SetThought("Respawned! Pattern data retained. Time for revenge! 💪")
+		task.defer(function()
+			SendChat(GetTaunt("respawn", nil))
+		end)
+	end
+end)
+
+-- ═══════════════════════════════════════════════════════
+-- INITIALIZATION
+-- ═══════════════════════════════════════════════════════
+SetThought("Combat Dance AI V2 loaded!\nPress T or click ACTIVATE to start.\nQ=Roll  E=Dodge  R=Cycle Style")
+
+print("═══════════════════════════════════════════════")
+print("  ⚔️  COMBAT DANCE AI V2 - ULTIMATE PVP MASTER")
+print("  ─────────────────────────────────────────────")
+print("  Controls:")
+print("    T = Toggle AI On/Off")
+print("    Q = Manual Roll")
+print("    E = Smart Dodge")
+print("    R = Cycle Dodge Styles (12 styles)")
+print("  ─────────────────────────────────────────────")
+print("  Features:")
+print("    • Mistral AI tactical decisions")
+print("    • Player pattern learning & prediction")
+print("    • 12 unique dodge styles")
+print("    • Gun + Melee auto-detection")
+print("    • Team detection (won't attack allies)")
+print("    • Adaptive counter-strategies")
+print("    • Auto trash talk via chat")
+print("═══════════════════════════════════════════════")
