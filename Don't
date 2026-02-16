@@ -1,0 +1,2969 @@
+--[[
+    ╔══════════════════════════════════════════════════════════════════════╗
+    ║             ULTIMATE FE VR REANIMATION SCRIPT v5.0                  ║
+    ║                                                                      ║
+    ║  NEW IN v5.0:                                                        ║
+    ║  • 12+ Unique Tools/Items in inventory                              ║
+    ║  • Tackle Tool - ragdoll tackle players                             ║
+    ║  • Dance Tool - plays music with custom ID                          ║
+    ║  • Sit Tool - sit anywhere                                          ║
+    ║  • Sword Tool - overpowered melee                                   ║
+    ║  • Yeet Tool - launch players to the sky                            ║
+    ║  • Shield Tool - protective barrier                                 ║
+    ║  • Grapple Tool - pull yourself to surfaces                         ║
+    ║  • Stomp Tool - ground pound shockwave                              ║
+    ║  • Chaos Mode - transforms ALL tools into OP versions              ║
+    ║  • Awakening Animation (Normal + Chaos)                             ║
+    ║  • Anime Eye Sparkle/Shine/Smite effects                           ║
+    ║  • Custom Music ID input                                            ║
+    ║  • God-tier abilities in Chaos Mode                                 ║
+    ╚══════════════════════════════════════════════════════════════════════╝
+]]
+
+-- ═══════════════════════════════════════
+-- SERVICES
+-- ═══════════════════════════════════════
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local VRService = game:GetService("VRService")
+local CollectionService = game:GetService("CollectionService")
+local StarterGui = game:GetService("StarterGui")
+local Lighting = game:GetService("Lighting")
+local SoundService = game:GetService("SoundService")
+local Debris = game:GetService("Debris")
+
+-- ═══════════════════════════════════════
+-- CORE VARIABLES
+-- ═══════════════════════════════════════
+local player1 = Players.LocalPlayer
+local character1 = player1.Character or player1.CharacterAdded:Wait()
+local camera = workspace.CurrentCamera
+local mouse = player1:GetMouse()
+
+-- ═══════════════════════════════════════
+-- ALL STATES
+-- ═══════════════════════════════════════
+local States = {
+	Flying = false, Noclip = false, Invisible = false, ESP = false,
+	Frozen = false, Orbiting = false, AntiVoid = true, Trail = false,
+	Fling = false, InfiniteJump = false, SpeedHack = false,
+	Spin = false, HeadSpin = false, Particle = false,
+	LeftLegRaise = false, RightLegRaise = false,
+	LeftArmRaise = false, RightArmRaise = false,
+	Climbing = false, ProceduralAnim = true,
+	-- Horror
+	GoCrazy = false, SpiderWalk = false, HeadTwist = false,
+	BodyContortion = false, GlitchBody = false, CreepyCrawl = false,
+	BrokenNeck = false, FloatingLimbs = false, DemonWalk = false,
+	-- NEW
+	ChaosMode = false, Awakened = false, EyeShine = false,
+	LeftPoint = false, RightPoint = false,
+}
+
+local Settings = {
+	FlySpeed = 50, WalkSpeed = 16, SprintSpeed = 32, JumpPower = 50,
+	FlingPower = 500, OrbitRadius = 10, OrbitSpeed = 2, SpinSpeed = 5,
+	TrailColor1 = ColorSequence.new(Color3.fromRGB(0, 170, 255), Color3.fromRGB(170, 0, 255)),
+	TrailLifetime = 0.5,
+	ParticleColor = ColorSequence.new(Color3.fromRGB(0, 200, 255)),
+	SelectedPlayer = nil,
+	LegRaiseHeight = 1.5, ClimbSpeed = 8, ProceduralSpeed = 1,
+	CrazyIntensity = 1, GlitchFrequency = 0.1, ContortionAngle = 180,
+	-- NEW
+	MusicId = "9038281421",
+	ChaosMultiplier = 5,
+	EquippedTool = nil,
+	AwakenDuration = 4,
+}
+
+-- ═══════════════════════════════════════
+-- TOOL SYSTEM
+-- ═══════════════════════════════════════
+local ToolSystem = {
+	tools = {},
+	equipped = nil,
+	chaosUpgraded = false,
+}
+
+local ToolDefinitions = {
+	{
+		Name = "⚔ Tackle",
+		Icon = "⚔",
+		Description = "Ragdoll tackle nearest player",
+		Color = Color3.fromRGB(255, 80, 30),
+		ChaosName = "💀 ANNIHILATE",
+		ChaosDesc = "Delete everything in your path",
+		Keybind = Enum.KeyCode.One,
+	},
+	{
+		Name = "💃 Dance",
+		Icon = "💃",
+		Description = "Dance with music",
+		Color = Color3.fromRGB(255, 0, 200),
+		ChaosName = "🌀 REALITY WARP",
+		ChaosDesc = "Reality bends around you with music",
+		Keybind = Enum.KeyCode.Two,
+	},
+	{
+		Name = "🪑 Sit",
+		Icon = "🪑",
+		Description = "Sit anywhere",
+		Color = Color3.fromRGB(139, 90, 43),
+		ChaosName = "👑 THRONE",
+		ChaosDesc = "Create a floating throne of power",
+		Keybind = Enum.KeyCode.Three,
+	},
+	{
+		Name = "🗡 Sword",
+		Icon = "🗡",
+		Description = "Melee attack",
+		Color = Color3.fromRGB(200, 200, 200),
+		ChaosName = "⚡ GODSLAYER",
+		ChaosDesc = "One slash destroys all",
+		Keybind = Enum.KeyCode.Four,
+	},
+	{
+		Name = "🚀 Yeet",
+		Icon = "🚀",
+		Description = "Launch player skyward",
+		Color = Color3.fromRGB(0, 200, 255),
+		ChaosName = "☄ METEOR",
+		ChaosDesc = "Become a meteor and crash down",
+		Keybind = Enum.KeyCode.Five,
+	},
+	{
+		Name = "🛡 Shield",
+		Icon = "🛡",
+		Description = "Protective barrier",
+		Color = Color3.fromRGB(0, 150, 255),
+		ChaosName = "🌐 DOMAIN",
+		ChaosDesc = "Domain expansion - trap all nearby",
+		Keybind = Enum.KeyCode.Six,
+	},
+	{
+		Name = "🪝 Grapple",
+		Icon = "🪝",
+		Description = "Pull to surfaces",
+		Color = Color3.fromRGB(100, 100, 100),
+		ChaosName = "⛓ CHAINS",
+		ChaosDesc = "Bind all players in chains",
+		Keybind = Enum.KeyCode.Seven,
+	},
+	{
+		Name = "💥 Stomp",
+		Icon = "💥",
+		Description = "Ground pound shockwave",
+		Color = Color3.fromRGB(255, 150, 0),
+		ChaosName = "🌋 CATACLYSM",
+		ChaosDesc = "Earth-shattering destruction",
+		Keybind = Enum.KeyCode.Eight,
+	},
+	{
+		Name = "🌀 Spin Attack",
+		Icon = "🌀",
+		Description = "Spinning whirlwind attack",
+		Color = Color3.fromRGB(0, 255, 150),
+		ChaosName = "🌪 TYPHOON",
+		ChaosDesc = "Devastating tornado of destruction",
+		Keybind = Enum.KeyCode.Nine,
+	},
+	{
+		Name = "👊 Uppercut",
+		Icon = "👊",
+		Description = "Powerful upward punch",
+		Color = Color3.fromRGB(255, 200, 0),
+		ChaosName = "☀ SUPERNOVA",
+		ChaosDesc = "Explosive heavenly strike",
+		Keybind = Enum.KeyCode.Zero,
+	},
+	{
+		Name = "🎭 Emote",
+		Icon = "🎭",
+		Description = "Play emote animations",
+		Color = Color3.fromRGB(180, 0, 255),
+		ChaosName = "👁 PRESENCE",
+		ChaosDesc = "Overwhelming aura of dread",
+		Keybind = Enum.KeyCode.Minus,
+	},
+	{
+		Name = "💫 Dash",
+		Icon = "💫",
+		Description = "Quick directional dash",
+		Color = Color3.fromRGB(100, 200, 255),
+		ChaosName = "⚡ TELEPORT",
+		ChaosDesc = "Instant teleportation strike",
+		Keybind = Enum.KeyCode.Equals,
+	},
+}
+
+-- ═══════════════════════════════════════
+-- PROCEDURAL ANIMATION STATE
+-- ═══════════════════════════════════════
+local ProceduralState = {
+	walkCycle = 0, armSwing = 0, breathCycle = 0, headBob = 0,
+	idleTimer = 0, lastMoveDir = Vector3.new(), isMoving = false,
+	isGrounded = true, climbProgress = 0, lastPosition = Vector3.new(),
+	velocity = Vector3.new(),
+}
+
+local HorrorState = {
+	crazyTimer = 0, glitchTimer = 0, contortionPhase = 0,
+	spiderPhase = 0, headTwistAngle = 0, floatPhase = 0,
+}
+
+-- ═══════════════════════════════════════
+-- ANIME EYE SHINE SYSTEM
+-- ═══════════════════════════════════════
+local EyeShineSystem = {}
+
+function EyeShineSystem.Create(parent, chaosMode)
+	EyeShineSystem.Destroy()
+
+	local head = parent:FindFirstChild("Head")
+	if not head then return end
+
+	-- Right eye
+	local rightEye = Instance.new("Part")
+	rightEye.Name = "EyeShineR"
+	rightEye.Size = Vector3.new(0.15, 0.15, 0.05)
+	rightEye.Anchored = false
+	rightEye.CanCollide = false
+	rightEye.Material = Enum.Material.Neon
+	rightEye.Color = chaosMode and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 200, 255)
+	rightEye.Transparency = 0
+	rightEye.Parent = parent
+
+	local rWeld = Instance.new("Weld", rightEye)
+	rWeld.Part0 = head
+	rWeld.Part1 = rightEye
+	rWeld.C0 = CFrame.new(0.23, 0.1, -0.55)
+
+	-- Left eye
+	local leftEye = Instance.new("Part")
+	leftEye.Name = "EyeShineL"
+	leftEye.Size = Vector3.new(0.15, 0.15, 0.05)
+	leftEye.Anchored = false
+	leftEye.CanCollide = false
+	leftEye.Material = Enum.Material.Neon
+	leftEye.Color = chaosMode and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 200, 255)
+	leftEye.Transparency = 0
+	leftEye.Parent = parent
+
+	local lWeld = Instance.new("Weld", leftEye)
+	lWeld.Part0 = head
+	lWeld.Part1 = leftEye
+	lWeld.C0 = CFrame.new(-0.23, 0.1, -0.55)
+
+	-- Eye glow particles
+	for _, eye in pairs({rightEye, leftEye}) do
+		local glow = Instance.new("ParticleEmitter", eye)
+		glow.Name = "EyeGlow"
+		glow.Color = chaosMode
+			and ColorSequence.new(Color3.fromRGB(255, 0, 0), Color3.fromRGB(255, 100, 0))
+			or ColorSequence.new(Color3.fromRGB(0, 150, 255), Color3.fromRGB(100, 200, 255))
+		glow.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.3),
+			NumberSequenceKeypoint.new(0.5, 0.5),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		glow.Lifetime = NumberRange.new(0.2, 0.5)
+		glow.Rate = chaosMode and 80 or 30
+		glow.Speed = NumberRange.new(0.5, 2)
+		glow.SpreadAngle = Vector2.new(30, 30)
+		glow.LightEmission = 1
+		glow.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+
+		local light = Instance.new("PointLight", eye)
+		light.Name = "EyeLight"
+		light.Color = chaosMode and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 200, 255)
+		light.Brightness = chaosMode and 5 or 2
+		light.Range = chaosMode and 12 or 6
+
+		-- Sparkle effect
+		local sparkle = Instance.new("ParticleEmitter", eye)
+		sparkle.Name = "EyeSparkle"
+		sparkle.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
+		sparkle.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(0.2, 0.4),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		sparkle.Lifetime = NumberRange.new(0.1, 0.3)
+		sparkle.Rate = chaosMode and 40 or 15
+		sparkle.Speed = NumberRange.new(1, 3)
+		sparkle.SpreadAngle = Vector2.new(45, 45)
+		sparkle.LightEmission = 1
+		sparkle.Transparency = NumberSequence.new(0)
+
+		if chaosMode then
+			-- Lightning streaks from eyes
+			local streak = Instance.new("ParticleEmitter", eye)
+			streak.Name = "EyeStreak"
+			streak.Color = ColorSequence.new(Color3.fromRGB(255, 50, 0), Color3.fromRGB(255, 200, 0))
+			streak.Size = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.1),
+				NumberSequenceKeypoint.new(0.5, 0.05),
+				NumberSequenceKeypoint.new(1, 0),
+			})
+			streak.Lifetime = NumberRange.new(0.3, 0.8)
+			streak.Rate = 25
+			streak.Speed = NumberRange.new(5, 15)
+			streak.SpreadAngle = Vector2.new(15, 60)
+			streak.LightEmission = 1
+			streak.Acceleration = Vector3.new(0, -5, 0)
+
+			-- Fire from eyes
+			local fire = Instance.new("ParticleEmitter", eye)
+			fire.Name = "EyeFire"
+			fire.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 50, 0)),
+				ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 150, 0)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 100)),
+			})
+			fire.Size = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.3),
+				NumberSequenceKeypoint.new(0.3, 0.5),
+				NumberSequenceKeypoint.new(1, 0),
+			})
+			fire.Lifetime = NumberRange.new(0.2, 0.5)
+			fire.Rate = 60
+			fire.Speed = NumberRange.new(2, 6)
+			fire.SpreadAngle = Vector2.new(20, 40)
+			fire.LightEmission = 1
+			fire.Acceleration = Vector3.new(0, 3, 0)
+		end
+	end
+
+	-- Animate eye brightness
+	spawn(function()
+		while rightEye and rightEye.Parent do
+			local brightness = 1 + math.sin(tick() * 3) * 0.5
+			for _, eye in pairs({rightEye, leftEye}) do
+				if eye and eye.Parent then
+					local l = eye:FindFirstChild("EyeLight")
+					if l then l.Brightness = (chaosMode and 5 or 2) * brightness end
+					eye.Transparency = math.max(0, math.sin(tick() * 5) * 0.15)
+				end
+			end
+			RunService.RenderStepped:Wait()
+		end
+	end)
+end
+
+function EyeShineSystem.Destroy()
+	for _, name in pairs({"EyeShineR", "EyeShineL"}) do
+		local p = reanimation and reanimation:FindFirstChild(name)
+		if p then p:Destroy() end
+	end
+end
+
+-- ═══════════════════════════════════════
+-- AWAKENING ANIMATION SYSTEM
+-- ═══════════════════════════════════════
+local AwakenSystem = {}
+
+function AwakenSystem.PlayNormal(reanimModel, callback)
+	if States.Awakened then return end
+	States.Awakened = true
+
+	-- Phase 1: Crouch down
+	local origWalkSpeed = 8
+	pcall(function()
+		origWalkSpeed = workspace.VirtualBody.Humanoid.WalkSpeed
+		workspace.VirtualBody.Humanoid.WalkSpeed = 0
+	end)
+
+	-- Create aura
+	local torso = reanimModel:FindFirstChild("Torso")
+	if not torso then States.Awakened = false; return end
+
+	local aura = Instance.new("ParticleEmitter", torso)
+	aura.Name = "AwakenAura"
+	aura.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 100, 255)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(100, 150, 255)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 220, 255)),
+	})
+	aura.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.3, 3),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	aura.Lifetime = NumberRange.new(0.5, 1.5)
+	aura.Rate = 0
+	aura.Speed = NumberRange.new(3, 8)
+	aura.SpreadAngle = Vector2.new(180, 180)
+	aura.LightEmission = 1
+	aura.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.3),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+
+	-- Ground crack effect
+	local crackPart = Instance.new("Part")
+	crackPart.Name = "AwakenCrack"
+	crackPart.Size = Vector3.new(0.1, 0.1, 0.1)
+	crackPart.Anchored = true
+	crackPart.CanCollide = false
+	crackPart.Transparency = 1
+	crackPart.Position = torso.Position - Vector3.new(0, 3, 0)
+	crackPart.Parent = workspace
+
+	local crackEmit = Instance.new("ParticleEmitter", crackPart)
+	crackEmit.Color = ColorSequence.new(Color3.fromRGB(0, 150, 255))
+	crackEmit.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.2, 1),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	crackEmit.Lifetime = NumberRange.new(0.3, 0.8)
+	crackEmit.Rate = 0
+	crackEmit.Speed = NumberRange.new(5, 15)
+	crackEmit.SpreadAngle = Vector2.new(180, 10)
+	crackEmit.LightEmission = 1
+	crackEmit.Acceleration = Vector3.new(0, -10, 0)
+
+	-- Light
+	local awakenLight = Instance.new("PointLight", torso)
+	awakenLight.Name = "AwakenLight"
+	awakenLight.Color = Color3.fromRGB(0, 150, 255)
+	awakenLight.Brightness = 0
+	awakenLight.Range = 0
+
+	-- Sound
+	local awakenSound = Instance.new("Sound", torso)
+	awakenSound.Name = "AwakenSound"
+	awakenSound.SoundId = "rbxassetid://9125402735"
+	awakenSound.Volume = 2
+	awakenSound.PlayOnRemove = false
+	pcall(function() awakenSound:Play() end)
+
+	-- Phase 1: Power gathering (2 seconds)
+	aura.Rate = 20
+	TweenService:Create(awakenLight, TweenInfo.new(2, Enum.EasingStyle.Quad), {
+		Brightness = 3, Range = 30
+	}):Play()
+
+	-- Camera shake
+	spawn(function()
+		local startTime = tick()
+		while tick() - startTime < Settings.AwakenDuration and States.Awakened do
+			local intensity = (tick() - startTime) / Settings.AwakenDuration * 0.02
+			camera.CFrame = camera.CFrame * CFrame.new(
+				(math.random() - 0.5) * intensity,
+				(math.random() - 0.5) * intensity,
+				0
+			)
+			RunService.RenderStepped:Wait()
+		end
+	end)
+
+	wait(1.5)
+
+	-- Phase 2: Burst
+	aura.Rate = 200
+	crackEmit.Rate = 100
+
+	TweenService:Create(awakenLight, TweenInfo.new(0.3, Enum.EasingStyle.Expo), {
+		Brightness = 10, Range = 60
+	}):Play()
+
+	-- Screen flash
+	local flash = Instance.new("ScreenGui", player1.PlayerGui)
+	flash.Name = "AwakenFlash"
+	local flashFrame = Instance.new("Frame", flash)
+	flashFrame.Size = UDim2.new(1, 0, 1, 0)
+	flashFrame.BackgroundColor3 = Color3.fromRGB(200, 220, 255)
+	flashFrame.BackgroundTransparency = 0
+	flashFrame.BorderSizePixel = 0
+	TweenService:Create(flashFrame, TweenInfo.new(1.5, Enum.EasingStyle.Quad), {
+		BackgroundTransparency = 1
+	}):Play()
+	Debris:AddItem(flash, 2)
+
+	-- Enable eye shine
+	EyeShineSystem.Create(reanimModel, false)
+
+	wait(1)
+
+	-- Phase 3: Calm
+	TweenService:Create(awakenLight, TweenInfo.new(1.5), {
+		Brightness = 1, Range = 15
+	}):Play()
+
+	aura.Rate = 15
+	crackEmit.Rate = 0
+
+	pcall(function()
+		workspace.VirtualBody.Humanoid.WalkSpeed = origWalkSpeed
+	end)
+
+	wait(1)
+	Debris:AddItem(crackPart, 2)
+
+	-- Keep subtle aura
+	aura.Rate = 8
+
+	if callback then callback() end
+end
+
+function AwakenSystem.PlayChaos(reanimModel, callback)
+	if States.Awakened then return end
+	States.Awakened = true
+
+	local origWalkSpeed = 8
+	pcall(function()
+		origWalkSpeed = workspace.VirtualBody.Humanoid.WalkSpeed
+		workspace.VirtualBody.Humanoid.WalkSpeed = 0
+	end)
+
+	local torso = reanimModel:FindFirstChild("Torso")
+	if not torso then States.Awakened = false; return end
+
+	-- Destroy any existing effects
+	for _, c in pairs(reanimModel:GetDescendants()) do
+		if c.Name:match("^Awaken") or c.Name:match("^Eye") then
+			pcall(function() c:Destroy() end)
+		end
+	end
+
+	-- CHAOS AURA - Red/black energy
+	local chaosAura = Instance.new("ParticleEmitter", torso)
+	chaosAura.Name = "AwakenChaosAura"
+	chaosAura.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+		ColorSequenceKeypoint.new(0.3, Color3.fromRGB(100, 0, 0)),
+		ColorSequenceKeypoint.new(0.6, Color3.fromRGB(255, 50, 0)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0)),
+	})
+	chaosAura.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.2, 2),
+		NumberSequenceKeypoint.new(0.8, 5),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	chaosAura.Lifetime = NumberRange.new(0.5, 2)
+	chaosAura.Rate = 0
+	chaosAura.Speed = NumberRange.new(5, 15)
+	chaosAura.SpreadAngle = Vector2.new(180, 180)
+	chaosAura.LightEmission = 0.8
+	chaosAura.Rotation = NumberRange.new(0, 360)
+	chaosAura.RotSpeed = NumberRange.new(-200, 200)
+
+	-- Dark pillar
+	local pillar = Instance.new("ParticleEmitter", torso)
+	pillar.Name = "AwakenPillar"
+	pillar.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 100, 0)),
+	})
+	pillar.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 3),
+		NumberSequenceKeypoint.new(0.5, 4),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	pillar.Lifetime = NumberRange.new(0.5, 1)
+	pillar.Rate = 0
+	pillar.Speed = NumberRange.new(20, 50)
+	pillar.SpreadAngle = Vector2.new(5, 5)
+	pillar.LightEmission = 1
+	pillar.EmissionDirection = Enum.NormalId.Top
+	pillar.Acceleration = Vector3.new(0, 20, 0)
+
+	-- Lightning bolts
+	local lightning = Instance.new("ParticleEmitter", torso)
+	lightning.Name = "AwakenLightning"
+	lightning.Color = ColorSequence.new(Color3.fromRGB(255, 50, 0), Color3.fromRGB(255, 200, 0))
+	lightning.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.1),
+		NumberSequenceKeypoint.new(0.3, 0.3),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	lightning.Lifetime = NumberRange.new(0.1, 0.3)
+	lightning.Rate = 0
+	lightning.Speed = NumberRange.new(10, 30)
+	lightning.SpreadAngle = Vector2.new(180, 180)
+	lightning.LightEmission = 1
+
+	-- Sound - intense
+	local chaosSound = Instance.new("Sound", torso)
+	chaosSound.Name = "AwakenChaosSound"
+	chaosSound.SoundId = "rbxassetid://9125402735"
+	chaosSound.Volume = 3
+	chaosSound.PlaybackSpeed = 0.7
+	pcall(function() chaosSound:Play() end)
+
+	-- Additional bass sound
+	local bassSound = Instance.new("Sound", torso)
+	bassSound.Name = "AwakenBass"
+	bassSound.SoundId = "rbxassetid://5765733429"
+	bassSound.Volume = 2
+	pcall(function() bassSound:Play() end)
+
+	-- Light
+	local chaosLight = Instance.new("PointLight", torso)
+	chaosLight.Name = "AwakenChaosLight"
+	chaosLight.Color = Color3.fromRGB(255, 0, 0)
+	chaosLight.Brightness = 0
+	chaosLight.Range = 0
+
+	-- Darken the world
+	local origBrightness = Lighting.Brightness
+	local origAmbient = Lighting.Ambient
+	local origOutdoor = Lighting.OutdoorAmbient
+
+	-- Phase 1: World goes dark
+	TweenService:Create(Lighting, TweenInfo.new(1.5), {
+		Brightness = 0.2,
+		Ambient = Color3.fromRGB(20, 0, 0),
+		OutdoorAmbient = Color3.fromRGB(10, 0, 0),
+	}):Play()
+
+	-- Color correction
+	local cc = Instance.new("ColorCorrectionEffect", Lighting)
+	cc.Name = "ChaosCCE"
+	cc.TintColor = Color3.fromRGB(255, 200, 200)
+	cc.Saturation = 0
+	cc.Contrast = 0
+
+	TweenService:Create(cc, TweenInfo.new(2), {
+		TintColor = Color3.fromRGB(255, 100, 100),
+		Saturation = -0.5,
+		Contrast = 0.3,
+	}):Play()
+
+	-- Blur
+	local blur = Instance.new("BlurEffect", Lighting)
+	blur.Name = "ChaosBlur"
+	blur.Size = 0
+	TweenService:Create(blur, TweenInfo.new(1), {Size = 10}):Play()
+
+	-- INTENSE camera shake
+	spawn(function()
+		local startTime = tick()
+		local duration = Settings.AwakenDuration + 2
+		while tick() - startTime < duration and States.Awakened do
+			local progress = (tick() - startTime) / duration
+			local intensity = progress * 0.05
+			camera.CFrame = camera.CFrame * CFrame.new(
+				(math.random() - 0.5) * intensity,
+				(math.random() - 0.5) * intensity,
+				(math.random() - 0.5) * intensity * 0.3
+			) * CFrame.Angles(
+				(math.random() - 0.5) * intensity * 0.3,
+				(math.random() - 0.5) * intensity * 0.3,
+				(math.random() - 0.5) * intensity * 0.2
+			)
+			RunService.RenderStepped:Wait()
+		end
+	end)
+
+	-- Float upward
+	spawn(function()
+		local bv = Instance.new("BodyVelocity")
+		bv.MaxForce = Vector3.new(0, math.huge, 0)
+		bv.Velocity = Vector3.new(0, 5, 0)
+		pcall(function()
+			bv.Parent = workspace.VirtualBody.HumanoidRootPart
+		end)
+		wait(2)
+		bv.Velocity = Vector3.new(0, 0, 0)
+		wait(2)
+		bv:Destroy()
+	end)
+
+	wait(0.5)
+
+	-- Phase 2: Energy gathering
+	chaosAura.Rate = 50
+	lightning.Rate = 30
+	TweenService:Create(chaosLight, TweenInfo.new(1.5), {
+		Brightness = 5, Range = 40
+	}):Play()
+
+	wait(1.5)
+
+	-- Phase 3: EXPLOSION
+	chaosAura.Rate = 500
+	pillar.Rate = 200
+	lightning.Rate = 100
+
+	TweenService:Create(chaosLight, TweenInfo.new(0.2, Enum.EasingStyle.Expo), {
+		Brightness = 20, Range = 100
+	}):Play()
+
+	-- Multiple screen flashes
+	for i = 1, 3 do
+		local flash = Instance.new("ScreenGui", player1.PlayerGui)
+		flash.Name = "ChaosFlash"
+		local ff = Instance.new("Frame", flash)
+		ff.Size = UDim2.new(1, 0, 1, 0)
+		ff.BackgroundColor3 = i == 1 and Color3.fromRGB(255, 0, 0) or
+			i == 2 and Color3.fromRGB(255, 150, 0) or Color3.fromRGB(255, 255, 255)
+		ff.BackgroundTransparency = 0
+		ff.BorderSizePixel = 0
+		TweenService:Create(ff, TweenInfo.new(0.5), {BackgroundTransparency = 1}):Play()
+		Debris:AddItem(flash, 1)
+		wait(0.15)
+	end
+
+	-- Remove blur
+	TweenService:Create(blur, TweenInfo.new(1), {Size = 0}):Play()
+	Debris:AddItem(blur, 1.5)
+
+	-- Enable eye shine (chaos version)
+	EyeShineSystem.Create(reanimModel, true)
+
+	wait(1)
+
+	-- Phase 4: Sustained power
+	chaosAura.Rate = 30
+	pillar.Rate = 0
+	lightning.Rate = 10
+
+	TweenService:Create(chaosLight, TweenInfo.new(2), {
+		Brightness = 3, Range = 25
+	}):Play()
+
+	-- Partially restore lighting but keep it darker
+	TweenService:Create(Lighting, TweenInfo.new(2), {
+		Brightness = origBrightness * 0.7,
+		Ambient = Color3.fromRGB(
+			math.floor(origAmbient.R * 255 * 0.5 + 30),
+			math.floor(origAmbient.G * 255 * 0.3),
+			math.floor(origAmbient.B * 255 * 0.3)
+		),
+	}):Play()
+
+	TweenService:Create(cc, TweenInfo.new(2), {
+		TintColor = Color3.fromRGB(255, 180, 180),
+		Saturation = -0.2,
+		Contrast = 0.1,
+	}):Play()
+
+	pcall(function()
+		workspace.VirtualBody.Humanoid.WalkSpeed = origWalkSpeed * Settings.ChaosMultiplier
+	end)
+
+	if callback then callback() end
+end
+
+function AwakenSystem.Deactivate(reanimModel)
+	States.Awakened = false
+	EyeShineSystem.Destroy()
+
+	-- Remove all awaken effects
+	if reanimModel then
+		for _, c in pairs(reanimModel:GetDescendants()) do
+			if c.Name:match("^Awaken") then
+				pcall(function() c:Destroy() end)
+			end
+		end
+	end
+
+	-- Restore lighting
+	for _, c in pairs(Lighting:GetChildren()) do
+		if c.Name == "ChaosCCE" or c.Name == "ChaosBlur" then
+			c:Destroy()
+		end
+	end
+
+	TweenService:Create(Lighting, TweenInfo.new(1), {
+		Brightness = 2,
+		Ambient = Color3.fromRGB(128, 128, 128),
+		OutdoorAmbient = Color3.fromRGB(128, 128, 128),
+	}):Play()
+
+	pcall(function()
+		workspace.VirtualBody.Humanoid.WalkSpeed = 8
+	end)
+end
+
+-- ═══════════════════════════════════════
+-- TOOL ACTION SYSTEM
+-- ═══════════════════════════════════════
+local ToolActions = {}
+
+-- Helper: get nearest player
+local function GetNearestPlayer(maxDist)
+	maxDist = maxDist or 50
+	local nearest, dist = nil, maxDist
+	local myPos = reanimation and reanimation:FindFirstChild("Torso") and reanimation.Torso.Position or Vector3.new()
+	for _, plr in pairs(Players:GetPlayers()) do
+		if plr ~= player1 and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+			local d = (plr.Character.HumanoidRootPart.Position - myPos).Magnitude
+			if d < dist then
+				nearest = plr
+				dist = d
+			end
+		end
+	end
+	return nearest, dist
+end
+
+-- Helper: create impact effect
+local function CreateImpactEffect(position, color, size, duration)
+	color = color or Color3.fromRGB(255, 255, 255)
+	size = size or 10
+	duration = duration or 1
+
+	local part = Instance.new("Part")
+	part.Anchored = true
+	part.CanCollide = false
+	part.Size = Vector3.new(1, 1, 1)
+	part.Position = position
+	part.Transparency = 0.5
+	part.Material = Enum.Material.Neon
+	part.Color = color
+	part.Shape = Enum.PartType.Ball
+	part.Parent = workspace
+
+	TweenService:Create(part, TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(size, size, size),
+		Transparency = 1,
+	}):Play()
+
+	Debris:AddItem(part, duration + 0.1)
+
+	-- Particles
+	local emit = Instance.new("ParticleEmitter", part)
+	emit.Color = ColorSequence.new(color)
+	emit.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(1, 0),
+	})
+	emit.Lifetime = NumberRange.new(0.3, 0.8)
+	emit.Rate = 200
+	emit.Speed = NumberRange.new(10, 30)
+	emit.SpreadAngle = Vector2.new(180, 180)
+	emit.LightEmission = 1
+
+	delay(0.2, function()
+		emit.Rate = 0
+	end)
+
+	return part
+end
+
+-- Helper: create shockwave
+local function CreateShockwave(position, maxSize, color, duration)
+	local ring = Instance.new("Part")
+	ring.Anchored = true
+	ring.CanCollide = false
+	ring.Size = Vector3.new(1, 0.1, 1)
+	ring.Position = position
+	ring.Material = Enum.Material.Neon
+	ring.Color = color or Color3.fromRGB(255, 255, 255)
+	ring.Shape = Enum.PartType.Cylinder
+	ring.Transparency = 0.3
+	ring.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	ring.Parent = workspace
+
+	TweenService:Create(ring, TweenInfo.new(duration or 0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Size = Vector3.new(0.1, maxSize or 30, maxSize or 30),
+		Transparency = 1,
+	}):Play()
+
+	Debris:AddItem(ring, (duration or 0.8) + 0.1)
+end
+
+-- TACKLE
+ToolActions["⚔ Tackle"] = function()
+	local target, dist = Settings.SelectedPlayer and Settings.SelectedPlayer or GetNearestPlayer(30)
+	if not target or not target.Character or not target.Character:FindFirstChild("HumanoidRootPart") then return end
+
+	local targetPos = target.Character.HumanoidRootPart.Position
+	local myPos = reanimation.Torso.Position
+	local dir = (targetPos - myPos).Unit
+
+	-- Lunge animation
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Velocity = dir * 200 + Vector3.new(0, 30, 0)
+		end
+	end
+
+	CreateImpactEffect(targetPos, Color3.fromRGB(255, 80, 30), 8, 0.5)
+	CreateShockwave(targetPos, 20, Color3.fromRGB(255, 100, 0), 0.5)
+end
+
+ToolActions["💀 ANNIHILATE"] = function()
+	-- Chaos version: hits everything nearby
+	local myPos = reanimation.Torso.Position
+
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Velocity = character1.HumanoidRootPart.CFrame.LookVector * 500 + Vector3.new(0, 100, 0)
+			part.RotVelocity = Vector3.new(math.random(-100,100), math.random(-100,100), math.random(-100,100))
+		end
+	end
+
+	-- Multiple explosions
+	for i = 1, 5 do
+		delay(i * 0.15, function()
+			local offset = Vector3.new(math.random(-10,10), math.random(-2,5), math.random(-10,10))
+			CreateImpactEffect(myPos + offset, Color3.fromRGB(255, 0, 0), 20, 1)
+			CreateShockwave(myPos + offset, 40, Color3.fromRGB(255, 50, 0), 0.8)
+		end)
+	end
+end
+
+-- DANCE
+local danceActive = false
+local danceSound = nil
+
+ToolActions["💃 Dance"] = function()
+	danceActive = not danceActive
+
+	if danceActive then
+		-- Create/play music
+		if danceSound then danceSound:Destroy() end
+		local torso = reanimation:FindFirstChild("Torso")
+		if torso then
+			danceSound = Instance.new("Sound", torso)
+			danceSound.Name = "DanceMusic"
+			danceSound.SoundId = "rbxassetid://" .. Settings.MusicId
+			danceSound.Volume = 2
+			danceSound.Looped = true
+			pcall(function() danceSound:Play() end)
+		end
+
+		-- Dance animation via procedural
+		spawn(function()
+			local t = 0
+			while danceActive and reanimation and reanimation.Parent do
+				t = t + RunService.Heartbeat:Wait() * 4
+				-- Override procedural with dance moves (applied through alignment system)
+				ProceduralState.walkCycle = t * 3
+				ProceduralState.isMoving = true
+			end
+		end)
+	else
+		if danceSound then danceSound:Stop(); danceSound:Destroy(); danceSound = nil end
+	end
+end
+
+ToolActions["🌀 REALITY WARP"] = function()
+	danceActive = not danceActive
+
+	if danceActive then
+		if danceSound then danceSound:Destroy() end
+		local torso = reanimation:FindFirstChild("Torso")
+		if torso then
+			danceSound = Instance.new("Sound", torso)
+			danceSound.SoundId = "rbxassetid://" .. Settings.MusicId
+			danceSound.Volume = 4
+			danceSound.Looped = true
+			pcall(function() danceSound:Play() end)
+
+			-- Reality warp visual
+			local warp = Instance.new("ParticleEmitter", torso)
+			warp.Name = "RealityWarp"
+			warp.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 255)),
+				ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 0)),
+			})
+			warp.Size = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0),
+				NumberSequenceKeypoint.new(0.5, 5),
+				NumberSequenceKeypoint.new(1, 0),
+			})
+			warp.Lifetime = NumberRange.new(1, 3)
+			warp.Rate = 40
+			warp.Speed = NumberRange.new(3, 10)
+			warp.SpreadAngle = Vector2.new(180, 180)
+			warp.LightEmission = 1
+			warp.Rotation = NumberRange.new(0, 360)
+			warp.RotSpeed = NumberRange.new(-100, 100)
+		end
+	else
+		if danceSound then danceSound:Stop(); danceSound:Destroy(); danceSound = nil end
+		for _, c in pairs(reanimation:GetDescendants()) do
+			if c.Name == "RealityWarp" then c:Destroy() end
+		end
+	end
+end
+
+-- SIT
+local sitting = false
+
+ToolActions["🪑 Sit"] = function()
+	sitting = not sitting
+	if sitting then
+		-- Apply sit pose through procedural override
+		States.ProceduralAnim = false
+	else
+		States.ProceduralAnim = true
+	end
+end
+
+ToolActions["👑 THRONE"] = function()
+	sitting = not sitting
+	if sitting then
+		States.ProceduralAnim = false
+		-- Create throne
+		local torso = reanimation:FindFirstChild("Torso")
+		if torso then
+			local throne = Instance.new("Part", workspace)
+			throne.Name = "ChaosThrone"
+			throne.Size = Vector3.new(4, 0.5, 4)
+			throne.Anchored = true
+			throne.CanCollide = false
+			throne.Material = Enum.Material.Neon
+			throne.Color = Color3.fromRGB(100, 0, 0)
+			throne.Position = torso.Position - Vector3.new(0, 2, 0)
+			throne.Transparency = 0.3
+
+			local back = Instance.new("Part", workspace)
+			back.Name = "ChaosThrone"
+			back.Size = Vector3.new(4, 6, 0.5)
+			back.Anchored = true
+			back.CanCollide = false
+			back.Material = Enum.Material.Neon
+			back.Color = Color3.fromRGB(80, 0, 0)
+			back.Position = torso.Position + Vector3.new(0, 1, 2)
+			back.Transparency = 0.3
+
+			-- Throne particles
+			local tp = Instance.new("ParticleEmitter", throne)
+			tp.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0), Color3.fromRGB(255, 100, 0))
+			tp.Size = NumberSequence.new(0.5, 0)
+			tp.Lifetime = NumberRange.new(0.5, 1)
+			tp.Rate = 30
+			tp.Speed = NumberRange.new(1, 3)
+			tp.LightEmission = 1
+			tp.SpreadAngle = Vector2.new(180, 180)
+
+			Debris:AddItem(throne, 30)
+			Debris:AddItem(back, 30)
+		end
+	else
+		States.ProceduralAnim = true
+		for _, c in pairs(workspace:GetChildren()) do
+			if c.Name == "ChaosThrone" then c:Destroy() end
+		end
+	end
+end
+
+-- SWORD
+ToolActions["🗡 Sword"] = function()
+	local myPos = reanimation.Torso.Position
+	local lookDir = camera.CFrame.LookVector
+
+	-- Slash animation - move right arm forward quickly
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Velocity = lookDir * 100
+		end
+	end
+
+	-- Slash effect
+	local slash = Instance.new("Part")
+	slash.Anchored = true
+	slash.CanCollide = false
+	slash.Size = Vector3.new(0.2, 4, 8)
+	slash.CFrame = CFrame.new(myPos + lookDir * 4, myPos + lookDir * 8)
+	slash.Material = Enum.Material.Neon
+	slash.Color = Color3.fromRGB(200, 200, 200)
+	slash.Transparency = 0.3
+	slash.Parent = workspace
+
+	TweenService:Create(slash, TweenInfo.new(0.3), {
+		Size = Vector3.new(0.05, 6, 12),
+		Transparency = 1
+	}):Play()
+	Debris:AddItem(slash, 0.5)
+
+	CreateImpactEffect(myPos + lookDir * 5, Color3.fromRGB(200, 200, 255), 5, 0.3)
+end
+
+ToolActions["⚡ GODSLAYER"] = function()
+	local myPos = reanimation.Torso.Position
+	local lookDir = camera.CFrame.LookVector
+
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Velocity = lookDir * 300 + Vector3.new(0, 50, 0)
+			part.RotVelocity = Vector3.new(0, 50, 0)
+		end
+	end
+
+	-- Massive energy slash
+	for i = 0, 4 do
+		local angle = math.rad(i * 15 - 30)
+		local slashDir = CFrame.Angles(0, angle, 0) * CFrame.new(0, 0, -1)
+		local dir = (CFrame.new(myPos) * slashDir).Position - myPos
+
+		local slash = Instance.new("Part")
+		slash.Anchored = true; slash.CanCollide = false
+		slash.Size = Vector3.new(0.3, 8, 20)
+		slash.CFrame = CFrame.new(myPos + lookDir * 6 + Vector3.new(0, i - 2, 0), myPos + lookDir * 20)
+		slash.Material = Enum.Material.Neon
+		slash.Color = Color3.fromRGB(255, 50, 0)
+		slash.Transparency = 0.2
+		slash.Parent = workspace
+
+		TweenService:Create(slash, TweenInfo.new(0.5), {
+			Size = Vector3.new(0.05, 12, 30),
+			Transparency = 1
+		}):Play()
+		Debris:AddItem(slash, 0.6)
+	end
+
+	-- Multiple shockwaves
+	for i = 1, 3 do
+		delay(i * 0.1, function()
+			CreateShockwave(myPos + lookDir * (i * 5), 30 + i * 10, Color3.fromRGB(255, 50, 0), 0.8)
+			CreateImpactEffect(myPos + lookDir * (i * 5), Color3.fromRGB(255, 0, 0), 15, 0.6)
+		end)
+	end
+end
+
+-- YEET
+ToolActions["🚀 Yeet"] = function()
+	local target = Settings.SelectedPlayer or GetNearestPlayer(30)
+	if not target or not target.Character then return end
+
+	local targetPos = target.Character.HumanoidRootPart.Position
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			local dir = (targetPos - part.Position).Unit
+			part.Velocity = dir * 200 + Vector3.new(0, 100, 0)
+		end
+	end
+
+	CreateImpactEffect(targetPos, Color3.fromRGB(0, 200, 255), 10, 0.8)
+end
+
+ToolActions["☄ METEOR"] = function()
+	-- Fly up then crash down
+	local myPos = reanimation.Torso.Position
+
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Velocity = Vector3.new(0, 500, 0)
+		end
+	end
+
+	-- Meteor trail
+	local torso = reanimation:FindFirstChild("Torso")
+	if torso then
+		local trail = Instance.new("ParticleEmitter", torso)
+		trail.Name = "MeteorTrail"
+		trail.Color = ColorSequence.new(Color3.fromRGB(255, 100, 0), Color3.fromRGB(255, 200, 0))
+		trail.Size = NumberSequence.new(2, 0)
+		trail.Lifetime = NumberRange.new(0.3, 0.8)
+		trail.Rate = 200
+		trail.Speed = NumberRange.new(5, 10)
+		trail.LightEmission = 1
+		trail.SpreadAngle = Vector2.new(30, 30)
+
+		delay(2, function()
+			-- CRASH DOWN
+			for _, part in pairs(character1:GetChildren()) do
+				if part:IsA("BasePart") then
+					part.Velocity = Vector3.new(0, -800, 0)
+				end
+			end
+
+			delay(0.5, function()
+				local pos = torso.Position
+				-- Massive impact
+				for i = 1, 5 do
+					CreateShockwave(pos, 20 + i * 15, Color3.fromRGB(255, 100 - i*15, 0), 1)
+				end
+				CreateImpactEffect(pos, Color3.fromRGB(255, 50, 0), 40, 1.5)
+
+				trail.Rate = 0
+				Debris:AddItem(trail, 1)
+			end)
+		end)
+	end
+end
+
+-- SHIELD
+local shieldActive = false
+
+ToolActions["🛡 Shield"] = function()
+	shieldActive = not shieldActive
+	if shieldActive then
+		local torso = reanimation:FindFirstChild("Torso")
+		if torso then
+			local shield = Instance.new("Part", workspace)
+			shield.Name = "PlayerShield"
+			shield.Shape = Enum.PartType.Ball
+			shield.Size = Vector3.new(10, 10, 10)
+			shield.Anchored = false
+			shield.CanCollide = false
+			shield.Material = Enum.Material.ForceField
+			shield.Color = Color3.fromRGB(0, 150, 255)
+			shield.Transparency = 0.7
+			shield.Position = torso.Position
+
+			local weld = Instance.new("Weld", shield)
+			weld.Part0 = torso
+			weld.Part1 = shield
+		end
+	else
+		for _, c in pairs(workspace:GetChildren()) do
+			if c.Name == "PlayerShield" then c:Destroy() end
+		end
+	end
+end
+
+ToolActions["🌐 DOMAIN"] = function()
+	shieldActive = not shieldActive
+	if shieldActive then
+		local torso = reanimation:FindFirstChild("Torso")
+		if torso then
+			-- Domain expansion effect
+			local domain = Instance.new("Part", workspace)
+			domain.Name = "ChaosDomain"
+			domain.Shape = Enum.PartType.Ball
+			domain.Size = Vector3.new(1, 1, 1)
+			domain.Anchored = true
+			domain.CanCollide = false
+			domain.Material = Enum.Material.Neon
+			domain.Color = Color3.fromRGB(100, 0, 0)
+			domain.Transparency = 0.6
+			domain.Position = torso.Position
+
+			TweenService:Create(domain, TweenInfo.new(1.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+				Size = Vector3.new(60, 60, 60),
+				Transparency = 0.85,
+			}):Play()
+
+			-- Domain particles
+			local dp = Instance.new("ParticleEmitter", domain)
+			dp.Color = ColorSequence.new(Color3.fromRGB(255, 0, 0), Color3.fromRGB(0, 0, 0))
+			dp.Size = NumberSequence.new(1, 0)
+			dp.Lifetime = NumberRange.new(1, 3)
+			dp.Rate = 100
+			dp.Speed = NumberRange.new(2, 8)
+			dp.LightEmission = 0.5
+			dp.SpreadAngle = Vector2.new(180, 180)
+
+			-- Keep domain centered
+			spawn(function()
+				while shieldActive and domain and domain.Parent do
+					domain.Position = torso.Position
+					RunService.Heartbeat:Wait()
+				end
+			end)
+
+			Debris:AddItem(domain, 30)
+		end
+	else
+		for _, c in pairs(workspace:GetChildren()) do
+			if c.Name == "ChaosDomain" or c.Name == "PlayerShield" then c:Destroy() end
+		end
+	end
+end
+
+-- GRAPPLE
+ToolActions["🪝 Grapple"] = function()
+	local targetPos = mouse.Hit.Position
+	local myPos = reanimation.Torso.Position
+	local dir = (targetPos - myPos).Unit
+
+	pcall(function()
+		local bv = Instance.new("BodyVelocity")
+		bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+		bv.Velocity = dir * 100
+		bv.Parent = workspace.VirtualBody.HumanoidRootPart
+		Debris:AddItem(bv, 0.5)
+	end)
+
+	-- Grapple line visual
+	local line = Instance.new("Part")
+	line.Anchored = true
+	line.CanCollide = false
+	line.Size = Vector3.new(0.1, 0.1, (targetPos - myPos).Magnitude)
+	line.CFrame = CFrame.new(myPos, targetPos) * CFrame.new(0, 0, -(targetPos - myPos).Magnitude/2)
+	line.Material = Enum.Material.Neon
+	line.Color = Color3.fromRGB(200, 200, 200)
+	line.Parent = workspace
+
+	TweenService:Create(line, TweenInfo.new(0.5), {Transparency = 1}):Play()
+	Debris:AddItem(line, 0.6)
+end
+
+ToolActions["⛓ CHAINS"] = function()
+	-- Chain all nearby players
+	local myPos = reanimation.Torso.Position
+
+	for _, plr in pairs(Players:GetPlayers()) do
+		if plr ~= player1 and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+			local targetPos = plr.Character.HumanoidRootPart.Position
+			if (targetPos - myPos).Magnitude < 50 then
+				-- Chain line
+				local line = Instance.new("Part")
+				line.Anchored = true; line.CanCollide = false
+				line.Size = Vector3.new(0.2, 0.2, (targetPos - myPos).Magnitude)
+				line.CFrame = CFrame.new(myPos, targetPos) * CFrame.new(0, 0, -(targetPos - myPos).Magnitude/2)
+				line.Material = Enum.Material.Neon
+				line.Color = Color3.fromRGB(255, 0, 0)
+				line.Parent = workspace
+
+				local emit = Instance.new("ParticleEmitter", line)
+				emit.Color = ColorSequence.new(Color3.fromRGB(255, 50, 0))
+				emit.Size = NumberSequence.new(0.3, 0)
+				emit.Lifetime = NumberRange.new(0.3, 0.5)
+				emit.Rate = 50
+				emit.Speed = NumberRange.new(1, 3)
+				emit.LightEmission = 1
+
+				TweenService:Create(line, TweenInfo.new(2), {Transparency = 1}):Play()
+				Debris:AddItem(line, 2.5)
+
+				CreateImpactEffect(targetPos, Color3.fromRGB(255, 0, 0), 5, 0.5)
+			end
+		end
+	end
+end
+
+-- STOMP
+ToolActions["💥 Stomp"] = function()
+	local myPos = reanimation.Torso.Position
+
+	-- Jump up then slam
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Velocity = Vector3.new(0, 150, 0)
+		end
+	end
+
+	delay(0.5, function()
+		for _, part in pairs(character1:GetChildren()) do
+			if part:IsA("BasePart") then
+				part.Velocity = Vector3.new(0, -300, 0)
+			end
+		end
+
+		delay(0.3, function()
+			local pos = reanimation.Torso.Position
+			CreateShockwave(pos, 25, Color3.fromRGB(255, 150, 0), 0.8)
+			CreateImpactEffect(pos, Color3.fromRGB(255, 100, 0), 12, 0.8)
+		end)
+	end)
+end
+
+ToolActions["🌋 CATACLYSM"] = function()
+	local myPos = reanimation.Torso.Position
+
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Velocity = Vector3.new(0, 300, 0)
+		end
+	end
+
+	delay(0.8, function()
+		for _, part in pairs(character1:GetChildren()) do
+			if part:IsA("BasePart") then
+				part.Velocity = Vector3.new(0, -600, 0)
+			end
+		end
+
+		delay(0.4, function()
+			local pos = reanimation.Torso.Position
+			-- Multiple shockwaves
+			for i = 1, 8 do
+				delay(i * 0.08, function()
+					CreateShockwave(pos, 15 + i * 10, Color3.fromRGB(255, math.max(0, 200 - i*25), 0), 1)
+				end)
+			end
+			-- Column of fire
+			for i = 1, 5 do
+				local offset = Vector3.new(math.random(-15,15), 0, math.random(-15,15))
+				CreateImpactEffect(pos + offset, Color3.fromRGB(255, 50, 0), 20, 1.5)
+			end
+		end)
+	end)
+end
+
+-- SPIN ATTACK
+ToolActions["🌀 Spin Attack"] = function()
+	States.Spin = true
+	Settings.SpinSpeed = 15
+
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.RotVelocity = Vector3.new(0, 80, 0)
+		end
+	end
+
+	delay(2, function()
+		States.Spin = false
+		Settings.SpinSpeed = 5
+	end)
+end
+
+ToolActions["🌪 TYPHOON"] = function()
+	States.Spin = true
+	Settings.SpinSpeed = 30
+
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.RotVelocity = Vector3.new(0, 200, 0)
+			part.Velocity = Vector3.new(0, 50, 0)
+		end
+	end
+
+	-- Tornado effect
+	local torso = reanimation:FindFirstChild("Torso")
+	if torso then
+		local tornado = Instance.new("ParticleEmitter", torso)
+		tornado.Name = "TyphoonEffect"
+		tornado.Color = ColorSequence.new(Color3.fromRGB(100, 200, 255))
+		tornado.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(0.5, 3),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		tornado.Lifetime = NumberRange.new(0.5, 1.5)
+		tornado.Rate = 200
+		tornado.Speed = NumberRange.new(10, 25)
+		tornado.SpreadAngle = Vector2.new(180, 180)
+		tornado.LightEmission = 0.8
+		tornado.Rotation = NumberRange.new(0, 360)
+		tornado.RotSpeed = NumberRange.new(-300, 300)
+
+		delay(3, function()
+			States.Spin = false
+			Settings.SpinSpeed = 5
+			tornado.Rate = 0
+			Debris:AddItem(tornado, 2)
+		end)
+	end
+end
+
+-- UPPERCUT
+ToolActions["👊 Uppercut"] = function()
+	local myPos = reanimation.Torso.Position
+
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Velocity = Vector3.new(0, 200, 0) + camera.CFrame.LookVector * 50
+		end
+	end
+
+	CreateImpactEffect(myPos + Vector3.new(0, 2, 0), Color3.fromRGB(255, 200, 0), 8, 0.5)
+end
+
+ToolActions["☀ SUPERNOVA"] = function()
+	local myPos = reanimation.Torso.Position
+
+	for _, part in pairs(character1:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Velocity = Vector3.new(0, 400, 0) + camera.CFrame.LookVector * 200
+		end
+	end
+
+	-- Massive explosion
+	delay(0.5, function()
+		local pos = reanimation.Torso.Position
+
+		-- Sun-like explosion
+		local sun = Instance.new("Part")
+		sun.Anchored = true; sun.CanCollide = false
+		sun.Shape = Enum.PartType.Ball
+		sun.Size = Vector3.new(1, 1, 1)
+		sun.Position = pos
+		sun.Material = Enum.Material.Neon
+		sun.Color = Color3.fromRGB(255, 255, 100)
+		sun.Parent = workspace
+
+		TweenService:Create(sun, TweenInfo.new(1, Enum.EasingStyle.Expo, Enum.EasingDirection.Out), {
+			Size = Vector3.new(50, 50, 50),
+			Transparency = 0.5,
+		}):Play()
+		delay(1, function()
+			TweenService:Create(sun, TweenInfo.new(0.5), {
+				Size = Vector3.new(80, 80, 80),
+				Transparency = 1,
+			}):Play()
+		end)
+		Debris:AddItem(sun, 2)
+
+		-- Light flash
+		local light = Instance.new("PointLight", sun)
+		light.Color = Color3.fromRGB(255, 255, 200)
+		light.Brightness = 10
+		light.Range = 100
+		TweenService:Create(light, TweenInfo.new(1.5), {Brightness = 0}):Play()
+
+		for i = 1, 6 do
+			CreateShockwave(pos, 20 + i * 15, Color3.fromRGB(255, 255 - i*30, 0), 1)
+		end
+	end)
+end
+
+-- EMOTE
+ToolActions["🎭 Emote"] = function()
+	-- Wave emote via procedural
+	ProceduralState.walkCycle = 0
+	States.RightArmRaise = true
+	delay(2, function()
+		States.RightArmRaise = false
+	end)
+end
+
+ToolActions["👁 PRESENCE"] = function()
+	-- Overwhelming aura
+	local torso = reanimation:FindFirstChild("Torso")
+	if torso then
+		local presence = Instance.new("ParticleEmitter", torso)
+		presence.Name = "PresenceAura"
+		presence.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(100, 0, 0)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0)),
+		})
+		presence.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0),
+			NumberSequenceKeypoint.new(0.3, 8),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		presence.Lifetime = NumberRange.new(1, 3)
+		presence.Rate = 50
+		presence.Speed = NumberRange.new(2, 5)
+		presence.SpreadAngle = Vector2.new(180, 180)
+		presence.LightEmission = 0.3
+		presence.Rotation = NumberRange.new(0, 360)
+
+		delay(5, function()
+			presence.Rate = 0
+			Debris:AddItem(presence, 3)
+		end)
+	end
+end
+
+-- DASH
+ToolActions["💫 Dash"] = function()
+	local dir = camera.CFrame.LookVector
+	if character1.Humanoid.MoveDirection.Magnitude > 0 then
+		dir = character1.Humanoid.MoveDirection
+	end
+
+	pcall(function()
+		local bv = Instance.new("BodyVelocity")
+		bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+		bv.Velocity = dir * 80 + Vector3.new(0, 10, 0)
+		bv.Parent = workspace.VirtualBody.HumanoidRootPart
+		Debris:AddItem(bv, 0.3)
+	end)
+
+	-- Dash trail
+	CreateImpactEffect(reanimation.Torso.Position, Color3.fromRGB(100, 200, 255), 5, 0.3)
+end
+
+ToolActions["⚡ TELEPORT"] = function()
+	local targetPos = mouse.Hit.Position
+
+	-- Teleport effect at start
+	CreateImpactEffect(reanimation.Torso.Position, Color3.fromRGB(255, 0, 255), 10, 0.5)
+
+	-- Instant move
+	pcall(function()
+		workspace.VirtualBody:MoveTo(targetPos)
+		workspace.VirtualRig:MoveTo(targetPos)
+	end)
+
+	-- Teleport effect at destination
+	delay(0.1, function()
+		CreateImpactEffect(targetPos, Color3.fromRGB(255, 0, 255), 10, 0.5)
+		CreateShockwave(targetPos, 20, Color3.fromRGB(200, 0, 255), 0.5)
+	end)
+end
+
+-- Sit pose override function
+local function GetSitOffset(limbType)
+	if limbType == "Torso" then
+		return CFrame.Angles(math.rad(-5), 0, 0) * CFrame.new(0, -0.5, 0)
+	elseif limbType == "RightLeg" then
+		return CFrame.Angles(math.rad(-90), 0, math.rad(5)) * CFrame.new(0, 0, 0.5)
+	elseif limbType == "LeftLeg" then
+		return CFrame.Angles(math.rad(-90), 0, math.rad(-5)) * CFrame.new(0, 0, 0.5)
+	elseif limbType == "RightArm" then
+		return CFrame.Angles(math.rad(-20), 0, math.rad(10)) * CFrame.new(0, -0.2, 0)
+	elseif limbType == "LeftArm" then
+		return CFrame.Angles(math.rad(-20), 0, math.rad(-10)) * CFrame.new(0, -0.2, 0)
+	elseif limbType == "Head" then
+		return CFrame.Angles(math.rad(-5), 0, 0)
+	end
+	return CFrame.new()
+end
+
+-- ═══════════════════════════════════════
+-- INITIAL SETUP
+-- ═══════════════════════════════════════
+pcall(function()
+	game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync("-pd")
+end)
+wait(1.5)
+
+RunService.RenderStepped:Connect(function()
+	pcall(function()
+		settings().Physics.AllowSleep = false
+		if setsimulationradius then setsimulationradius(math.huge * math.huge, math.huge * math.huge) end
+	end)
+end)
+
+local bodyTransparency = 0
+local bodyVelocity = {-17.7, 0, -17.7}
+local hatVelocity = {-17.7, 0, -17.7}
+
+-- ═══════════════════════════════════════
+-- CREATE FAKE CHARACTER
+-- ═══════════════════════════════════════
+local function CreateAttachment(parent, position, orientation, axis, secondaryAxis, name)
+	local a = Instance.new("Attachment", parent)
+	a.Position = position; a.Orientation = orientation; a.Axis = axis
+	a.SecondaryAxis = secondaryAxis; a.Name = name
+end
+
+for _, v in pairs(character1:GetChildren()) do
+	if v:IsA("LocalScript") then v:Destroy() end
+end
+
+local reanimFolder = Instance.new("Folder", character1)
+reanimFolder.Name = "FakeCharacter"
+local model = Instance.new("Model", reanimFolder)
+model.Name = "Reanimation"
+local reanimation = model
+
+local cHead = Instance.new("Part", model); cHead.Size = Vector3.new(2,1,1); cHead.Name = "Head"
+local cTorso = Instance.new("Part", model); cTorso.Size = Vector3.new(2,2,1); cTorso.Name = "Torso"
+local cLArm = Instance.new("Part", model); cLArm.Size = Vector3.new(1,2,1); cLArm.Name = "Left Arm"
+local cRArm = Instance.new("Part", model); cRArm.Size = Vector3.new(1,2,1); cRArm.Name = "Right Arm"
+local cLLeg = Instance.new("Part", model); cLLeg.Size = Vector3.new(1,2,1); cLLeg.Name = "Left Leg"
+local cRLeg = Instance.new("Part", model); cRLeg.Size = Vector3.new(1,2,1); cRLeg.Name = "Right Leg"
+local cHRP = Instance.new("Part", model); cHRP.Size = Vector3.new(2,2,1); cHRP.Name = "HumanoidRootPart"
+cHRP.Transparency = 1; cHRP.CanCollide = false
+
+for _, v in pairs(model:GetChildren()) do
+	if v:IsA("Part") and v.Name ~= "HumanoidRootPart" then v.Transparency = 1 end
+end
+
+-- Joints
+local function MakeJoint(name, p0, p1, c0, c1)
+	local j = Instance.new("Motor6D", p0); j.Name = name; j.Part0 = p0; j.Part1 = p1; j.C0 = c0; j.C1 = c1
+	return j
+end
+
+MakeJoint("Right Shoulder", cTorso, cRArm,
+	CFrame.new(1,.5,0,0,0,1,0,1,0,-1,0,0), CFrame.new(-.5,.5,0,0,0,1,0,1,0,-1,0,0))
+MakeJoint("Left Shoulder", cTorso, cLArm,
+	CFrame.new(-1,.5,0,0,0,-1,0,1,0,1,0,0), CFrame.new(.5,.5,0,0,0,-1,0,1,0,1,0,0))
+MakeJoint("Right Hip", cTorso, cRLeg,
+	CFrame.new(1,-1,0,0,0,1,0,1,0,-1,0,0), CFrame.new(.5,1,0,0,0,1,0,1,0,-1,0,0))
+MakeJoint("Left Hip", cTorso, cLLeg,
+	CFrame.new(-1,-1,0,0,0,-1,0,1,0,1,0,0), CFrame.new(-.5,1,0,0,0,-1,0,1,0,1,0,0))
+MakeJoint("Neck", cTorso, cHead,
+	CFrame.new(0,1,0,-1,0,0,0,0,1,0,1,0), CFrame.new(0,-.5,0,-1,0,0,0,0,1,0,1,0))
+MakeJoint("RootJoint", cHRP, cTorso,
+	CFrame.new(0,0,0,-1,0,0,0,0,1,0,1,0), CFrame.new(0,0,0,-1,0,0,0,0,1,0,1,0))
+
+local cHumanoid = Instance.new("Humanoid", model)
+cHumanoid.DisplayDistanceType = "None"
+Instance.new("SpecialMesh", cHead).Scale = Vector3.new(1.25, 1.25, 1.25)
+
+-- Attachments
+local atts = {
+	{cHead, Vector3.new(0,.6,0), "HairAttachment"}, {cHead, Vector3.new(0,.6,0), "HatAttachment"},
+	{cHead, Vector3.new(0,0,-.6), "FaceFrontAttachment"}, {cHead, Vector3.new(0,0,0), "FaceCenterAttachment"},
+	{cTorso, Vector3.new(0,1,0), "NeckAttachment"}, {cTorso, Vector3.new(0,0,-.5), "BodyFrontAttachment"},
+	{cTorso, Vector3.new(0,0,.5), "BodyBackAttachment"}, {cTorso, Vector3.new(-1,1,0), "LeftCollarAttachment"},
+	{cTorso, Vector3.new(1,1,0), "RightCollarAttachment"}, {cTorso, Vector3.new(0,-1,-.5), "WaistFrontAttachment"},
+	{cTorso, Vector3.new(0,-1,0), "WaistCenterAttachment"}, {cTorso, Vector3.new(0,-1,.5), "WaistBackAttachment"},
+	{cLArm, Vector3.new(0,1,0), "LeftShoulderAttachment"}, {cLArm, Vector3.new(0,-1,0), "LeftGripAttachment"},
+	{cRArm, Vector3.new(0,1,0), "RightShoulderAttachment"}, {cRArm, Vector3.new(0,-1,0), "RightGripAttachment"},
+	{cLLeg, Vector3.new(0,-1,0), "LeftFootAttachment"}, {cRLeg, Vector3.new(0,-1,0), "RightFootAttachment"},
+	{cHRP, Vector3.new(0,0,0), "RootAttachment"},
+}
+for _, a in pairs(atts) do
+	CreateAttachment(a[1], a[2], Vector3.new(), Vector3.new(1,0,0), Vector3.new(0,1,0), a[3])
+end
+
+-- Clone Hats
+for _, v in pairs(character1:GetChildren()) do
+	if v:IsA("Accessory") then
+		pcall(function()
+			local clone = v:Clone()
+			local weld = v.Handle:FindFirstChildWhichIsA("Weld")
+			local wp1 = weld.Part1
+			local nw = Instance.new("Weld", clone.Handle)
+			local c0, c1 = v.Handle.AccessoryWeld.C0, v.Handle.AccessoryWeld.C1
+			clone.Handle:FindFirstChild("AccessoryWeld"):Destroy()
+			clone.Parent = reanimation
+			nw.Name = "AccessoryWeld"; nw.C0 = c0; nw.C1 = c1
+			nw.Part0 = clone.Handle; nw.Part1 = character1:FindFirstChild(wp1.Name)
+			clone.Handle.Transparency = 0
+		end)
+	end
+end
+
+cHRP.CFrame = character1.HumanoidRootPart.CFrame
+
+-- ═══════════════════════════════════════
+-- CLIMBING SYSTEM
+-- ═══════════════════════════════════════
+local ClimbSystem = {isClimbing = false, climbNormal = Vector3.new()}
+function ClimbSystem.DetectClimbable()
+	local vBody = workspace:FindFirstChild("VirtualBody")
+	if not vBody or not vBody:FindFirstChild("HumanoidRootPart") then return false end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = {character1, reanimation, vBody, workspace:FindFirstChild("VirtualRig")}
+	local ray = workspace:Raycast(vBody.HumanoidRootPart.Position, vBody.HumanoidRootPart.CFrame.LookVector * 3, params)
+	if ray then
+		local dot = ray.Normal:Dot(Vector3.new(0,1,0))
+		if math.abs(dot) < 0.3 then
+			ClimbSystem.climbNormal = ray.Normal
+			return true
+		end
+	end
+	return false
+end
+
+-- ═══════════════════════════════════════
+-- PROCEDURAL ANIMATION ENGINE
+-- ═══════════════════════════════════════
+local ProceduralEngine = {}
+function ProceduralEngine.GetWalkCycleOffset(cycle, limbType)
+	local sin = math.sin(cycle); local cos = math.cos(cycle)
+	if limbType == "RightLeg" then return CFrame.Angles(sin*math.rad(35),0,0)*CFrame.new(0,-math.abs(sin)*0.2,sin*0.3)
+	elseif limbType == "LeftLeg" then return CFrame.Angles(-sin*math.rad(35),0,0)*CFrame.new(0,-math.abs(-sin)*0.2,-sin*0.3)
+	elseif limbType == "RightArm" then return CFrame.Angles(-sin*math.rad(25),0,math.rad(-5))
+	elseif limbType == "LeftArm" then return CFrame.Angles(sin*math.rad(25),0,math.rad(5))
+	elseif limbType == "Torso" then return CFrame.Angles(0,sin*math.rad(3),0)*CFrame.new(0,math.abs(sin)*0.05,0)
+	elseif limbType == "Head" then return CFrame.Angles(sin*math.rad(2),0,cos*math.rad(1)) end
+	return CFrame.new()
+end
+
+function ProceduralEngine.GetIdleOffset(cycle, limbType)
+	local sin = math.sin(cycle*0.5); local cos = math.cos(cycle*0.3)
+	if limbType == "Torso" then return CFrame.new(0,sin*0.03,0)*CFrame.Angles(0,0,cos*math.rad(0.5))
+	elseif limbType == "Head" then return CFrame.Angles(sin*math.rad(1.5),cos*math.rad(1),0)
+	elseif limbType == "RightArm" then return CFrame.Angles(sin*math.rad(2),0,cos*math.rad(1)+math.rad(2))
+	elseif limbType == "LeftArm" then return CFrame.Angles(cos*math.rad(2),0,sin*math.rad(1)-math.rad(2))
+	elseif limbType == "RightLeg" then return CFrame.Angles(sin*math.rad(0.5),0,0)
+	elseif limbType == "LeftLeg" then return CFrame.Angles(cos*math.rad(0.5),0,0) end
+	return CFrame.new()
+end
+
+function ProceduralEngine.GetClimbOffset(cycle, limbType)
+	local sin = math.sin(cycle); local cos = math.cos(cycle)
+	if limbType == "RightArm" then return CFrame.Angles(math.rad(-160)+sin*math.rad(30),0,math.rad(15))*CFrame.new(0,sin*0.5,-0.3)
+	elseif limbType == "LeftArm" then return CFrame.Angles(math.rad(-160)+cos*math.rad(30),0,math.rad(-15))*CFrame.new(0,cos*0.5,-0.3)
+	elseif limbType == "RightLeg" then return CFrame.Angles(math.rad(-45)+cos*math.rad(25),0,math.rad(10))*CFrame.new(0,0,-0.3)
+	elseif limbType == "LeftLeg" then return CFrame.Angles(math.rad(-45)+sin*math.rad(25),0,math.rad(-10))*CFrame.new(0,0,-0.3)
+	elseif limbType == "Torso" then return CFrame.Angles(math.rad(-15),0,sin*math.rad(5))
+	elseif limbType == "Head" then return CFrame.Angles(math.rad(20),0,0) end
+	return CFrame.new()
+end
+
+-- Horror Engine (simplified from v4)
+local HorrorEngine = {}
+function HorrorEngine.GetCombinedOffsets(cycle)
+	local o = {Torso=CFrame.new(),Head=CFrame.new(),RightArm=CFrame.new(),LeftArm=CFrame.new(),RightLeg=CFrame.new(),LeftLeg=CFrame.new()}
+	local sin = math.sin(cycle*3); local cos = math.cos(cycle*3); local fast = math.sin(cycle*7)
+
+	if States.SpiderWalk then
+		o.RightArm = CFrame.Angles(math.rad(-90)+sin*math.rad(40),math.rad(60)+cos*math.rad(20),math.rad(45))*CFrame.new(0.5,0,-0.5)
+		o.LeftArm = CFrame.Angles(math.rad(-90)+cos*math.rad(40),math.rad(-60),math.rad(-45))*CFrame.new(-0.5,0,-0.5)
+		o.RightLeg = CFrame.Angles(math.rad(60)+cos*math.rad(30),math.rad(50),math.rad(30))
+		o.LeftLeg = CFrame.Angles(math.rad(60)+sin*math.rad(30),math.rad(-50),math.rad(-30))
+		o.Torso = CFrame.Angles(math.rad(70)+sin*math.rad(5),fast*math.rad(8),0)*CFrame.new(0,-1,0)
+		o.Head = CFrame.Angles(math.rad(-40)+fast*math.rad(10),sin*math.rad(30),0)
+	elseif States.BodyContortion then
+		local p = cycle*0.7; local i = Settings.CrazyIntensity
+		o.Torso = CFrame.Angles(math.sin(p)*math.rad(45*i),math.cos(p*1.3)*math.rad(60*i),math.sin(p*0.7)*math.rad(30*i))
+		o.RightArm = CFrame.Angles(math.rad(-180)+math.sin(p*2)*math.rad(30),math.cos(p)*math.rad(40),math.rad(90))
+		o.LeftArm = CFrame.Angles(math.rad(-180)+math.cos(p*2)*math.rad(30),math.sin(p)*math.rad(40),math.rad(-90))
+		o.RightLeg = CFrame.Angles(math.rad(30)+math.sin(p*1.5)*math.rad(40),0,math.rad(20))
+		o.LeftLeg = CFrame.Angles(math.rad(30)+math.cos(p*1.5)*math.rad(40),0,math.rad(-20))
+		o.Head = CFrame.Angles(math.sin(p*4)*math.rad(20),math.cos(p*3)*math.rad(45),math.sin(p*5)*math.rad(25))
+	elseif States.GlitchBody and math.random()<Settings.GlitchFrequency then
+		local r = function() return math.rad((math.random()-0.5)*360) end
+		local rx,ry,rz = (math.random()-0.5)*4,(math.random()-0.5)*4,(math.random()-0.5)*4
+		o.Head = CFrame.new(rx*.5,ry*.5,rz*.5)*CFrame.Angles(r(),r(),r())
+		o.RightArm = CFrame.new(rx,ry,rz)*CFrame.Angles(r(),r(),r())
+		o.LeftArm = CFrame.new(-rx,-ry,rz)*CFrame.Angles(r(),r(),r())
+	elseif States.CreepyCrawl then
+		o.Torso = CFrame.Angles(math.rad(80),sin*math.rad(10),0)*CFrame.new(0,-2,0)
+		o.Head = CFrame.Angles(math.rad(-60)+sin*math.rad(15),cos*math.rad(20),0)
+		o.RightArm = CFrame.Angles(math.rad(-90)+sin*math.rad(45),math.rad(20),math.rad(30))*CFrame.new(0.3,0,-1)
+		o.LeftArm = CFrame.Angles(math.rad(-90)+cos*math.rad(45),math.rad(-20),math.rad(-30))*CFrame.new(-0.3,0,-1)
+		o.RightLeg = CFrame.Angles(math.rad(-20)+cos*math.rad(30),math.rad(30),math.rad(20))
+		o.LeftLeg = CFrame.Angles(math.rad(-20)+sin*math.rad(30),math.rad(-30),math.rad(-20))
+	elseif States.BrokenNeck then
+		local w = math.sin(cycle*6)*math.rad(3)
+		local snap = math.sin(cycle*0.3) > 0.8
+		o.Head = snap and CFrame.Angles(math.rad(40)+w,math.rad(-80)+w,math.rad(60)+w) or
+			CFrame.Angles(math.rad(30)+w,math.rad(70)+w,math.rad(-50)+w)
+	elseif States.FloatingLimbs then
+		local t = cycle*0.5
+		o.RightArm = CFrame.new(math.sin(t*1.3)*2,math.cos(t*.9)*1.5+1,math.sin(t*1.1)*1.5)*CFrame.Angles(math.sin(t*2)*math.rad(180),math.cos(t*1.7)*math.rad(180),0)
+		o.LeftArm = CFrame.new(math.cos(t*1.1)*-2,math.sin(t*1.3)*1.5+1,math.cos(t*.9)*1.5)*CFrame.Angles(math.cos(t*2.1)*math.rad(180),0,0)
+		o.RightLeg = CFrame.new(math.sin(t*.8),math.cos(t*1.2)-.5,math.sin(t*1.4))*CFrame.Angles(math.sin(t*1.8)*math.rad(90),0,0)
+		o.LeftLeg = CFrame.new(math.cos(t*.7)*-1,math.sin(t*1.1)-.5,math.cos(t*1.3))*CFrame.Angles(math.cos(t*1.6)*math.rad(90),0,0)
+	elseif States.DemonWalk then
+		local tw = math.sin(cycle*15)*(math.random()>0.9 and 1 or 0)
+		o.Torso = CFrame.Angles(math.rad(-10)+sin*math.rad(5),sin*math.rad(8),tw*math.rad(15))
+		o.Head = CFrame.Angles(math.rad(-15)+tw*math.rad(40),sin*math.rad(5)+tw*math.rad(60),tw*math.rad(30))
+		o.RightArm = CFrame.Angles(sin*math.rad(15)+math.rad(10),0,math.rad(25)+tw*math.rad(45))
+		o.LeftArm = CFrame.Angles(-sin*math.rad(15)+math.rad(10),0,math.rad(-25)+tw*math.rad(-45))
+		o.RightLeg = CFrame.Angles(sin*math.rad(25),0,math.rad(5))
+		o.LeftLeg = CFrame.Angles(-sin*math.rad(25),0,math.rad(-5))
+	elseif States.HeadTwist then
+		o.Head = CFrame.Angles(math.sin(cycle*2)*math.rad(15),math.sin(cycle*0.5)*math.rad(Settings.ContortionAngle),math.cos(cycle*3)*math.rad(10))
+	end
+	return o
+end
+
+-- ═══════════════════════════════════════
+-- UI SYSTEM (ENHANCED WITH TOOL BAR)
+-- ═══════════════════════════════════════
+local function CreateAdvancedUI()
+	for _, gui in pairs(player1.PlayerGui:GetChildren()) do
+		if gui.Name == "EnhancedReanimUI" then gui:Destroy() end
+	end
+
+	local ScreenGui = Instance.new("ScreenGui")
+	ScreenGui.Name = "EnhancedReanimUI"
+	ScreenGui.ResetOnSpawn = false
+	ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	ScreenGui.Parent = player1.PlayerGui
+
+	-- Notification System
+	local NotifFrame = Instance.new("Frame")
+	NotifFrame.Name = "Notifications"; NotifFrame.BackgroundTransparency = 1
+	NotifFrame.Size = UDim2.new(0, 280, 1, 0); NotifFrame.Position = UDim2.new(1, -290, 0, 10)
+	NotifFrame.Parent = ScreenGui
+	Instance.new("UIListLayout", NotifFrame).Padding = UDim.new(0, 4)
+
+	local function Notify(title, text, duration, color)
+		color = color or Color3.fromRGB(0, 170, 255); duration = duration or 3
+		local n = Instance.new("Frame"); n.Size = UDim2.new(1,0,0,0)
+		n.BackgroundColor3 = Color3.fromRGB(12,12,20); n.BorderSizePixel = 0
+		n.BackgroundTransparency = 0.05; n.ClipsDescendants = true; n.Parent = NotifFrame
+		Instance.new("UICorner", n).CornerRadius = UDim.new(0, 8)
+		local s = Instance.new("UIStroke", n); s.Color = color; s.Thickness = 1.5
+
+		local tl = Instance.new("TextLabel", n)
+		tl.Size = UDim2.new(1,-15,0,20); tl.Position = UDim2.new(0,10,0,5)
+		tl.BackgroundTransparency = 1; tl.Text = title; tl.TextColor3 = color
+		tl.Font = Enum.Font.GothamBold; tl.TextSize = 13; tl.TextXAlignment = Enum.TextXAlignment.Left
+
+		local xl = Instance.new("TextLabel", n)
+		xl.Size = UDim2.new(1,-15,0,20); xl.Position = UDim2.new(0,10,0,24)
+		xl.BackgroundTransparency = 1; xl.Text = text; xl.TextColor3 = Color3.fromRGB(200,200,200)
+		xl.Font = Enum.Font.Gotham; xl.TextSize = 11; xl.TextXAlignment = Enum.TextXAlignment.Left; xl.TextWrapped = true
+
+		TweenService:Create(n, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Size = UDim2.new(1,0,0,52)
+		}):Play()
+		delay(duration, function()
+			TweenService:Create(n, TweenInfo.new(0.2), {Size = UDim2.new(1,0,0,0), BackgroundTransparency = 1}):Play()
+			wait(0.25); if n then n:Destroy() end
+		end)
+	end
+
+	-- ═══ TOOL BAR (BOTTOM OF SCREEN) ═══
+	local ToolBar = Instance.new("Frame", ScreenGui)
+	ToolBar.Name = "ToolBar"
+	ToolBar.Size = UDim2.new(0, 640, 0, 65)
+	ToolBar.Position = UDim2.new(0.5, -320, 1, -75)
+	ToolBar.BackgroundColor3 = Color3.fromRGB(10, 10, 18)
+	ToolBar.BackgroundTransparency = 0.15
+	ToolBar.BorderSizePixel = 0
+	Instance.new("UICorner", ToolBar).CornerRadius = UDim.new(0, 12)
+
+	local tbStroke = Instance.new("UIStroke", ToolBar)
+	tbStroke.Thickness = 1.5
+	tbStroke.Transparency = 0.3
+
+	spawn(function()
+		local h = 0
+		while ToolBar and ToolBar.Parent do
+			h = (h + 0.003) % 1
+			tbStroke.Color = Color3.fromHSV(h, 0.7, 1)
+			RunService.RenderStepped:Wait()
+		end
+	end)
+
+	local ToolLayout = Instance.new("UIListLayout", ToolBar)
+	ToolLayout.FillDirection = Enum.FillDirection.Horizontal
+	ToolLayout.Padding = UDim.new(0, 3)
+	ToolLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	ToolLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+	local ToolPadding = Instance.new("UIPadding", ToolBar)
+	ToolPadding.PaddingLeft = UDim.new(0, 5)
+	ToolPadding.PaddingRight = UDim.new(0, 5)
+
+	local toolButtons = {}
+	local selectedToolIndex = nil
+
+	for i, def in ipairs(ToolDefinitions) do
+		local btn = Instance.new("TextButton", ToolBar)
+		btn.Size = UDim2.new(0, 50, 0, 50)
+		btn.BackgroundColor3 = def.Color
+		btn.BackgroundTransparency = 0.5
+		btn.Text = def.Icon
+		btn.TextSize = 22
+		btn.Font = Enum.Font.GothamBold
+		btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		btn.BorderSizePixel = 0
+		btn.Name = "Tool_" .. i
+		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+		local btnStroke = Instance.new("UIStroke", btn)
+		btnStroke.Thickness = 0
+		btnStroke.Color = Color3.fromRGB(255, 255, 255)
+
+		-- Keybind label
+		local kb = Instance.new("TextLabel", btn)
+		kb.Size = UDim2.new(0, 16, 0, 14)
+		kb.Position = UDim2.new(1, -18, 0, 2)
+		kb.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		kb.BackgroundTransparency = 0.3
+		kb.Text = tostring(i == 10 and "0" or i == 11 and "-" or i == 12 and "=" or i)
+		kb.TextColor3 = Color3.fromRGB(200, 200, 200)
+		kb.Font = Enum.Font.GothamBold
+		kb.TextSize = 9
+		kb.BorderSizePixel = 0
+		kb.ZIndex = 3
+		Instance.new("UICorner", kb).CornerRadius = UDim.new(0, 4)
+
+		-- Tooltip on hover
+		btn.MouseEnter:Connect(function()
+			TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.1}):Play()
+			TweenService:Create(btnStroke, TweenInfo.new(0.15), {Thickness = 2}):Play()
+		end)
+		btn.MouseLeave:Connect(function()
+			if selectedToolIndex ~= i then
+				TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+				TweenService:Create(btnStroke, TweenInfo.new(0.15), {Thickness = 0}):Play()
+			end
+		end)
+
+		btn.MouseButton1Click:Connect(function()
+			-- Deselect previous
+			if selectedToolIndex then
+				local prevBtn = toolButtons[selectedToolIndex]
+				if prevBtn then
+					TweenService:Create(prevBtn, TweenInfo.new(0.15), {BackgroundTransparency = 0.5}):Play()
+					local ps = prevBtn:FindFirstChildWhichIsA("UIStroke")
+					if ps then TweenService:Create(ps, TweenInfo.new(0.15), {Thickness = 0}):Play() end
+				end
+			end
+
+			if selectedToolIndex == i then
+				selectedToolIndex = nil
+				Settings.EquippedTool = nil
+				Notify("🔄 Unequipped", "No tool selected", 1.5)
+				return
+			end
+
+			selectedToolIndex = i
+			local toolName = States.ChaosMode and def.ChaosName or def.Name
+			Settings.EquippedTool = toolName
+
+			TweenService:Create(btn, TweenInfo.new(0.2, Enum.EasingStyle.Back), {
+				BackgroundTransparency = 0
+			}):Play()
+			TweenService:Create(btnStroke, TweenInfo.new(0.2), {Thickness = 3}):Play()
+
+			-- Select animation
+			TweenService:Create(btn, TweenInfo.new(0.1), {Size = UDim2.new(0, 55, 0, 55)}):Play()
+			delay(0.1, function()
+				TweenService:Create(btn, TweenInfo.new(0.15, Enum.EasingStyle.Back), {Size = UDim2.new(0, 50, 0, 50)}):Play()
+			end)
+
+			local desc = States.ChaosMode and def.ChaosDesc or def.Description
+			Notify("🔧 " .. toolName, desc, 2, def.Color)
+		end)
+
+		toolButtons[i] = btn
+	end
+
+	-- USE TOOL: Click/Tap while tool is selected
+	mouse.Button1Down:Connect(function()
+		if Settings.EquippedTool and ToolActions[Settings.EquippedTool] then
+			-- Check if clicking on GUI
+			local guis = player1.PlayerGui:GetGuiObjectsAtPosition(mouse.X, mouse.Y)
+			local onGui = false
+			for _, g in pairs(guis) do
+				if g:IsDescendantOf(ScreenGui) then onGui = true; break end
+			end
+			if not onGui then
+				ToolActions[Settings.EquippedTool]()
+			end
+		end
+	end)
+
+	-- Keybind for tools
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed then return end
+		for i, def in ipairs(ToolDefinitions) do
+			if input.KeyCode == def.Keybind then
+				-- Select tool
+				if selectedToolIndex then
+					local prevBtn = toolButtons[selectedToolIndex]
+					if prevBtn then
+						TweenService:Create(prevBtn, TweenInfo.new(0.1), {BackgroundTransparency = 0.5}):Play()
+						local ps = prevBtn:FindFirstChildWhichIsA("UIStroke")
+						if ps then TweenService:Create(ps, TweenInfo.new(0.1), {Thickness = 0}):Play() end
+					end
+				end
+				selectedToolIndex = i
+				local toolName = States.ChaosMode and def.ChaosName or def.Name
+				Settings.EquippedTool = toolName
+
+				local btn = toolButtons[i]
+				TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundTransparency = 0}):Play()
+				local bs = btn:FindFirstChildWhichIsA("UIStroke")
+				if bs then TweenService:Create(bs, TweenInfo.new(0.15), {Thickness = 3}):Play() end
+				break
+			end
+		end
+
+		-- Use equipped tool with Q
+		if input.KeyCode == Enum.KeyCode.Q then
+			if Settings.EquippedTool and ToolActions[Settings.EquippedTool] then
+				ToolActions[Settings.EquippedTool]()
+			end
+		end
+	end)
+
+	-- Update tool names when chaos mode changes
+	local function UpdateToolBar()
+		for i, def in ipairs(ToolDefinitions) do
+			local btn = toolButtons[i]
+			if btn then
+				local name = States.ChaosMode and def.ChaosName or def.Name
+				-- In chaos mode, make tools glow red
+				if States.ChaosMode then
+					TweenService:Create(btn, TweenInfo.new(0.5), {
+						BackgroundColor3 = Color3.fromRGB(
+							math.min(255, def.Color.R * 255 + 100),
+							math.max(0, def.Color.G * 255 - 50),
+							math.max(0, def.Color.B * 255 - 50)
+						)
+					}):Play()
+				else
+					TweenService:Create(btn, TweenInfo.new(0.5), {BackgroundColor3 = def.Color}):Play()
+				end
+			end
+		end
+		-- Update equipped name
+		if selectedToolIndex then
+			local def = ToolDefinitions[selectedToolIndex]
+			Settings.EquippedTool = States.ChaosMode and def.ChaosName or def.Name
+		end
+	end
+
+	-- ═══ MAIN MENU FRAME ═══
+	local MainFrame = Instance.new("Frame")
+	MainFrame.Name = "MainFrame"
+	MainFrame.Size = UDim2.new(0, 440, 0, 500)
+	MainFrame.Position = UDim2.new(0.5, -220, 0.5, -270)
+	MainFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 22)
+	MainFrame.BorderSizePixel = 0
+	MainFrame.Active = true
+	MainFrame.Visible = false -- Start hidden
+	MainFrame.Parent = ScreenGui
+
+	Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 14)
+	local ms = Instance.new("UIStroke", MainFrame); ms.Thickness = 2; ms.Transparency = 0.2
+	local mg = Instance.new("UIGradient", ms)
+
+	spawn(function()
+		local h = 0
+		while MainFrame and MainFrame.Parent do
+			h = (h + 0.003) % 1
+			mg.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromHSV(h, 0.8, 1)),
+				ColorSequenceKeypoint.new(0.5, Color3.fromHSV((h+0.3)%1, 0.8, 1)),
+				ColorSequenceKeypoint.new(1, Color3.fromHSV((h+0.6)%1, 0.8, 1)),
+			})
+			mg.Rotation = mg.Rotation + 1
+			RunService.RenderStepped:Wait()
+		end
+	end)
+
+	-- Dragging
+	local dragging, dragStart, startPos = false, nil, nil
+	MainFrame.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true; dragStart = input.Position; startPos = MainFrame.Position
+			input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local d = input.Position - dragStart
+			MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+		end
+	end)
+
+	-- Title
+	local TB = Instance.new("Frame", MainFrame)
+	TB.Size = UDim2.new(1,0,0,45); TB.BackgroundColor3 = Color3.fromRGB(8,8,16); TB.BorderSizePixel = 0; TB.ZIndex = 5
+	Instance.new("UICorner", TB).CornerRadius = UDim.new(0, 14)
+	local tbFix = Instance.new("Frame", TB); tbFix.Size = UDim2.new(1,0,0,15); tbFix.Position = UDim2.new(0,0,1,-15)
+	tbFix.BackgroundColor3 = Color3.fromRGB(8,8,16); tbFix.BorderSizePixel = 0; tbFix.ZIndex = 5
+
+	local TL = Instance.new("TextLabel", TB)
+	TL.Size = UDim2.new(1,-90,1,0); TL.Position = UDim2.new(0,15,0,0)
+	TL.BackgroundTransparency = 1; TL.Text = "⚡ ULTIMATE v5.0"
+	TL.TextColor3 = Color3.fromRGB(0,200,255); TL.Font = Enum.Font.GothamBold
+	TL.TextSize = 16; TL.TextXAlignment = Enum.TextXAlignment.Left; TL.ZIndex = 6
+
+	spawn(function()
+		local h = 0
+		while TL and TL.Parent do h=(h+0.005)%1; TL.TextColor3 = Color3.fromHSV(h,0.6,1); RunService.RenderStepped:Wait() end
+	end)
+
+	-- Close/Min
+	local CB = Instance.new("TextButton", TB)
+	CB.Size = UDim2.new(0,30,0,30); CB.Position = UDim2.new(1,-38,0,7)
+	CB.BackgroundColor3 = Color3.fromRGB(255,50,50); CB.Text = "×"
+	CB.TextColor3 = Color3.fromRGB(255,255,255); CB.Font = Enum.Font.GothamBold; CB.TextSize = 18
+	CB.BorderSizePixel = 0; CB.ZIndex = 7
+	Instance.new("UICorner", CB).CornerRadius = UDim.new(0, 8)
+	CB.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
+
+	-- Tabs
+	local TabBar = Instance.new("Frame", MainFrame)
+	TabBar.Size = UDim2.new(1,-16,0,34); TabBar.Position = UDim2.new(0,8,0,48)
+	TabBar.BackgroundTransparency = 1; TabBar.ZIndex = 3
+	Instance.new("UIListLayout", TabBar).FillDirection = Enum.FillDirection.Horizontal
+
+	local CF = Instance.new("ScrollingFrame", MainFrame)
+	CF.Size = UDim2.new(1,-16,1,-92); CF.Position = UDim2.new(0,8,0,85)
+	CF.BackgroundTransparency = 1; CF.BorderSizePixel = 0; CF.ScrollBarThickness = 3
+	CF.ScrollBarImageColor3 = Color3.fromRGB(0,120,255); CF.CanvasSize = UDim2.new(0,0,0,0)
+	CF.AutomaticCanvasSize = Enum.AutomaticSize.Y; CF.ZIndex = 2
+	local CL = Instance.new("UIListLayout", CF); CL.Padding = UDim.new(0,4); CL.SortOrder = Enum.SortOrder.LayoutOrder
+	Instance.new("UIPadding", CF).PaddingTop = UDim.new(0, 4)
+
+	local Pages, TabBtns, CurTab = {}, {}, nil
+
+	local function MakeTab(name, icon)
+		local tb = Instance.new("TextButton", TabBar)
+		tb.Size = UDim2.new(0, 72, 1, 0); tb.BackgroundColor3 = Color3.fromRGB(20,20,35)
+		tb.Text = (icon or "")..name; tb.TextColor3 = Color3.fromRGB(130,130,140)
+		tb.Font = Enum.Font.GothamSemibold; tb.TextSize = 10; tb.BorderSizePixel = 0; tb.ZIndex = 4
+		Instance.new("UICorner", tb).CornerRadius = UDim.new(0, 8)
+
+		local pg = Instance.new("Frame"); pg.Size = UDim2.new(1,0,0,0)
+		pg.AutomaticSize = Enum.AutomaticSize.Y; pg.BackgroundTransparency = 1; pg.Visible = false
+		pg.Name = name; pg.Parent = CF
+		Instance.new("UIListLayout", pg).Padding = UDim.new(0, 4)
+
+		Pages[name] = pg; TabBtns[name] = tb
+		tb.MouseButton1Click:Connect(function()
+			for n, p in pairs(Pages) do p.Visible = false
+				TweenService:Create(TabBtns[n], TweenInfo.new(0.15), {BackgroundColor3=Color3.fromRGB(20,20,35), TextColor3=Color3.fromRGB(130,130,140)}):Play()
+			end
+			pg.Visible = true
+			TweenService:Create(tb, TweenInfo.new(0.2), {BackgroundColor3=Color3.fromRGB(0,80,180), TextColor3=Color3.fromRGB(255,255,255)}):Play()
+		end)
+		return pg
+	end
+
+	-- Toggle helper
+	local function Toggle(parent, text, key, cb, lo)
+		local f = Instance.new("Frame", parent); f.Size = UDim2.new(1,0,0,34)
+		f.BackgroundColor3 = Color3.fromRGB(18,18,30); f.BorderSizePixel = 0; f.LayoutOrder = lo or 0
+		Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+
+		local l = Instance.new("TextLabel", f); l.Size = UDim2.new(1,-60,1,0); l.Position = UDim2.new(0,10,0,0)
+		l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = Color3.fromRGB(210,210,215)
+		l.Font = Enum.Font.Gotham; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left
+
+		local tf = Instance.new("Frame", f); tf.Size = UDim2.new(0,38,0,18); tf.Position = UDim2.new(1,-48,0.5,-9)
+		tf.BackgroundColor3 = States[key] and Color3.fromRGB(0,180,100) or Color3.fromRGB(50,50,60); tf.BorderSizePixel = 0
+		Instance.new("UICorner", tf).CornerRadius = UDim.new(1, 0)
+
+		local tc = Instance.new("Frame", tf); tc.Size = UDim2.new(0,14,0,14)
+		tc.Position = States[key] and UDim2.new(1,-16,0,2) or UDim2.new(0,2,0,2)
+		tc.BackgroundColor3 = Color3.fromRGB(255,255,255); tc.BorderSizePixel = 0
+		Instance.new("UICorner", tc).CornerRadius = UDim.new(1, 0)
+
+		local b = Instance.new("TextButton", f); b.Size = UDim2.new(1,0,1,0); b.BackgroundTransparency = 1; b.Text = ""; b.ZIndex = 3
+		b.MouseButton1Click:Connect(function()
+			States[key] = not States[key]
+			TweenService:Create(tf, TweenInfo.new(0.2), {BackgroundColor3 = States[key] and Color3.fromRGB(0,180,100) or Color3.fromRGB(50,50,60)}):Play()
+			TweenService:Create(tc, TweenInfo.new(0.2, Enum.EasingStyle.Back), {Position = States[key] and UDim2.new(1,-16,0,2) or UDim2.new(0,2,0,2)}):Play()
+			if cb then cb(States[key]) end
+			Notify(States[key] and "✅" or "❌", text, 1.5, States[key] and Color3.fromRGB(0,200,100) or Color3.fromRGB(255,80,80))
+		end)
+	end
+
+	local function ActionBtn(parent, text, cb, color, lo)
+		color = color or Color3.fromRGB(0,120,200)
+		local b = Instance.new("TextButton", parent); b.Size = UDim2.new(1,0,0,30)
+		b.BackgroundColor3 = color; b.BackgroundTransparency = 0.15; b.Text = text
+		b.TextColor3 = Color3.fromRGB(255,255,255); b.Font = Enum.Font.GothamSemibold; b.TextSize = 11
+		b.BorderSizePixel = 0; b.LayoutOrder = lo or 0
+		Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
+		b.MouseButton1Click:Connect(function() if cb then cb() end end)
+	end
+
+	local function Slider(parent, text, min, max, def, cb, lo)
+		local f = Instance.new("Frame", parent); f.Size = UDim2.new(1,0,0,46)
+		f.BackgroundColor3 = Color3.fromRGB(18,18,30); f.BorderSizePixel = 0; f.LayoutOrder = lo or 0
+		Instance.new("UICorner", f).CornerRadius = UDim.new(0, 8)
+
+		local l = Instance.new("TextLabel", f); l.Size = UDim2.new(1,-55,0,20); l.Position = UDim2.new(0,10,0,2)
+		l.BackgroundTransparency = 1; l.Text = text; l.TextColor3 = Color3.fromRGB(200,200,205)
+		l.Font = Enum.Font.Gotham; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left
+
+		local vl = Instance.new("TextLabel", f); vl.Size = UDim2.new(0,45,0,20); vl.Position = UDim2.new(1,-55,0,2)
+		vl.BackgroundTransparency = 1; vl.Text = tostring(def); vl.TextColor3 = Color3.fromRGB(0,180,255)
+		vl.Font = Enum.Font.GothamBold; vl.TextSize = 12
+
+		local sb = Instance.new("Frame", f); sb.Size = UDim2.new(1,-20,0,5); sb.Position = UDim2.new(0,10,0,32)
+		sb.BackgroundColor3 = Color3.fromRGB(35,35,50); sb.BorderSizePixel = 0
+		Instance.new("UICorner", sb).CornerRadius = UDim.new(1, 0)
+
+		local sf = Instance.new("Frame", sb); sf.Size = UDim2.new((def-min)/(max-min),0,1,0)
+		sf.BackgroundColor3 = Color3.fromRGB(0,140,255); sf.BorderSizePixel = 0
+		Instance.new("UICorner", sf).CornerRadius = UDim.new(1, 0)
+
+		local sbtn = Instance.new("TextButton", sb); sbtn.Size = UDim2.new(1,10,1,14); sbtn.Position = UDim2.new(0,-5,0,-7)
+		sbtn.BackgroundTransparency = 1; sbtn.Text = ""; sbtn.ZIndex = 4
+
+		local sd = false
+		sbtn.MouseButton1Down:Connect(function() sd = true end)
+		sbtn.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch then sd = true end end)
+		UserInputService.InputEnded:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then sd = false end
+		end)
+		UserInputService.InputChanged:Connect(function(i)
+			if sd and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+				local p = math.clamp((i.Position.X - sb.AbsolutePosition.X) / sb.AbsoluteSize.X, 0, 1)
+				local v = math.floor(min + (max-min) * p)
+				sf.Size = UDim2.new(p, 0, 1, 0); vl.Text = tostring(v)
+				if cb then cb(v) end
+			end
+		end)
+	end
+
+	local function Section(parent, text, lo)
+		local l = Instance.new("TextLabel", parent); l.Size = UDim2.new(1,0,0,20)
+		l.BackgroundTransparency = 1; l.Text = "━ "..text.." ━"
+		l.TextColor3 = Color3.fromRGB(0,140,255); l.Font = Enum.Font.GothamBold; l.TextSize = 10; l.LayoutOrder = lo or 0
+	end
+
+	-- ═══ TABS ═══
+	local MP = MakeTab("Move", "🏃")
+	local CP = MakeTab("Fight", "⚔")
+	local VP = MakeTab("FX", "👁")
+	local AP = MakeTab("Anim", "🦿")
+	local HP = MakeTab("💀", "")
+	local SP = MakeTab("⚙", "")
+
+	-- Select first
+	TabBtns["Move"].BackgroundColor3 = Color3.fromRGB(0,80,180)
+	TabBtns["Move"].TextColor3 = Color3.fromRGB(255,255,255)
+	Pages["Move"].Visible = true
+
+	-- MOVEMENT
+	Section(MP, "LOCOMOTION", 1)
+	Toggle(MP, "🕊 Flight (F)", "Flying", nil, 2)
+	Slider(MP, "✈ Fly Speed", 10, 200, 50, function(v) Settings.FlySpeed = v end, 3)
+	Toggle(MP, "⚡ Speed Hack", "SpeedHack", function(on)
+		pcall(function() workspace.VirtualBody.Humanoid.WalkSpeed = on and Settings.WalkSpeed or 8 end)
+	end, 4)
+	Slider(MP, "🏃 Walk Speed", 8, 100, 16, function(v) Settings.WalkSpeed = v
+		if States.SpeedHack then pcall(function() workspace.VirtualBody.Humanoid.WalkSpeed = v end) end
+	end, 5)
+	Toggle(MP, "🔓 Noclip (N)", "Noclip", nil, 6)
+	Toggle(MP, "🦘 Infinite Jump", "InfiniteJump", nil, 7)
+	Toggle(MP, "🛡 Anti-Void", "AntiVoid", nil, 8)
+
+	-- COMBAT
+	Section(CP, "CHAOS MODE", 1)
+
+	-- CHAOS MODE + AWAKEN BUTTONS
+	ActionBtn(CP, "⚡ NORMAL AWAKENING", function()
+		spawn(function() AwakenSystem.PlayNormal(reanimation) end)
+	end, Color3.fromRGB(0, 100, 255), 2)
+
+	ActionBtn(CP, "🔥 CHAOS AWAKENING", function()
+		States.ChaosMode = true
+		UpdateToolBar()
+		spawn(function() AwakenSystem.PlayChaos(reanimation, function()
+			Notify("💀 CHAOS MODE", "All tools upgraded to GODLIKE power!", 4, Color3.fromRGB(255, 0, 0))
+		end) end)
+	end, Color3.fromRGB(200, 0, 0), 3)
+
+	ActionBtn(CP, "😌 Deactivate All", function()
+		States.ChaosMode = false
+		States.GoCrazy = false
+		States.Awakened = false
+		AwakenSystem.Deactivate(reanimation)
+		UpdateToolBar()
+		Notify("😌 Reset", "All effects deactivated", 2, Color3.fromRGB(0, 200, 100))
+	end, Color3.fromRGB(100, 100, 100), 4)
+
+	Section(CP, "TARGET", 5)
+	-- Simple target selector
+	ActionBtn(CP, "🎯 Target Nearest Player", function()
+		local t = GetNearestPlayer(100)
+		if t then Settings.SelectedPlayer = t; Notify("🎯 Target", t.Name, 2) end
+	end, Color3.fromRGB(0, 150, 200), 6)
+
+	Toggle(CP, "👁 Eye Shine", "EyeShine", function(on)
+		if on then EyeShineSystem.Create(reanimation, States.ChaosMode)
+		else EyeShineSystem.Destroy() end
+	end, 7)
+
+	Section(CP, "MUSIC", 8)
+
+	-- Music ID input
+	local musicFrame = Instance.new("Frame", CP)
+	musicFrame.Size = UDim2.new(1,0,0,34); musicFrame.BackgroundColor3 = Color3.fromRGB(18,18,30)
+	musicFrame.BorderSizePixel = 0; musicFrame.LayoutOrder = 9
+	Instance.new("UICorner", musicFrame).CornerRadius = UDim.new(0, 8)
+
+	local musicLabel = Instance.new("TextLabel", musicFrame)
+	musicLabel.Size = UDim2.new(0,60,1,0); musicLabel.Position = UDim2.new(0,10,0,0)
+	musicLabel.BackgroundTransparency = 1; musicLabel.Text = "🎵 ID:"
+	musicLabel.TextColor3 = Color3.fromRGB(200,200,205); musicLabel.Font = Enum.Font.Gotham; musicLabel.TextSize = 11
+	musicLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+	local musicInput = Instance.new("TextBox", musicFrame)
+	musicInput.Size = UDim2.new(1,-80,0,26); musicInput.Position = UDim2.new(0,70,0,4)
+	musicInput.BackgroundColor3 = Color3.fromRGB(30,30,50); musicInput.Text = Settings.MusicId
+	musicInput.TextColor3 = Color3.fromRGB(0,200,255); musicInput.Font = Enum.Font.Gotham; musicInput.TextSize = 12
+	musicInput.BorderSizePixel = 0; musicInput.ClearTextOnFocus = false
+	Instance.new("UICorner", musicInput).CornerRadius = UDim.new(0, 6)
+
+	musicInput.FocusLost:Connect(function()
+		Settings.MusicId = musicInput.Text
+		Notify("🎵 Music ID Set", "ID: " .. Settings.MusicId, 2)
+	end)
+
+	-- VISUALS
+	Section(VP, "EFFECTS", 1)
+	Toggle(VP, "👁 ESP (G)", "ESP", function(on)
+		if on then
+			for _, p in pairs(Players:GetPlayers()) do
+				if p ~= player1 and p.Character and p.Character:FindFirstChild("Head") then
+					pcall(function()
+						local h = Instance.new("Highlight"); h.Name = "ESP"; h.FillColor = Color3.fromRGB(0,170,255)
+						h.FillTransparency = 0.7; h.Parent = p.Character
+						local bb = Instance.new("BillboardGui"); bb.Name = "ESP"; bb.Size = UDim2.new(0,200,0,30)
+						bb.StudsOffset = Vector3.new(0,3,0); bb.AlwaysOnTop = true; bb.Parent = p.Character.Head
+						local nl = Instance.new("TextLabel", bb); nl.Size = UDim2.new(1,0,1,0)
+						nl.BackgroundTransparency = 1; nl.Text = p.Name; nl.TextColor3 = Color3.fromRGB(0,200,255)
+						nl.Font = Enum.Font.GothamBold; nl.TextSize = 14; nl.TextStrokeTransparency = 0.3
+					end)
+				end
+			end
+		else
+			for _, p in pairs(Players:GetPlayers()) do if p.Character then
+				for _, o in pairs(p.Character:GetDescendants()) do if o.Name == "ESP" then o:Destroy() end end
+			end end
+		end
+	end, 2)
+	Toggle(VP, "👻 Invisible", "Invisible", function(on)
+		for _, v in pairs(character1:GetChildren()) do
+			if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then v.LocalTransparencyModifier = on and 1 or 0 end
+		end
+	end, 3)
+	Toggle(VP, "🌟 Trail", "Trail", function(on)
+		if on then
+			for _, p in pairs(reanimation:GetChildren()) do
+				if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+					local a0 = Instance.new("Attachment",p); a0.Name="TA"; a0.Position=Vector3.new(0,.5,0)
+					local a1 = Instance.new("Attachment",p); a1.Name="TA"; a1.Position=Vector3.new(0,-.5,0)
+					local t = Instance.new("Trail",p); t.Name="ET"; t.Attachment0=a0; t.Attachment1=a1
+					t.Color = Settings.TrailColor1; t.Lifetime = 0.5; t.LightEmission = 0.5
+					t.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,1)})
+				end
+			end
+		else
+			for _, d in pairs(reanimation:GetDescendants()) do if d.Name=="ET" or d.Name=="TA" then d:Destroy() end end
+		end
+	end, 4)
+	Toggle(VP, "✨ Particle", "Particle", function(on)
+		if on then
+			local t = reanimation:FindFirstChild("Torso")
+			if t then
+				local p = Instance.new("ParticleEmitter",t); p.Name="AP"
+				p.Color = Settings.ParticleColor; p.Size = NumberSequence.new(0.5,0)
+				p.Lifetime = NumberRange.new(0.5,1.5); p.Rate = 50; p.Speed = NumberRange.new(2,5)
+				p.SpreadAngle = Vector2.new(180,180); p.LightEmission = 0.8
+				Instance.new("PointLight",t).Name="AL"
+			end
+		else
+			for _, o in pairs(reanimation:GetDescendants()) do if o.Name=="AP" or o.Name=="AL" then o:Destroy() end end
+		end
+	end, 5)
+	Toggle(VP, "🌀 Spin", "Spin", nil, 6)
+
+	-- ANIMATION
+	Section(AP, "PROCEDURAL", 1)
+	Toggle(AP, "🤖 Procedural Walk", "ProceduralAnim", nil, 2)
+	Toggle(AP, "🦵 Raise Left Leg", "LeftLegRaise", nil, 3)
+	Toggle(AP, "🦵 Raise Right Leg", "RightLegRaise", nil, 4)
+	Toggle(AP, "🤚 Raise Left Arm", "LeftArmRaise", nil, 5)
+	Toggle(AP, "✋ Raise Right Arm", "RightArmRaise", nil, 6)
+	Toggle(AP, "🧗 Auto Climb", "Climbing", nil, 7)
+	Toggle(AP, "👆 Left Point", "LeftPoint", nil, 8)
+	Toggle(AP, "👆 Right Point", "RightPoint", nil, 9)
+
+	-- HORROR
+	Section(HP, "UNLEASH HORROR", 1)
+
+	ActionBtn(HP, "💀 GO CRAZY 💀", function()
+		States.GoCrazy = not States.GoCrazy
+		if States.GoCrazy then
+			States.BodyContortion = true; States.GlitchBody = true; States.BrokenNeck = true
+			spawn(function()
+				while States.GoCrazy do
+					camera.CFrame = camera.CFrame * CFrame.new((math.random()-0.5)*0.003,(math.random()-0.5)*0.003,0)
+					RunService.RenderStepped:Wait()
+				end
+			end)
+			Notify("👹 GOING CRAZY", "Horror effects active!", 3, Color3.fromRGB(255,0,0))
+		else
+			States.SpiderWalk=false; States.HeadTwist=false; States.BodyContortion=false
+			States.GlitchBody=false; States.CreepyCrawl=false; States.BrokenNeck=false
+			States.FloatingLimbs=false; States.DemonWalk=false
+			Notify("😌 Calmed", "Effects off", 2, Color3.fromRGB(0,200,100))
+		end
+	end, Color3.fromRGB(180,0,0), 2)
+
+	Toggle(HP, "🕷 Spider Walk", "SpiderWalk", nil, 3)
+	Toggle(HP, "🔄 Head Twist", "HeadTwist", nil, 4)
+	Toggle(HP, "🦴 Body Contortion", "BodyContortion", nil, 5)
+	Toggle(HP, "⚡ Glitch Body", "GlitchBody", nil, 6)
+	Toggle(HP, "🐛 Creepy Crawl", "CreepyCrawl", nil, 7)
+	Toggle(HP, "💀 Broken Neck", "BrokenNeck", nil, 8)
+	Toggle(HP, "👻 Float Limbs", "FloatingLimbs", nil, 9)
+	Toggle(HP, "👹 Demon Walk", "DemonWalk", nil, 10)
+
+	-- SETTINGS
+	Section(SP, "CONTROLS", 1)
+	Slider(SP, "😈 Chaos Intensity", 1, 5, 1, function(v) Settings.CrazyIntensity = v end, 2)
+	Slider(SP, "⚡ Glitch Freq", 1, 10, 1, function(v) Settings.GlitchFrequency = v/10 end, 3)
+	Slider(SP, "🔄 Spin Speed", 1, 20, 5, function(v) Settings.SpinSpeed = v end, 4)
+	Slider(SP, "📐 Raise Height", 1, 4, 1, function(v) Settings.LegRaiseHeight = v end, 5)
+
+	local info = Instance.new("TextLabel", SP); info.Size = UDim2.new(1,0,0,80)
+	info.BackgroundColor3 = Color3.fromRGB(18,18,30); info.BorderSizePixel = 0
+	info.TextColor3 = Color3.fromRGB(150,150,150); info.Font = Enum.Font.Gotham; info.TextSize = 10
+	info.TextWrapped = true; info.TextYAlignment = Enum.TextYAlignment.Top; info.LayoutOrder = 6
+	info.Text = "⌨ Keybinds:\nRightShift=Menu | 1-0,-,==Tools\nQ=Use Tool | F=Fly | N=Noclip\nG=ESP | C=TP | X=Respawn"
+	Instance.new("UICorner", info).CornerRadius = UDim.new(0, 8)
+	Instance.new("UIPadding", info).PaddingTop = UDim.new(0, 6)
+
+	-- Toggle menu
+	UserInputService.InputBegan:Connect(function(i, p)
+		if not p and i.KeyCode == Enum.KeyCode.RightShift then
+			MainFrame.Visible = not MainFrame.Visible
+			if MainFrame.Visible then
+				MainFrame.Size = UDim2.new(0,0,0,0); MainFrame.Position = UDim2.new(0.5,0,0.5,0)
+				TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+					Size = UDim2.new(0,440,0,500), Position = UDim2.new(0.5,-220,0.5,-270)
+				}):Play()
+			end
+		end
+	end)
+
+	delay(1, function()
+		Notify("⚡ Ultimate v5.0", "RightShift=Menu | Tools at bottom!", 5, Color3.fromRGB(0,200,255))
+		wait(1)
+		Notify("🔧 12 Tools Available", "Use 1-0,-,= keys or click toolbar", 4, Color3.fromRGB(255,200,0))
+		wait(1)
+		Notify("🔥 Chaos Mode", "Chaos Awakening upgrades ALL tools!", 4, Color3.fromRGB(255,0,0))
+	end)
+
+	return ScreenGui, Notify, MainFrame, UpdateToolBar
+end
+
+-- ═══════════════════════════════════════
+-- CLOVR CORE (Same as v4 but with v5 features integrated)
+-- ═══════════════════════════════════════
+
+local StudsOffset = 0
+local Smoothness = .5
+local RagdollEnabled = true
+local RagdollHeadMovement = true
+local AutoRespawn = true
+local WearAllAccessories = true
+local AccurateHandPosition = true
+local AccessorySettings = {
+	LimbOffset = CFrame.Angles(math.rad(90), 0, 0)
+}
+local FootPlacementSettings = {
+	RightOffset = Vector3.new(.5, 0, 0),
+	LeftOffset = Vector3.new(-.5, 0, 0)
+}
+
+local Script = nil
+Script = function()
+	local Client = Players.LocalPlayer
+	local Character = Client.Character or Client.CharacterAdded:Wait()
+	local WeldBase = Character:WaitForChild("HumanoidRootPart")
+	local Mouse = Client:GetMouse()
+	local Camera = workspace.CurrentCamera
+	local VRReady = VRService.VREnabled
+	local HeadAccessories, UsedAccessories = {}, {}
+	local Point1, Point2 = false, false
+
+	local VirtualRig = game:GetObjects("rbxassetid://4468539481")[1]
+	local VirtualBody = game:GetObjects("rbxassetid://4464983829")[1]
+	local Anchor = Instance.new("Part"); Anchor.Anchored=true; Anchor.Transparency=1; Anchor.CanCollide=false; Anchor.Parent=workspace
+
+	StarterGui:SetCore("VRLaserPointerMode", 3)
+	local CharacterCFrame = WeldBase.CFrame
+
+	function Tween(O,S,D,T,G)
+		local t = TweenService:Create(O, TweenInfo.new(T,Enum.EasingStyle[S],Enum.EasingDirection[D]), G)
+		t.Completed:Connect(function() t:Destroy() end); t:Play(); return t
+	end
+
+	local function GetMotorForLimb(L)
+		for _,M in next, Character:GetDescendants() do if M:IsA("Motor6D") and M.Part1==L then return M end end
+	end
+
+	local function CreateAlignment(L, P0)
+		local A0=Instance.new("Attachment",P0 or Anchor); local A1=Instance.new("Attachment",L)
+		local O=Instance.new("AlignOrientation"); O.Attachment0=A1; O.Attachment1=A0; O.RigidityEnabled=false
+		O.MaxTorque=20000; O.Responsiveness=40; O.MaxAngularVelocity=100; O.Parent=reanimation.HumanoidRootPart
+		local P=Instance.new("AlignPosition"); P.Attachment0=A1; P.Attachment1=A0; P.RigidityEnabled=false
+		P.MaxForce=40000; P.Responsiveness=40; P.MaxVelocity=100; P.Parent=reanimation.HumanoidRootPart
+		L.Massless=false; local M=GetMotorForLimb(L); if M then M:Destroy() end
+		return function(CF,Loc) if Loc then A0.CFrame=CF else A0.WorldCFrame=CF end end
+	end
+
+	-- Setup ragdoll
+	if RagdollEnabled then
+		if RagdollHeadMovement then Permadeath(); MoveHead = CreateAlignment(reanimation.Head) end
+		MoveRightArm = CreateAlignment(reanimation["Right Arm"])
+		MoveLeftArm = CreateAlignment(reanimation["Left Arm"])
+		MoveRightLeg = CreateAlignment(reanimation["Right Leg"])
+		MoveLeftLeg = CreateAlignment(reanimation["Left Leg"])
+		MoveTorso = CreateAlignment(reanimation.Torso)
+		MoveRoot = CreateAlignment(reanimation.HumanoidRootPart)
+
+		if RagdollHeadMovement then
+			for _, A in next, reanimation:GetChildren() do
+				if A:IsA("Accessory") and A:FindFirstChild("Handle") then
+					pcall(function()
+						local A1=A.Handle:FindFirstChildWhichIsA("Attachment")
+						local A0=reanimation:FindFirstChild(tostring(A1),true)
+						local O=Instance.new("AlignOrientation"); O.Attachment0=A1; O.Attachment1=A0
+						O.RigidityEnabled=false; O.ReactionTorqueEnabled=true; O.MaxTorque=20000; O.Responsiveness=40; O.Parent=reanimation.Head
+						local P=Instance.new("AlignPosition"); P.Attachment0=A1; P.Attachment1=A0
+						P.RigidityEnabled=false; P.ReactionForceEnabled=true; P.MaxForce=40000; P.Responsiveness=40; P.Parent=reanimation.Head
+					end)
+				end
+			end
+		end
+	end
+
+	VirtualRig.Name="VirtualRig"; VirtualRig.RightFoot.BodyPosition.Position=CharacterCFrame.p
+	VirtualRig.LeftFoot.BodyPosition.Position=CharacterCFrame.p; VirtualRig.Parent=workspace
+	VirtualRig:SetPrimaryPartCFrame(CharacterCFrame); VirtualRig.Humanoid.Health=0; VirtualRig:BreakJoints()
+	for _,v in pairs(VirtualRig:GetChildren()) do if v:IsA("BasePart") then v.CFrame=character1.HumanoidRootPart.CFrame end end
+
+	VirtualBody.Parent=workspace; VirtualBody.Name="VirtualBody"; VirtualBody.Humanoid.WalkSpeed=8
+	VirtualBody.Humanoid.CameraOffset=Vector3.new(0,StudsOffset,0); VirtualBody:SetPrimaryPartCFrame(CharacterCFrame)
+	VirtualBody.Humanoid.Died:Connect(function() if AutoRespawn then Character:BreakJoints(); if RagdollHeadMovement then Respawn() end end end)
+
+	Camera.CameraSubject=VirtualBody.Humanoid; Character.Humanoid.WalkSpeed=0; Character.Humanoid.JumpPower=1
+	for _,P in next,VirtualBody:GetChildren() do if P:IsA("BasePart") then P.Transparency=1 end end
+	for _,P in next,VirtualRig:GetChildren() do if P:IsA("BasePart") then P.Transparency=1 end end
+	if not VRReady then
+		VirtualRig.RightUpperArm.ShoulderConstraint.RigidityEnabled=true
+		VirtualRig.LeftUpperArm.ShoulderConstraint.RigidityEnabled=true
+	end
+
+	RunService.Stepped:Connect(function()
+		VirtualBody.Humanoid:MoveTo(VirtualBody.HumanoidRootPart.Position + Character.Humanoid.MoveDirection * 6)
+	end)
+	Character.Humanoid.Jumping:Connect(function() VirtualBody.Humanoid.Jump=true end)
+	UserInputService.JumpRequest:Connect(function() VirtualBody.Humanoid.Jump=true end)
+
+	if RagdollEnabled then
+		for _,P in pairs(Character:GetDescendants()) do
+			if P:IsA("BasePart") and P.Name=="Handle" and P.Parent:IsA("Accessory") then P.LocalTransparencyModifier=1
+			elseif P:IsA("BasePart") and P.Transparency<0.5 and P.Name~="Head" then P.LocalTransparencyModifier=bodyTransparency
+			elseif P:IsA("BasePart") and P.Name=="Head" then P.LocalTransparencyModifier=1 end
+			if not P:IsA("BasePart") and not P:IsA("AlignPosition") and not P:IsA("AlignOrientation") then
+				pcall(function() P.Transparency=1 end); pcall(function() P.Enabled=false end) end
+		end
+	end
+
+	local FootUpdateDebounce = tick()
+	local function FloorRay(P,D) local Pos=P.CFrame.p; local T=Pos-Vector3.new(0,D,0)
+		local L=Ray.new(Pos,(T-Pos).Unit*D); local FP,FPos,FN=workspace:FindPartOnRayWithIgnoreList(L,{VirtualRig,VirtualBody,Character})
+		if FP then return FP,FPos,FN,(FPos-Pos).Magnitude else return nil,T,Vector3.new(),D end end
+	local function Flatten(CF) local X,Y,Z=CF.X,CF.Y,CF.Z; local LX,LZ=CF.lookVector.X,CF.lookVector.Z
+		return CFrame.new(X,Y,Z)*CFrame.Angles(0,math.atan2(LX,LZ),0) end
+	local function FootReady(F,T) local MD=Character.Humanoid.MoveDirection.Magnitude>0 and .5 or 1
+		local PT=(F.Position-T.Position).Magnitude>MD; local PTk=tick()-FootUpdateDebounce>=2
+		if PT or PTk then FootUpdateDebounce=tick() end; return PT or PTk end
+	local mss = player1:GetMouse()
+	local function FootYield() local RF=VirtualRig.RightFoot.BodyPosition; local LF=VirtualRig.LeftFoot.BodyPosition
+		local LT=VirtualRig.LowerTorso; local Y=tick()
+		repeat RunService.Stepped:Wait()
+			if (LT.Position-RF.Position).Y>4 or (LT.Position-LF.Position).Y>4 or
+				((LT.Position-RF.Position)*Vector3.new(1,0,1)).Magnitude>4 or
+				((LT.Position-LF.Position)*Vector3.new(1,0,1)).Magnitude>4 then break end
+		until tick()-Y>=.17 end
+	local function UpdateFooting() if not VirtualRig:FindFirstChild("LowerTorso") then wait() return end
+		local _,_,_,D=FloorRay(VirtualRig.LowerTorso,3); D=math.clamp(D,0,5)
+		local FT=VirtualRig.LowerTorso.CFrame*CFrame.new(FootPlacementSettings.RightOffset)-Vector3.new(0,D,0)+Character.Humanoid.MoveDirection*(VirtualBody.Humanoid.WalkSpeed/8)*2
+		if FootReady(VirtualRig.RightFoot,FT) then VirtualRig.RightFoot.BodyPosition.Position=FT.p; VirtualRig.RightFoot.BodyGyro.CFrame=Flatten(VirtualRig.LowerTorso.CFrame) end
+		FootYield()
+		FT=VirtualRig.LowerTorso.CFrame*CFrame.new(FootPlacementSettings.LeftOffset)-Vector3.new(0,D,0)+Character.Humanoid.MoveDirection*(VirtualBody.Humanoid.WalkSpeed/8)*2
+		if FootReady(VirtualRig.LeftFoot,FT) then VirtualRig.LeftFoot.BodyPosition.Position=FT.p; VirtualRig.LeftFoot.BodyGyro.CFrame=Flatten(VirtualRig.LowerTorso.CFrame) end end
+
+	-- Compute limb offset based on all active systems
+	local function GetLimbOffset(limbType)
+		local offset = CFrame.new()
+		local horrorActive = States.SpiderWalk or States.HeadTwist or States.BodyContortion or
+			States.GlitchBody or States.CreepyCrawl or States.BrokenNeck or States.FloatingLimbs or States.DemonWalk
+
+		-- Sitting override
+		if sitting then return GetSitOffset(limbType) end
+
+		-- Horror override
+		if horrorActive then
+			local ho = HorrorEngine.GetCombinedOffsets(HorrorState.crazyTimer)
+			if limbType == "Torso" and ho.Torso then return ho.Torso end
+			if limbType == "Head" and ho.Head then return ho.Head end
+			if limbType == "RightArm" and ho.RightArm then return ho.RightArm end
+			if limbType == "LeftArm" and ho.LeftArm then return ho.LeftArm end
+			if limbType == "RightLeg" and ho.RightLeg then return ho.RightLeg end
+			if limbType == "LeftLeg" and ho.LeftLeg then return ho.LeftLeg end
+		end
+
+		-- Climbing override
+		if States.Climbing and ClimbSystem.isClimbing then
+			return ProceduralEngine.GetClimbOffset(ProceduralState.climbProgress, limbType)
+		end
+
+		-- Raise overrides
+		if limbType == "RightLeg" and States.RightLegRaise then
+			return CFrame.Angles(math.rad(-90),0,0)*CFrame.new(0,0,-Settings.LegRaiseHeight)
+		end
+		if limbType == "LeftLeg" and States.LeftLegRaise then
+			return CFrame.Angles(math.rad(-90),0,0)*CFrame.new(0,0,-Settings.LegRaiseHeight)
+		end
+		if limbType == "RightArm" and States.RightArmRaise then
+			return CFrame.Angles(math.rad(-170),0,0)
+		end
+		if limbType == "LeftArm" and States.LeftArmRaise then
+			return CFrame.Angles(math.rad(-170),0,0)
+		end
+
+		-- Procedural animation
+		if States.ProceduralAnim then
+			if ProceduralState.isMoving then
+				offset = ProceduralEngine.GetWalkCycleOffset(ProceduralState.walkCycle, limbType)
+			else
+				offset = ProceduralEngine.GetIdleOffset(ProceduralState.breathCycle, limbType)
+			end
+		end
+
+		-- Spin
+		if States.Spin and limbType == "Torso" then
+			offset = offset * CFrame.Angles(0, tick() * Settings.SpinSpeed, 0)
+		end
+		if States.HeadSpin and limbType == "Head" then
+			offset = offset * CFrame.Angles(0, tick() * Settings.SpinSpeed * 2, 0)
+		end
+
+		return offset
+	end
+
+	local function UpdateTorsoPosition()
+		local Pos = VirtualRig.UpperTorso.CFrame
+		MoveTorso(Pos * CFrame.new(0,-0.25,0) * GetLimbOffset("Torso"))
+		MoveRoot(Pos * CFrame.new(0,-0.25,0) * GetLimbOffset("Torso"))
+	end
+
+	local function UpdateLegPosition()
+		local RP = VirtualRig.RightLowerLeg.CFrame:Lerp(VirtualRig.RightFoot.CFrame,0.5)*CFrame.Angles(0,math.rad(180),0)+Vector3.new(0,0.5,0)
+		MoveRightLeg(RP * GetLimbOffset("RightLeg"))
+		local LP = VirtualRig.LeftLowerLeg.CFrame:Lerp(VirtualRig.LeftFoot.CFrame,0.5)*CFrame.Angles(0,math.rad(180),0)+Vector3.new(0,0.5,0)
+		MoveLeftLeg(LP * GetLimbOffset("LeftLeg"))
+	end
+
+	local function OnUCFC(UCF, Pos, IT)
+		Pos = workspace.VirtualBody.Head.CFrame * Pos
+		if not IT then UpdateTorsoPosition(); UpdateLegPosition() end
+
+		if RagdollEnabled then
+			if UCF==Enum.UserCFrame.Head and RagdollHeadMovement then
+				MoveHead(Pos * GetLimbOffset("Head"))
+			elseif UCF==Enum.UserCFrame.RightHand then
+				local P = not VRReady and VirtualRig.RightUpperArm.CFrame:Lerp(VirtualRig.RightLowerArm.CFrame,0.5) or Pos
+				MoveRightArm(P * GetLimbOffset("RightArm"))
+				if States.RightPoint or Point2 then
+					VirtualRig.RightUpperArm.Aim.MaxTorque=Vector3.new(math.huge,math.huge,math.huge)
+					VirtualRig.RightUpperArm.Aim.CFrame=mss.hit*AccessorySettings.LimbOffset
+				elseif VirtualRig.RightUpperArm.Aim.MaxTorque~=Vector3.new(0,0,0) then
+					VirtualRig.RightUpperArm.Aim.MaxTorque=Vector3.new(0,0,0)
+				end
+			elseif UCF==Enum.UserCFrame.LeftHand then
+				local P = not VRReady and VirtualRig.LeftUpperArm.CFrame:Lerp(VirtualRig.LeftLowerArm.CFrame,0.5) or Pos
+				MoveLeftArm(P * GetLimbOffset("LeftArm"))
+				if States.LeftPoint or Point1 then
+					VirtualRig.LeftUpperArm.Aim.MaxTorque=Vector3.new(math.huge,math.huge,math.huge)
+					VirtualRig.LeftUpperArm.Aim.CFrame=mss.hit*AccessorySettings.LimbOffset
+				elseif VirtualRig.LeftUpperArm.Aim.MaxTorque~=Vector3.new(0,0,0) then
+					VirtualRig.LeftUpperArm.Aim.MaxTorque=Vector3.new(0,0,0)
+				end
+			end
+		end
+
+		if UCF==Enum.UserCFrame.Head then VirtualRig.Head.CFrame=Pos end
+		if not VRReady and VirtualRig.LeftHand.Anchored then VirtualRig.RightHand.Anchored=false; VirtualRig.LeftHand.Anchored=false end
+	end
+
+	VRService.UserCFrameChanged:Connect(OnUCFC)
+
+	-- Main stepped
+	local flyBV, flyBG = nil, nil
+	local orbitAngle = 0
+
+	RunService.Stepped:Connect(function()
+		for _,P in pairs(VirtualRig:GetChildren()) do if P:IsA("BasePart") then P.CanCollide=false end end
+		if RagdollEnabled then for _,P in pairs(Character:GetChildren()) do if P:IsA("BasePart") then P.CanCollide=false end end end
+		if States.Noclip then for _,Pl in pairs(Players:GetPlayers()) do if Pl~=Client and Pl.Character then
+			for _,P in pairs(Pl.Character:GetDescendants()) do if P:IsA("BasePart") then P.CanCollide=false end end
+		end end end
+
+		Camera.CameraSubject = VirtualBody.Humanoid
+		local dt = 0.016
+
+		if RagdollEnabled then Character.HumanoidRootPart.CFrame = VirtualRig.UpperTorso.CFrame end
+
+		-- Update states
+		ProceduralState.isMoving = Character.Humanoid.MoveDirection.Magnitude > 0.1
+		if ProceduralState.isMoving then
+			ProceduralState.walkCycle = ProceduralState.walkCycle + dt * 8 * Settings.ProceduralSpeed
+		end
+		ProceduralState.breathCycle = ProceduralState.breathCycle + dt * 2
+		HorrorState.crazyTimer = HorrorState.crazyTimer + dt * 3 * Settings.CrazyIntensity
+
+		-- Climbing
+		if States.Climbing then
+			if ClimbSystem.DetectClimbable() and ProceduralState.isMoving then
+				ClimbSystem.isClimbing = true
+				ProceduralState.climbProgress = ProceduralState.climbProgress + dt * Settings.ClimbSpeed * 0.5
+				pcall(function()
+					local bv = Instance.new("BodyVelocity"); bv.MaxForce=Vector3.new(0,math.huge,0)
+					bv.Velocity=Vector3.new(0,Settings.ClimbSpeed,0); bv.Parent=VirtualBody.HumanoidRootPart
+					Debris:AddItem(bv, 0.1)
+				end)
+			else ClimbSystem.isClimbing = false end
+		end
+
+		if not VRReady then
+			OnUCFC(Enum.UserCFrame.Head, CFrame.new(0,0,0))
+			OnUCFC(Enum.UserCFrame.RightHand, CFrame.new(0,0,0), true)
+			OnUCFC(Enum.UserCFrame.LeftHand, CFrame.new(0,0,0), true)
+		end
+
+		-- Flight
+		if States.Flying then
+			if not flyBV then
+				flyBV=Instance.new("BodyVelocity"); flyBV.MaxForce=Vector3.new(math.huge,math.huge,math.huge); flyBV.Parent=VirtualBody.HumanoidRootPart
+				flyBG=Instance.new("BodyGyro"); flyBG.MaxTorque=Vector3.new(math.huge,math.huge,math.huge); flyBG.P=9e4; flyBG.Parent=VirtualBody.HumanoidRootPart
+			end
+			local d=Vector3.new(); local cf=Camera.CFrame
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then d=d+cf.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then d=d-cf.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then d=d-cf.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then d=d+cf.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then d=d+Vector3.new(0,1,0) end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then d=d-Vector3.new(0,1,0) end
+			if d.Magnitude>0 then d=d.Unit end
+			flyBV.Velocity=d*Settings.FlySpeed; flyBG.CFrame=cf
+		else if flyBV then flyBV:Destroy(); flyBV=nil end; if flyBG then flyBG:Destroy(); flyBG=nil end end
+
+		-- Anti-void
+		if States.AntiVoid and VirtualBody.HumanoidRootPart.Position.Y<-50 then
+			VirtualBody:MoveTo(Vector3.new(0,50,0)); VirtualRig:MoveTo(Vector3.new(0,50,0)) end
+
+		-- Fling
+		if States.Fling then
+			local t = Settings.SelectedPlayer
+			if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+				for _,p in pairs(character1:GetChildren()) do
+					if p:IsA("BasePart") then p.Velocity=(t.Character.HumanoidRootPart.Position-p.Position).Unit*Settings.FlingPower end
+				end
+			end
+		end
+
+		-- Orbit
+		if States.Orbiting then
+			local t = Settings.SelectedPlayer
+			if t and t.Character and t.Character:FindFirstChild("HumanoidRootPart") then
+				orbitAngle=orbitAngle+dt*Settings.OrbitSpeed
+				VirtualBody.Humanoid:MoveTo(t.Character.HumanoidRootPart.Position+Vector3.new(math.cos(orbitAngle)*Settings.OrbitRadius,2,math.sin(orbitAngle)*Settings.OrbitRadius))
+			end
+		end
+	end)
+
+	spawn(function() while Character and Character.Parent do FootYield(); UpdateFooting() end end)
+
+	-- Keybinds
+	UserInputService.InputBegan:Connect(function(I,P)
+		if not P then
+			if I.KeyCode==Enum.KeyCode.X then if RagdollEnabled then Respawn() end end
+			if I.KeyCode==Enum.KeyCode.C then VirtualBody:MoveTo(Mouse.Hit.p); VirtualRig:MoveTo(Mouse.Hit.p) end
+			if I.KeyCode==Enum.KeyCode.F then States.Flying=not States.Flying end
+			if I.KeyCode==Enum.KeyCode.N then States.Noclip=not States.Noclip end
+			if I.KeyCode==Enum.KeyCode.G then States.ESP=not States.ESP end
+			if I.KeyCode==Enum.KeyCode.LeftShift then Tween(VirtualBody.Humanoid,"Sine","Out",1,{WalkSpeed=States.SpeedHack and Settings.SprintSpeed or 16}) end
+		end
+		if not VRReady and I.UserInputType==Enum.UserInputType.MouseButton1 then
+			local g=player1.PlayerGui:GetGuiObjectsAtPosition(I.Position.X,I.Position.Y)
+			if #g==0 then Point1=true end
+		end
+		if not VRReady and I.UserInputType==Enum.UserInputType.MouseButton2 then
+			local g=player1.PlayerGui:GetGuiObjectsAtPosition(I.Position.X,I.Position.Y)
+			if #g==0 then Point2=true end
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(I)
+		if I.KeyCode==Enum.KeyCode.LeftShift then Tween(VirtualBody.Humanoid,"Sine","Out",1,{WalkSpeed=States.SpeedHack and Settings.WalkSpeed or 8}) end
+		if not VRReady and I.UserInputType==Enum.UserInputType.MouseButton1 then Point1=false end
+		if not VRReady and I.UserInputType==Enum.UserInputType.MouseButton2 then Point2=false end
+	end)
+
+	Client.CharacterAdded:Connect(function()
+		VirtualRig:Destroy(); VirtualBody:Destroy()
+	end)
+
+	-- VR Pointer
+	if VRReady then
+		local Ptr = game:GetObjects("rbxassetid://4476173280")[1]; Ptr.Parent=workspace; Ptr.Beam.Enabled=false
+		RunService.RenderStepped:Connect(function()
+			if Ptr.Beam.Enabled then
+				local RH=Camera.CFrame*VRService:GetUserCFrame(Enum.UserCFrame.RightHand)
+				local _,P=workspace:FindPartOnRayWithIgnoreList(Ray.new(RH.p,(RH*CFrame.new(0,0,-10)).p-RH.p).Unit*128,{VirtualRig,VirtualBody,Character,Ptr})
+				Ptr.Target.Position=Vector3.new(0,0,-(P-RH.p).Magnitude); Ptr.CFrame=RH
+			end
+		end)
+		UserInputService.InputBegan:Connect(function(I) if I.KeyCode==Enum.KeyCode.ButtonB then Ptr.Beam.Enabled=not Ptr.Beam.Enabled end end)
+	end
+end
+
+Permadeath = function()
+	local ch=player1.Character; local p=Instance.new("Model",workspace)
+	local z1=Instance.new("Part",p); z1.Name="Torso"; z1.CanCollide=false; z1.Anchored=true
+	local z2=Instance.new("Part",p); z2.Name="Head"; z2.Anchored=true; z2.CanCollide=false
+	Instance.new("Humanoid",p); z1.Position=Vector3.new(0,9999,0); z2.Position=Vector3.new(0,9991,0)
+	player1.Character=p; wait(game.Players.RespawnTime/2); player1.Character=ch; wait(game.Players.RespawnTime/2+0.5)
+end
+
+Respawn = function()
+	local ch=player1.Character; local p=Instance.new("Model",workspace)
+	local z1=Instance.new("Part",p); z1.Name="Torso"; z1.CanCollide=false; z1.Anchored=true
+	local z2=Instance.new("Part",p); z2.Name="Head"; z2.Anchored=true; z2.CanCollide=false
+	Instance.new("Humanoid",p); z1.Position=Vector3.new(0,9999,0); z2.Position=Vector3.new(0,9991,0)
+	player1.Character=p; wait(game.Players.RespawnTime); player1.Character=ch
+end
+
+-- ═══════════════════════════════════════
+-- EXECUTE
+-- ═══════════════════════════════════════
+Script()
+wait(2)
+
+-- Ragdoll joints
+local ch = reanimation
+local function MS(p0,p1,v0,v1) local a0=Instance.new("Attachment",p0); a0.Position=v0
+	local a1=Instance.new("Attachment",p1); a1.Position=v1
+	local s=Instance.new("BallSocketConstraint",p0); s.Attachment0=a0; s.Attachment1=a1 end
+MS(ch["Left Leg"],ch.Torso,Vector3.new(0,1,0),Vector3.new(-0.5,-1,0))
+MS(ch["Right Leg"],ch.Torso,Vector3.new(0,1,0),Vector3.new(0.5,-1,0))
+MS(ch.Head,ch.Torso,Vector3.new(0,-0.5,0),Vector3.new(0,1,0))
+
+pcall(function() workspace.VirtualBody.Head.Face:Destroy() end)
+
+-- Reanimation sync
+for _, v in pairs(character1:GetDescendants()) do if v:IsA("Motor6D") then v:Destroy() end end
+if character1.Humanoid.RigType == Enum.HumanoidRigType.R15 then character1:BreakJoints() end
+for _, v in pairs(reanimation:GetChildren()) do if v:IsA("BasePart") then v.Anchored = false end end
+
+RunService.Heartbeat:Connect(function()
+	for _, v in pairs(character1:GetChildren()) do
+		if v:IsA("BasePart") then
+			v.Velocity = Vector3.new(bodyVelocity[1], bodyVelocity[2], bodyVelocity[3])
+			if character1.Humanoid.RigType == Enum.HumanoidRigType.R6 then
+				local rp = reanimation:FindFirstChild(v.Name); if rp then v.CFrame = rp.CFrame end
+			else
+				pcall(function()
+					if character1:FindFirstChild("Head") then character1.Head.CFrame=reanimation.Head.CFrame end
+					if character1:FindFirstChild("UpperTorso") then character1.UpperTorso.CFrame=reanimation.Torso.CFrame*CFrame.new(0,0.185,0) end
+					if character1:FindFirstChild("LowerTorso") then character1.LowerTorso.CFrame=reanimation.Torso.CFrame*CFrame.new(0,-0.8,0) end
+					if character1:FindFirstChild("HumanoidRootPart") then character1.HumanoidRootPart.CFrame=cHRP.CFrame end
+					if character1:FindFirstChild("LeftUpperArm") then character1.LeftUpperArm.CFrame=reanimation["Left Arm"].CFrame*CFrame.new(0,0.4,0) end
+					if character1:FindFirstChild("LeftLowerArm") then character1.LeftLowerArm.CFrame=reanimation["Left Arm"].CFrame*CFrame.new(0,-0.19,0) end
+					if character1:FindFirstChild("LeftHand") then character1.LeftHand.CFrame=reanimation["Left Arm"].CFrame*CFrame.new(0,-0.84,0) end
+					if character1:FindFirstChild("RightUpperArm") then character1.RightUpperArm.CFrame=reanimation["Right Arm"].CFrame*CFrame.new(0,0.4,0) end
+					if character1:FindFirstChild("RightLowerArm") then character1.RightLowerArm.CFrame=reanimation["Right Arm"].CFrame*CFrame.new(0,-0.19,0) end
+					if character1:FindFirstChild("RightHand") then character1.RightHand.CFrame=reanimation["Right Arm"].CFrame*CFrame.new(0,-0.84,0) end
+					if character1:FindFirstChild("LeftUpperLeg") then character1.LeftUpperLeg.CFrame=reanimation["Left Leg"].CFrame*CFrame.new(0,0.55,0) end
+					if character1:FindFirstChild("LeftLowerLeg") then character1.LeftLowerLeg.CFrame=reanimation["Left Leg"].CFrame*CFrame.new(0,-0.19,0) end
+					if character1:FindFirstChild("LeftFoot") then character1.LeftFoot.CFrame=reanimation["Left Leg"].CFrame*CFrame.new(0,-0.85,0) end
+					if character1:FindFirstChild("RightUpperLeg") then character1.RightUpperLeg.CFrame=reanimation["Right Leg"].CFrame*CFrame.new(0,0.55,0) end
+					if character1:FindFirstChild("RightLowerLeg") then character1.RightLowerLeg.CFrame=reanimation["Right Leg"].CFrame*CFrame.new(0,-0.19,0) end
+					if character1:FindFirstChild("RightFoot") then character1.RightFoot.CFrame=reanimation["Right Leg"].CFrame*CFrame.new(0,-0.85,0) end
+				end)
+			end
+		end
+		if v:IsA("Accessory") then
+			v.Handle.Velocity = Vector3.new(hatVelocity[1], hatVelocity[2], hatVelocity[3])
+			local ra = reanimation:FindFirstChild(v.Name); if ra then v.Handle.CFrame = ra.Handle.CFrame end
+		end
+	end
+end)
+
+RunService.Stepped:Connect(function()
+	for _, v in pairs(reanimation:GetChildren()) do if v:IsA("BasePart") then v.CanCollide = false end end
+end)
+
+-- Create UI
+wait(1)
+CreateAdvancedUI()
+
+-- FPS Counter
+spawn(function()
+	local fg=Instance.new("ScreenGui",player1.PlayerGui); fg.Name="FPS"; fg.ResetOnSpawn=false
+	local fl=Instance.new("TextLabel",fg); fl.Size=UDim2.new(0,80,0,20); fl.Position=UDim2.new(0,10,0,10)
+	fl.BackgroundColor3=Color3.fromRGB(10,10,18); fl.BackgroundTransparency=0.2
+	fl.TextColor3=Color3.fromRGB(0,255,100); fl.Font=Enum.Font.GothamBold; fl.TextSize=12
+	Instance.new("UICorner",fl).CornerRadius=UDim.new(0,6)
+	local lt,fc=tick(),0
+	RunService.RenderStepped:Connect(function() fc=fc+1
+		if tick()-lt>=1 then fl.Text="FPS: "..fc
+			fl.TextColor3=fc>=50 and Color3.fromRGB(0,255,100) or fc>=30 and Color3.fromRGB(255,200,0) or Color3.fromRGB(255,50,50)
+			fc=0; lt=tick() end end)
+end)
+
+wait(9e9)
