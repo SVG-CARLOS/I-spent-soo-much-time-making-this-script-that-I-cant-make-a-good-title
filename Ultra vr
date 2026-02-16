@@ -1,0 +1,2467 @@
+--[[
+    ██╗   ██╗██╗  ████████╗██████╗  █████╗     ██╗   ██╗██████╗ 
+    ██║   ██║██║  ╚══██╔══╝██╔══██╗██╔══██╗    ██║   ██║██╔══██╗
+    ██║   ██║██║     ██║   ██████╔╝███████║    ██║   ██║██████╔╝
+    ██║   ██║██║     ██║   ██╔══██╗██╔══██║    ╚██╗ ██╔╝██╔══██╗
+    ╚██████╔╝███████╗██║   ██║  ██║██║  ██║     ╚████╔╝ ██║  ██║
+     ╚═════╝ ╚══════╝╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝      ╚═══╝  ╚═╝  ╚═╝
+    
+    ULTRA VR REANIMATION v5.0
+    
+    NEW IN v5.0:
+    ═══════════════════════════════════════
+    🔧 TOOL SYSTEM - Equip & use tools/weapons normally!
+       Virtual body mimics tool animations (swing, hold, use)
+       Right arm tracks tool grip position
+       Tool activation works (click to use)
+    
+    🧠 SMART AUTO-DODGE SYSTEM - The SMARTEST dodge AI:
+       • Tracks ALL nearby projectiles (speed, direction, trajectory)
+       • Predicts impact point using velocity vectors
+       • Calculates optimal dodge direction (perpendicular to threat)
+       • Detects players swinging tools/weapons at you
+       • Monitors sudden velocity changes (fling attacks)
+       • Proximity-based threat assessment with priority system
+       • Multiple dodge styles: sidestep, backflip, duck, jump
+       • Picks the BEST dodge type based on threat angle
+       • Cooldown system prevents seizure-dodging
+       • Adjustable sensitivity & range
+       • Tracks threat history to predict patterns
+       • Won't dodge your own projectiles
+       • Visual threat indicator on UI
+    
+    🤸 Animation Mimicry System:
+       • Detects playing animations on humanoid
+       • Maps animation movements to virtual body
+       • Smooth arm/leg transitions for tool use
+       • Idle, walk, run, jump states tracked
+    ═══════════════════════════════════════
+]]
+
+game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync("-pd")
+wait(1.5)
+
+game["Run Service"].RenderStepped:connect(function()
+    settings().Physics.AllowSleep = false
+    setsimulationradius(math.huge * math.huge, math.huge * math.huge)
+end)
+
+--[[---------Settings---------]]--
+local bodyTransparency = 0
+local bodyVelocity = {-17.7, 0, -17.7}
+local hatVelocity = {-17.7, 0, -17.7}
+--[[--------------------------]]--
+
+local player1 = game.Players.LocalPlayer
+local character1 = player1.Character
+
+-- ═══════════════════════════════════════════
+-- FAKE CHARACTER CREATION
+-- ═══════════════════════════════════════════
+
+local function CreateAttachment(parent, position, orientation, axis, secondaryAxis, name)
+    local newAttchment = Instance.new("Attachment", parent)
+    newAttchment.Position = position
+    newAttchment.Orientation = orientation
+    newAttchment.Axis = axis
+    newAttchment.SecondaryAxis = secondaryAxis
+    newAttchment.Name = name
+end
+
+local player1 = game:GetService("Players").LocalPlayer
+local character1 = player1.Character
+local hrp = character1.HumanoidRootPart
+
+for i, v in pairs(character1:GetChildren()) do
+    if v:IsA("LocalScript") then v:Destroy() end
+end
+
+local camera = workspace.CurrentCamera
+local reanimFolder = Instance.new("Folder", character1)
+reanimFolder.Name = "FakeCharacter"
+local model = Instance.new("Model", reanimFolder)
+model.Name = "Reanimation"
+local userInputService = game:GetService("UserInputService")
+
+local cHead = Instance.new("Part", model) cHead.Size = Vector3.new(2, 1, 1) cHead.Name = "Head"
+local cTorso = Instance.new("Part", model) cTorso.Size = Vector3.new(2, 2, 1) cTorso.Name = "Torso"
+local cLArm = Instance.new("Part", model) cLArm.Size = Vector3.new(1, 2, 1) cLArm.Name = "Left Arm"
+local cRArm = Instance.new("Part", model) cRArm.Size = Vector3.new(1, 2, 1) cRArm.Name = "Right Arm"
+local cLLeg = Instance.new("Part", model) cLLeg.Size = Vector3.new(1, 2, 1) cLLeg.Name = "Left Leg"
+local cRLeg = Instance.new("Part", model) cRLeg.Size = Vector3.new(1, 2, 1) cRLeg.Name = "Right Leg"
+local cHRP = Instance.new("Part", model) cHRP.Size = Vector3.new(2, 2, 1) cHRP.Name = "HumanoidRootPart" cHRP.Transparency = 1 cHRP.CanCollide = false
+
+for i, v in pairs(model:GetChildren()) do
+    if v:IsA("Part") and v.Name ~= "HumanoidRootPart" then v.Transparency = 1 end
+end
+
+local rShoulder = Instance.new("Motor6D", cTorso) rShoulder.Part0 = cTorso rShoulder.Part1 = cRArm rShoulder.Name = "Right Shoulder"
+rShoulder.C0 = CFrame.new(1, 0.5, 0, 0, 0, 1, 0, 1, -0, -1, 0, 0) rShoulder.C1 = CFrame.new(-0.5, 0.5, 0, 0, 0, 1, 0, 1, -0, -1, 0, 0)
+local lShoulder = Instance.new("Motor6D", cTorso) lShoulder.Part0 = cTorso lShoulder.Part1 = cLArm lShoulder.Name = "Left Shoulder"
+lShoulder.C0 = CFrame.new(-1, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0) lShoulder.C1 = CFrame.new(0.5, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0)
+local rHip = Instance.new("Motor6D", cTorso) rHip.Part0 = cTorso rHip.Part1 = cRLeg rHip.Name = "Right Hip"
+rHip.C0 = CFrame.new(1, -1, 0, 0, 0, 1, 0, 1, -0, -1, 0, 0) rHip.C1 = CFrame.new(0.5, 1, 0, 0, 0, 1, 0, 1, -0, -1, 0, 0)
+local lHip = Instance.new("Motor6D", cTorso) lHip.Part0 = cTorso lHip.Part1 = cLLeg lHip.Name = "Left Hip"
+lHip.C0 = CFrame.new(-1, -1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0) lHip.C1 = CFrame.new(-0.5, 1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0)
+local neck = Instance.new("Motor6D", cTorso) neck.Part0 = cTorso neck.Part1 = cHead neck.Name = "Neck"
+neck.C0 = CFrame.new(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 1, -0) neck.C1 = CFrame.new(0, -0.5, 0, -1, 0, 0, 0, 0, 1, 0, 1, -0)
+local rootJoint = Instance.new("Motor6D", cHRP) rootJoint.Part0 = cHRP rootJoint.Part1 = cTorso rootJoint.Name = "RootJoint"
+rootJoint.C0 = CFrame.new(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, -0) rootJoint.C1 = CFrame.new(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, -0)
+
+local cHumanoid = Instance.new("Humanoid", model) cHumanoid.DisplayDistanceType = "None"
+local headMesh = Instance.new("SpecialMesh", cHead) headMesh.Scale = Vector3.new(1.25, 1.25, 1.25)
+local reanimation = model
+
+CreateAttachment(cHead, Vector3.new(0, 0.6, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "HairAttachment")
+CreateAttachment(cHead, Vector3.new(0, 0.6, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "HatAttachment")
+CreateAttachment(cHead, Vector3.new(0, 0, -0.6), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "FaceFrontAttachment")
+CreateAttachment(cHead, Vector3.new(0, 0, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "FaceCenterAttachment")
+CreateAttachment(cTorso, Vector3.new(0, 1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "NeckAttachment")
+CreateAttachment(cTorso, Vector3.new(0, 0, -0.5), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "BodyFrontAttachment")
+CreateAttachment(cTorso, Vector3.new(0, 0, 0.5), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "BodyBackAttachment")
+CreateAttachment(cTorso, Vector3.new(-1, 1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "LeftCollarAttachment")
+CreateAttachment(cTorso, Vector3.new(1, 1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "RightCollarAttachment")
+CreateAttachment(cTorso, Vector3.new(0, -1, -0.5), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "WaistFrontAttachment")
+CreateAttachment(cTorso, Vector3.new(0, -1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "WaistCenterAttachment")
+CreateAttachment(cTorso, Vector3.new(0, -1, 0.5), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "WaistBackAttachment")
+CreateAttachment(cLArm, Vector3.new(0, 1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "LeftShoulderAttachment")
+CreateAttachment(cLArm, Vector3.new(0, -1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "LeftGripAttachment")
+CreateAttachment(cRArm, Vector3.new(0, 1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "RightShoulderAttachment")
+CreateAttachment(cRArm, Vector3.new(0, -1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "RightGripAttachment")
+CreateAttachment(cLLeg, Vector3.new(0, -1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "LeftFootAttachment")
+CreateAttachment(cRLeg, Vector3.new(0, -1, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "RightFootAttachment")
+CreateAttachment(cHRP, Vector3.new(0, 0, 0), Vector3.new(0, 0, 0), Vector3.new(1, 0, 0), Vector3.new(0, 1, 0), "RootAttachment")
+
+for i, v in pairs(character1:GetChildren()) do
+    if v:IsA("Accessory") then
+        local clone = v:Clone()
+        local weld = v.Handle:FindFirstChildWhichIsA("Weld")
+        local weldPart1 = weld.Part1
+        local newWeld = Instance.new("Weld", clone.Handle)
+        local CFrame0 = v.Handle.AccessoryWeld.C0
+        local CFrame1 = v.Handle.AccessoryWeld.C1
+        clone.Handle:FindFirstChild("AccessoryWeld"):Destroy()
+        clone.Parent = reanimation
+        newWeld.Name = "AccessoryWeld"
+        newWeld.C0 = CFrame0 newWeld.C1 = CFrame1
+        newWeld.Part0 = clone.Handle
+        newWeld.Part1 = character1:FindFirstChild(weldPart1.Name)
+        clone.Handle.Transparency = 0
+    end
+end
+
+cHRP.CFrame = hrp.CFrame
+
+-- ═══════════════════════════════════════════
+-- STATE VARIABLES
+-- ═══════════════════════════════════════════
+
+local StateVars = {
+    LiftLeftLeg = false,
+    LiftRightLeg = false,
+    Climbing = false,
+    ClimbingActive = false,
+    VaultingLedge = false,
+    Flipping = false,
+    FlipType = "None",
+    FlipStartTime = 0,
+    FlipDuration = 0,
+    FlipCooldown = false,
+    Crawling = false,
+    Flying = false,
+    TPose = false,
+    Headless = false,
+    SpinAttack = false,
+    Superman = false,
+    TrueRagdoll = false,
+    RagdollRecovering = false,
+    SlowMotion = false,
+    Fling = false,
+    AntiFling = false,
+    JumpBoost = false,
+    SpinSpeed = 10,
+    FlySpeed = 50,
+    ClimbSpeed = 14,
+    LeftLegAngle = 0,
+    RightLegAngle = 0,
+    TargetLeftLegAngle = 0,
+    TargetRightLegAngle = 0,
+    WallNormal = Vector3.new(0, 0, 0),
+    WallHitPos = Vector3.new(0, 0, 0),
+    -- NEW v5.0
+    ToolEquipped = false,
+    CurrentTool = nil,
+    ToolAnimState = "idle", -- idle, swing, hold, use
+    ToolAnimProgress = 0,
+    ToolSwingTime = 0,
+    AutoDodge = false,
+    AutoDodgeActive = false, -- currently dodging
+    AutoDodgeType = "none",
+    AutoDodgeCooldown = false,
+    DodgeSensitivity = 1.0, -- 0.5 = less sensitive, 2.0 = very sensitive
+    DodgeRange = 30, -- scan range
+    ThreatLevel = 0, -- 0-100
+    LastDodgeTime = 0,
+    DodgeDirection = Vector3.new(0, 0, 0),
+    AnimMimicEnabled = true,
+    CurrentAnimState = "idle", -- idle, walk, run, jump, fall, tool
+    AnimTime = 0,
+}
+
+-- ═══════════════════════════════════════════
+-- TOOL SYSTEM
+-- ═══════════════════════════════════════════
+
+local ToolSystem = {}
+ToolSystem.ActiveGrip = nil
+ToolSystem.ToolWeld = nil
+ToolSystem.SwingAngle = 0
+ToolSystem.HoldAngle = 0
+ToolSystem.UseProgress = 0
+ToolSystem.LastClickTime = 0
+ToolSystem.IsSwinging = false
+ToolSystem.SwingDuration = 0.4
+ToolSystem.OriginalGrip = CFrame.new()
+
+function ToolSystem.GetEquippedTool()
+    for _, child in pairs(character1:GetChildren()) do
+        if child:IsA("Tool") then
+            return child
+        end
+    end
+    return nil
+end
+
+function ToolSystem.OnToolEquipped(tool)
+    StateVars.ToolEquipped = true
+    StateVars.CurrentTool = tool
+    StateVars.ToolAnimState = "hold"
+    
+    -- Wait for the handle weld to exist
+    spawn(function()
+        wait(0.1)
+        if tool:FindFirstChild("Handle") then
+            local handle = tool.Handle
+            -- Store original grip
+            if tool:FindFirstChild("Grip") then
+                ToolSystem.OriginalGrip = tool.Grip
+            end
+        end
+    end)
+end
+
+function ToolSystem.OnToolUnequipped()
+    StateVars.ToolEquipped = false
+    StateVars.CurrentTool = nil
+    StateVars.ToolAnimState = "idle"
+    ToolSystem.IsSwinging = false
+    ToolSystem.SwingAngle = 0
+end
+
+function ToolSystem.TriggerSwing()
+    if ToolSystem.IsSwinging then return end
+    ToolSystem.IsSwinging = true
+    ToolSystem.LastClickTime = tick()
+    StateVars.ToolAnimState = "swing"
+    StateVars.ToolSwingTime = tick()
+    
+    spawn(function()
+        wait(ToolSystem.SwingDuration)
+        ToolSystem.IsSwinging = false
+        if StateVars.ToolEquipped then
+            StateVars.ToolAnimState = "hold"
+        end
+    end)
+end
+
+function ToolSystem.GetToolArmCFrame(torsoCF, progress)
+    if StateVars.ToolAnimState == "swing" then
+        -- Swing animation: arm goes up then slashes down
+        local elapsed = tick() - StateVars.ToolSwingTime
+        local t = math.clamp(elapsed / ToolSystem.SwingDuration, 0, 1)
+        
+        local swingAngle
+        if t < 0.3 then
+            -- Wind up
+            swingAngle = (t / 0.3) * math.rad(-120)
+        elseif t < 0.6 then
+            -- Slash down
+            local slashT = (t - 0.3) / 0.3
+            swingAngle = math.rad(-120) + slashT * math.rad(200)
+        else
+            -- Recovery
+            local recovT = (t - 0.6) / 0.4
+            swingAngle = math.rad(80) - recovT * math.rad(80)
+        end
+        
+        return torsoCF * CFrame.new(1.5, 0.5, -0.3) * CFrame.Angles(swingAngle, 0, math.rad(-10))
+    elseif StateVars.ToolAnimState == "hold" then
+        -- Holding tool: arm slightly forward and angled
+        local breathe = math.sin(tick() * 2) * math.rad(3)
+        return torsoCF * CFrame.new(1.5, 0.2, -0.5) * CFrame.Angles(math.rad(-30) + breathe, 0, math.rad(-15))
+    elseif StateVars.ToolAnimState == "use" then
+        -- Using tool (eating, drinking etc): arm up to face
+        local useT = math.sin(tick() * 3) * math.rad(10)
+        return torsoCF * CFrame.new(1, 0.8, -0.6) * CFrame.Angles(math.rad(-80) + useT, math.rad(30), math.rad(-20))
+    end
+    return torsoCF * CFrame.new(1.5, 0.3, 0)
+end
+
+function ToolSystem.GetLeftArmToolCFrame(torsoCF)
+    if StateVars.ToolAnimState == "swing" then
+        local elapsed = tick() - StateVars.ToolSwingTime
+        local t = math.clamp(elapsed / ToolSystem.SwingDuration, 0, 1)
+        -- Left arm braces during swing
+        local braceAngle = math.sin(t * math.pi) * math.rad(-40)
+        return torsoCF * CFrame.new(-1.5, 0.3, -0.3) * CFrame.Angles(braceAngle, 0, math.rad(15))
+    elseif StateVars.ToolAnimState == "hold" then
+        -- Left arm relaxed while holding
+        local sway = math.sin(tick() * 1.5 + 1) * math.rad(5)
+        return torsoCF * CFrame.new(-1.5, 0, 0) * CFrame.Angles(sway, 0, math.rad(8))
+    end
+    return nil -- return nil = use default positioning
+end
+
+-- ═══════════════════════════════════════════
+-- ANIMATION MIMICRY SYSTEM
+-- ═══════════════════════════════════════════
+
+local AnimMimic = {}
+AnimMimic.CurrentTrack = nil
+AnimMimic.TrackName = ""
+AnimMimic.WalkCycle = 0
+AnimMimic.IsMoving = false
+AnimMimic.IsJumping = false
+AnimMimic.IsFalling = false
+AnimMimic.Speed = 0
+
+function AnimMimic.Update(dt)
+    if not StateVars.AnimMimicEnabled then return end
+    if not workspace:FindFirstChild("VirtualBody") then return end
+    
+    local vHumanoid = workspace.VirtualBody.Humanoid
+    local moveDir = character1.Humanoid.MoveDirection
+    AnimMimic.Speed = moveDir.Magnitude
+    AnimMimic.IsMoving = AnimMimic.Speed > 0.1
+    
+    -- Check jump/fall state
+    if workspace.VirtualBody:FindFirstChild("HumanoidRootPart") then
+        local rootVel = workspace.VirtualBody.HumanoidRootPart.Velocity
+        AnimMimic.IsJumping = rootVel.Y > 5
+        AnimMimic.IsFalling = rootVel.Y < -5
+    end
+    
+    -- Update walk cycle
+    if AnimMimic.IsMoving then
+        local walkSpeed = vHumanoid.WalkSpeed
+        AnimMimic.WalkCycle = AnimMimic.WalkCycle + dt * walkSpeed * 0.5
+    else
+        -- Gradually return to idle
+        AnimMimic.WalkCycle = AnimMimic.WalkCycle * 0.9
+    end
+    
+    -- Determine animation state
+    if StateVars.ToolEquipped and StateVars.ToolAnimState ~= "idle" then
+        StateVars.CurrentAnimState = "tool"
+    elseif AnimMimic.IsJumping then
+        StateVars.CurrentAnimState = "jump"
+    elseif AnimMimic.IsFalling then
+        StateVars.CurrentAnimState = "fall"
+    elseif AnimMimic.IsMoving then
+        local speed = workspace.VirtualBody.Humanoid.WalkSpeed
+        StateVars.CurrentAnimState = speed > 12 and "run" or "walk"
+    else
+        StateVars.CurrentAnimState = "idle"
+    end
+    
+    StateVars.AnimTime = StateVars.AnimTime + dt
+end
+
+-- Get arm offset based on current animation state
+function AnimMimic.GetRightArmOffset(torsoCF)
+    local state = StateVars.CurrentAnimState
+    local t = StateVars.AnimTime
+    
+    if state == "walk" then
+        local swing = math.sin(AnimMimic.WalkCycle) * math.rad(30)
+        return CFrame.new(1.5, 0.3, 0) * CFrame.Angles(swing, 0, math.rad(-5))
+    elseif state == "run" then
+        local swing = math.sin(AnimMimic.WalkCycle) * math.rad(55)
+        local pump = math.abs(math.sin(AnimMimic.WalkCycle)) * math.rad(-20)
+        return CFrame.new(1.5, 0.3, 0) * CFrame.Angles(swing + pump, 0, math.rad(-8))
+    elseif state == "jump" then
+        return CFrame.new(1.5, 0.8, -0.2) * CFrame.Angles(math.rad(-30), 0, math.rad(-25))
+    elseif state == "fall" then
+        local flail = math.sin(t * 8) * math.rad(15)
+        return CFrame.new(1.5, 0.6, 0) * CFrame.Angles(math.rad(-60) + flail, 0, math.rad(-35))
+    else -- idle
+        local breathe = math.sin(t * 1.5) * math.rad(3)
+        local sway = math.sin(t * 0.8) * math.rad(2)
+        return CFrame.new(1.5, 0, 0) * CFrame.Angles(breathe, 0, sway + math.rad(-3))
+    end
+end
+
+function AnimMimic.GetLeftArmOffset(torsoCF)
+    local state = StateVars.CurrentAnimState
+    local t = StateVars.AnimTime
+    
+    if state == "walk" then
+        local swing = math.sin(AnimMimic.WalkCycle + math.pi) * math.rad(30) -- opposite to right
+        return CFrame.new(-1.5, 0.3, 0) * CFrame.Angles(swing, 0, math.rad(5))
+    elseif state == "run" then
+        local swing = math.sin(AnimMimic.WalkCycle + math.pi) * math.rad(55)
+        local pump = math.abs(math.sin(AnimMimic.WalkCycle + math.pi)) * math.rad(-20)
+        return CFrame.new(-1.5, 0.3, 0) * CFrame.Angles(swing + pump, 0, math.rad(8))
+    elseif state == "jump" then
+        return CFrame.new(-1.5, 0.8, -0.2) * CFrame.Angles(math.rad(-30), 0, math.rad(25))
+    elseif state == "fall" then
+        local flail = math.sin(t * 8 + 2) * math.rad(15)
+        return CFrame.new(-1.5, 0.6, 0) * CFrame.Angles(math.rad(-60) + flail, 0, math.rad(35))
+    else -- idle
+        local breathe = math.sin(t * 1.5 + 0.5) * math.rad(3)
+        local sway = math.sin(t * 0.8 + 1) * math.rad(2)
+        return CFrame.new(-1.5, 0, 0) * CFrame.Angles(breathe, 0, sway + math.rad(3))
+    end
+end
+
+function AnimMimic.GetRightLegOffset()
+    local state = StateVars.CurrentAnimState
+    local t = StateVars.AnimTime
+    
+    if state == "walk" then
+        local swing = math.sin(AnimMimic.WalkCycle + math.pi) * math.rad(25)
+        return CFrame.new(0.5, -1.5, 0) * CFrame.Angles(swing, 0, 0)
+    elseif state == "run" then
+        local swing = math.sin(AnimMimic.WalkCycle + math.pi) * math.rad(50)
+        local knee = math.max(0, math.sin(AnimMimic.WalkCycle + math.pi)) * math.rad(30)
+        return CFrame.new(0.5, -1.5, 0) * CFrame.Angles(swing, 0, 0)
+    elseif state == "jump" then
+        return CFrame.new(0.5, -1.2, -0.3) * CFrame.Angles(math.rad(20), 0, 0)
+    elseif state == "fall" then
+        local spread = math.sin(t * 3) * math.rad(10)
+        return CFrame.new(0.5, -1.5, 0.2) * CFrame.Angles(math.rad(-15) + spread, 0, math.rad(5))
+    else
+        local shift = math.sin(t * 0.7) * math.rad(1)
+        return CFrame.new(0.5, -1.5, 0) * CFrame.Angles(shift, 0, 0)
+    end
+end
+
+function AnimMimic.GetLeftLegOffset()
+    local state = StateVars.CurrentAnimState
+    local t = StateVars.AnimTime
+    
+    if state == "walk" then
+        local swing = math.sin(AnimMimic.WalkCycle) * math.rad(25)
+        return CFrame.new(-0.5, -1.5, 0) * CFrame.Angles(swing, 0, 0)
+    elseif state == "run" then
+        local swing = math.sin(AnimMimic.WalkCycle) * math.rad(50)
+        return CFrame.new(-0.5, -1.5, 0) * CFrame.Angles(swing, 0, 0)
+    elseif state == "jump" then
+        return CFrame.new(-0.5, -1.2, -0.3) * CFrame.Angles(math.rad(20), 0, 0)
+    elseif state == "fall" then
+        local spread = math.sin(t * 3 + 1.5) * math.rad(10)
+        return CFrame.new(-0.5, -1.5, 0.2) * CFrame.Angles(math.rad(-15) + spread, 0, math.rad(-5))
+    else
+        local shift = math.sin(t * 0.7 + 1) * math.rad(1)
+        return CFrame.new(-0.5, -1.5, 0) * CFrame.Angles(shift, 0, 0)
+    end
+end
+
+-- ═══════════════════════════════════════════
+-- SMART AUTO-DODGE SYSTEM (THE BIG ONE)
+-- ═══════════════════════════════════════════
+
+local SmartDodge = {}
+SmartDodge.TrackedProjectiles = {} -- {part, lastPos, velocity, owner, firstSeen, threatScore}
+SmartDodge.TrackedPlayers = {} -- {player, lastArmPos, swingDetected, lastSwingTime, threatScore}
+SmartDodge.ThreatHistory = {} -- recent threats for pattern recognition
+SmartDodge.ScanInterval = 0.05 -- how often to scan (seconds)
+SmartDodge.LastScan = 0
+SmartDodge.DodgeCooldownTime = 0.6
+SmartDodge.MinThreatToDodge = 25 -- threat score threshold
+SmartDodge.DodgeTypes = {"sidestep_left", "sidestep_right", "backflip", "duck", "jump_back", "spin_dodge"}
+
+-- Projectile detection keywords
+SmartDodge.ProjectileNames = {
+    "bullet", "projectile", "arrow", "fireball", "blast", "shot", "missile",
+    "ball", "rock", "bomb", "kunai", "shuriken", "slash", "beam", "orb",
+    "spell", "bolt", "dart", "spike", "wave", "ray", "laser", "energy"
+}
+
+-- Check if a part looks like a projectile
+function SmartDodge.IsLikelyProjectile(part)
+    if not part:IsA("BasePart") then return false end
+    if part.Anchored then return false end
+    
+    local vel = part.Velocity.Magnitude
+    if vel < 15 then return false end -- too slow to be a projectile
+    
+    -- Check name
+    local lowerName = part.Name:lower()
+    for _, keyword in pairs(SmartDodge.ProjectileNames) do
+        if lowerName:find(keyword) then return true end
+    end
+    
+    -- Check size (projectiles are usually small)
+    local size = part.Size
+    if size.X <= 5 and size.Y <= 5 and size.Z <= 5 and vel > 30 then
+        return true
+    end
+    
+    -- Fast small parts are suspicious
+    if vel > 50 and size.Magnitude < 8 then return true end
+    
+    return false
+end
+
+-- Check if a part belongs to local player
+function SmartDodge.IsOwnProjectile(part)
+    local ancestor = part
+    for i = 1, 10 do
+        ancestor = ancestor.Parent
+        if not ancestor then break end
+        if ancestor == character1 then return true end
+        if ancestor == workspace:FindFirstChild("VirtualBody") then return true end
+        if ancestor == workspace:FindFirstChild("VirtualRig") then return true end
+        if ancestor == reanimation then return true end
+    end
+    
+    -- Check creator tag
+    local creator = part:FindFirstChild("creator") or part:FindFirstChild("Creator")
+    if creator and creator:IsA("ObjectValue") and creator.Value == player1 then
+        return true
+    end
+    
+    return false
+end
+
+-- Predict where a projectile will be in T seconds
+function SmartDodge.PredictPosition(pos, vel, t)
+    return pos + vel * t -- simple linear prediction
+end
+
+-- Calculate threat score for a projectile relative to our position
+function SmartDodge.CalculateProjectileThreat(projPos, projVel, myPos)
+    local toMe = myPos - projPos
+    local distance = toMe.Magnitude
+    
+    if distance > StateVars.DodgeRange then return 0 end
+    if distance < 1 then return 100 end
+    
+    -- Check if projectile is heading towards us
+    local projDir = projVel.Unit
+    local toMeDir = toMe.Unit
+    local dotProduct = projDir:Dot(toMeDir)
+    
+    if dotProduct < 0.3 then return 0 end -- not heading our way
+    
+    -- Calculate closest approach distance
+    local projSpeed = projVel.Magnitude
+    local timeToClosest = math.max(0, toMe:Dot(projDir) / projSpeed)
+    local closestPoint = projPos + projVel * timeToClosest
+    local missDistance = (closestPoint - myPos).Magnitude
+    
+    -- Threat scoring
+    local threat = 0
+    
+    -- Distance factor (closer = more threat)
+    threat = threat + math.clamp((1 - distance / StateVars.DodgeRange) * 40, 0, 40)
+    
+    -- Accuracy factor (heading right at us = more threat)
+    threat = threat + dotProduct * 30
+    
+    -- Speed factor (faster = more threat)
+    threat = threat + math.clamp(projSpeed / 100 * 15, 0, 15)
+    
+    -- Miss distance factor (closer pass = more threat)
+    if missDistance < 5 then
+        threat = threat + (1 - missDistance / 5) * 20
+    end
+    
+    -- Time to impact factor (urgent)
+    local timeToImpact = distance / math.max(projSpeed, 1)
+    if timeToImpact < 0.5 then
+        threat = threat + (1 - timeToImpact / 0.5) * 15
+    end
+    
+    return math.clamp(threat * StateVars.DodgeSensitivity, 0, 100)
+end
+
+-- Detect players swinging weapons nearby
+function SmartDodge.CalculatePlayerThreat(player, myPos)
+    if player == player1 then return 0 end
+    if not player.Character then return 0 end
+    local char = player.Character
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return 0 end
+    
+    local theirRoot = char:FindFirstChild("HumanoidRootPart")
+    if not theirRoot then return 0 end
+    
+    local distance = (theirRoot.Position - myPos).Magnitude
+    if distance > 15 then return 0 end
+    
+    local threat = 0
+    
+    -- Check if they have a tool equipped
+    local tool = nil
+    for _, child in pairs(char:GetChildren()) do
+        if child:IsA("Tool") then tool = child break end
+    end
+    
+    if tool then
+        -- Higher threat if they have a weapon and are close
+        threat = threat + math.clamp((1 - distance / 15) * 30, 0, 30)
+        
+        -- Check if they're facing us
+        local theirLook = theirRoot.CFrame.LookVector
+        local toMe = (myPos - theirRoot.Position).Unit
+        local facingDot = theirLook:Dot(toMe)
+        
+        if facingDot > 0.5 then
+            threat = threat + facingDot * 20
+        end
+        
+        -- Detect arm movement (swing detection)
+        local rightArm = char:FindFirstChild("Right Arm") or char:FindFirstChild("RightHand")
+        if rightArm then
+            local playerData = SmartDodge.TrackedPlayers[player.UserId]
+            if playerData then
+                local armDelta = (rightArm.Position - playerData.lastArmPos).Magnitude
+                if armDelta > 2 and distance < 8 then
+                    -- Fast arm movement = probably swinging
+                    threat = threat + math.clamp(armDelta * 8, 0, 30)
+                    playerData.swingDetected = true
+                    playerData.lastSwingTime = tick()
+                end
+                playerData.lastArmPos = rightArm.Position
+            else
+                SmartDodge.TrackedPlayers[player.UserId] = {
+                    player = player,
+                    lastArmPos = rightArm.Position,
+                    swingDetected = false,
+                    lastSwingTime = 0,
+                    threatScore = 0
+                }
+            end
+        end
+        
+        -- Recent swing bonus
+        local playerData = SmartDodge.TrackedPlayers[player.UserId]
+        if playerData and playerData.swingDetected and tick() - playerData.lastSwingTime < 1 then
+            threat = threat + 15
+        end
+    else
+        -- No tool but very close and moving fast toward us = fling attempt?
+        if distance < 6 then
+            local theirVel = theirRoot.Velocity
+            local toMe = (myPos - theirRoot.Position).Unit
+            local approachSpeed = theirVel:Dot(toMe)
+            
+            if approachSpeed > 20 then
+                threat = threat + math.clamp(approachSpeed / 5, 0, 25)
+            end
+            
+            -- Fling detection: check for insane velocity on their parts
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") and part.Velocity.Magnitude > 100 then
+                    threat = threat + 40
+                    break
+                end
+            end
+        end
+    end
+    
+    return math.clamp(threat * StateVars.DodgeSensitivity, 0, 100)
+end
+
+-- Determine the best dodge direction
+function SmartDodge.CalculateDodgeDirection(threatPos, myPos, myLook)
+    local threatDir = (threatPos - myPos).Unit
+    local right = myLook:Cross(Vector3.new(0, 1, 0)).Unit
+    local left = -right
+    local back = -myLook
+    
+    -- Calculate perpendicular directions to the threat
+    local perpRight = threatDir:Cross(Vector3.new(0, 1, 0)).Unit
+    local perpLeft = -perpRight
+    
+    -- Check which directions are clear (raycast)
+    local clearDirections = {}
+    local directions = {
+        {dir = perpRight, name = "sidestep_right", priority = 1},
+        {dir = perpLeft, name = "sidestep_left", priority = 1},
+        {dir = back, name = "jump_back", priority = 2},
+        {dir = Vector3.new(0, 1, 0), name = "duck", priority = 3}, -- duck uses jump technically
+    }
+    
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = {
+        character1, reanimation,
+        workspace:FindFirstChild("VirtualRig"),
+        workspace:FindFirstChild("VirtualBody")
+    }
+    
+    for _, dirData in pairs(directions) do
+        local result = workspace:Raycast(myPos, dirData.dir * 6, rayParams)
+        if not result then
+            -- Direction is clear
+            table.insert(clearDirections, dirData)
+        end
+    end
+    
+    -- Sort by priority (prefer perpendicular dodges)
+    table.sort(clearDirections, function(a, b) return a.priority < b.priority end)
+    
+    if #clearDirections > 0 then
+        -- Add some randomness between equal priority options
+        local best = clearDirections[1]
+        for i = 2, #clearDirections do
+            if clearDirections[i].priority == best.priority and math.random() > 0.5 then
+                best = clearDirections[i]
+            end
+        end
+        return best.dir, best.name
+    end
+    
+    -- All blocked? Duck!
+    return Vector3.new(0, -1, 0), "duck"
+end
+
+-- Choose dodge animation based on type
+function SmartDodge.GetDodgeAnimation(dodgeType)
+    if dodgeType == "sidestep_left" or dodgeType == "sidestep_right" then
+        return {
+            duration = 0.4,
+            torso = function(progress, baseCF, dir)
+                local lean = math.sin(progress * math.pi) * math.rad(35)
+                local slide = math.sin(progress * math.pi) * 4
+                local leanDir = dodgeType == "sidestep_left" and 1 or -1
+                return baseCF * CFrame.new(dir * slide) * CFrame.Angles(0, 0, lean * leanDir)
+            end,
+            rightArm = function(progress)
+                local guard = math.sin(progress * math.pi) * math.rad(-40)
+                return CFrame.Angles(guard, 0, math.rad(-30))
+            end,
+            leftArm = function(progress)
+                local guard = math.sin(progress * math.pi) * math.rad(-40)
+                return CFrame.Angles(guard, 0, math.rad(30))
+            end,
+            legs = function(progress, side)
+                local spread = math.sin(progress * math.pi) * math.rad(25)
+                return CFrame.Angles(0, 0, side == "left" and spread or -spread)
+            end
+        }
+    elseif dodgeType == "backflip" then
+        return {
+            duration = 0.7,
+            torso = function(progress, baseCF, dir)
+                local angle = progress * math.pi * 2
+                local height = math.sin(progress * math.pi) * 4
+                return baseCF * CFrame.new(0, height, 0) * CFrame.Angles(angle, 0, 0)
+            end,
+            rightArm = function(progress)
+                local spread = math.sin(progress * math.pi) * math.rad(160)
+                return CFrame.Angles(spread, 0, math.rad(-45))
+            end,
+            leftArm = function(progress)
+                local spread = math.sin(progress * math.pi) * math.rad(160)
+                return CFrame.Angles(spread, 0, math.rad(45))
+            end,
+            legs = function(progress, side)
+                local tuck = math.sin(progress * math.pi) * math.rad(90)
+                return CFrame.Angles(-tuck, 0, 0)
+            end
+        }
+    elseif dodgeType == "duck" then
+        return {
+            duration = 0.5,
+            torso = function(progress, baseCF, dir)
+                local duckAmount = math.sin(progress * math.pi) * 1.8
+                local lean = math.sin(progress * math.pi) * math.rad(40)
+                return baseCF * CFrame.new(0, -duckAmount, 0) * CFrame.Angles(lean, 0, 0)
+            end,
+            rightArm = function(progress)
+                local cover = math.sin(progress * math.pi) * math.rad(-90)
+                return CFrame.Angles(cover, 0, math.rad(-40))
+            end,
+            leftArm = function(progress)
+                local cover = math.sin(progress * math.pi) * math.rad(-90)
+                return CFrame.Angles(cover, 0, math.rad(40))
+            end,
+            legs = function(progress, side)
+                local bend = math.sin(progress * math.pi) * math.rad(60)
+                return CFrame.Angles(bend, 0, side == "left" and math.rad(-10) or math.rad(10))
+            end
+        }
+    elseif dodgeType == "jump_back" then
+        return {
+            duration = 0.5,
+            torso = function(progress, baseCF, dir)
+                local height = math.sin(progress * math.pi) * 3
+                local back = math.sin(progress * math.pi) * 4
+                return baseCF * CFrame.new(0, height, back) * CFrame.Angles(math.rad(-20) * math.sin(progress * math.pi), 0, 0)
+            end,
+            rightArm = function(progress)
+                local fling = math.sin(progress * math.pi) * math.rad(-60)
+                return CFrame.Angles(fling, 0, math.rad(-25))
+            end,
+            leftArm = function(progress)
+                local fling = math.sin(progress * math.pi) * math.rad(-60)
+                return CFrame.Angles(fling, 0, math.rad(25))
+            end,
+            legs = function(progress, side)
+                local kick = math.sin(progress * math.pi) * math.rad(-30)
+                return CFrame.Angles(kick, 0, 0)
+            end
+        }
+    elseif dodgeType == "spin_dodge" then
+        return {
+            duration = 0.5,
+            torso = function(progress, baseCF, dir)
+                local spin = progress * math.pi * 2
+                local height = math.sin(progress * math.pi) * 1.5
+                return baseCF * CFrame.new(dir * math.sin(progress * math.pi) * 3) * CFrame.new(0, height, 0) * CFrame.Angles(0, spin, 0)
+            end,
+            rightArm = function(progress)
+                return CFrame.Angles(math.rad(-90), 0, math.rad(-90))
+            end,
+            leftArm = function(progress)
+                return CFrame.Angles(math.rad(-90), 0, math.rad(90))
+            end,
+            legs = function(progress, side)
+                local sweep = math.sin(progress * math.pi) * math.rad(40)
+                return CFrame.Angles(0, 0, side == "left" and sweep or -sweep)
+            end
+        }
+    end
+    
+    -- Default sidestep
+    return SmartDodge.GetDodgeAnimation("sidestep_right")
+end
+
+-- Main scan function
+function SmartDodge.Scan(myPos)
+    if not StateVars.AutoDodge then return end
+    if tick() - SmartDodge.LastScan < SmartDodge.ScanInterval then return end
+    SmartDodge.LastScan = tick()
+    
+    local highestThreat = 0
+    local threatPosition = myPos
+    local threatVelocity = Vector3.new(0, 0, 0)
+    
+    -- Scan for projectiles
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and not obj.Anchored then
+            if SmartDodge.IsLikelyProjectile(obj) and not SmartDodge.IsOwnProjectile(obj) then
+                local threat = SmartDodge.CalculateProjectileThreat(obj.Position, obj.Velocity, myPos)
+                if threat > highestThreat then
+                    highestThreat = threat
+                    threatPosition = obj.Position
+                    threatVelocity = obj.Velocity
+                end
+            end
+        end
+    end
+    
+    -- Scan for player threats
+    for _, player in pairs(game:GetService("Players"):GetPlayers()) do
+        if player ~= player1 and player.Character then
+            local threat = SmartDodge.CalculatePlayerThreat(player, myPos)
+            if threat > highestThreat then
+                highestThreat = threat
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                if root then
+                    threatPosition = root.Position
+                    threatVelocity = root.Velocity
+                end
+            end
+        end
+    end
+    
+    -- Detect fling attacks on self
+    for _, part in pairs(character1:GetDescendants()) do
+        if part:IsA("BasePart") and part.Velocity.Magnitude > 80 then
+            highestThreat = math.max(highestThreat, 70)
+            threatPosition = myPos + part.Velocity.Unit * 5
+            break
+        end
+    end
+    
+    StateVars.ThreatLevel = highestThreat
+    
+    -- Should we dodge?
+    if highestThreat >= SmartDodge.MinThreatToDodge and not StateVars.AutoDodgeCooldown and not StateVars.AutoDodgeActive then
+        SmartDodge.ExecuteDodge(threatPosition, myPos)
+    end
+end
+
+function SmartDodge.ExecuteDodge(threatPos, myPos)
+    if StateVars.AutoDodgeCooldown or StateVars.Flipping or StateVars.TrueRagdoll then return end
+    
+    local myLook = Vector3.new(0, 0, -1)
+    if workspace:FindFirstChild("VirtualBody") and workspace.VirtualBody:FindFirstChild("HumanoidRootPart") then
+        myLook = workspace.VirtualBody.HumanoidRootPart.CFrame.LookVector
+    end
+    
+    local dodgeDir, dodgeType = SmartDodge.CalculateDodgeDirection(threatPos, myPos, myLook)
+    
+    -- High threat = fancier dodge
+    if StateVars.ThreatLevel > 70 and math.random() > 0.5 then
+        dodgeType = "backflip"
+        dodgeDir = -myLook
+    elseif StateVars.ThreatLevel > 50 and math.random() > 0.6 then
+        dodgeType = "spin_dodge"
+    end
+    
+    StateVars.AutoDodgeActive = true
+    StateVars.AutoDodgeType = dodgeType
+    StateVars.DodgeDirection = dodgeDir
+    StateVars.AutoDodgeCooldown = true
+    StateVars.LastDodgeTime = tick()
+    
+    local dodgeAnim = SmartDodge.GetDodgeAnimation(dodgeType)
+    
+    -- Add to threat history for pattern recognition
+    table.insert(SmartDodge.ThreatHistory, {
+        time = tick(),
+        type = dodgeType,
+        threatLevel = StateVars.ThreatLevel,
+        threatPos = threatPos
+    })
+    if #SmartDodge.ThreatHistory > 20 then
+        table.remove(SmartDodge.ThreatHistory, 1)
+    end
+    
+    -- Move virtual body in dodge direction
+    if workspace:FindFirstChild("VirtualBody") and workspace.VirtualBody:FindFirstChild("HumanoidRootPart") then
+        local dodgeForce = Instance.new("BodyVelocity")
+        dodgeForce.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        dodgeForce.Velocity = dodgeDir * 30 + Vector3.new(0, 15, 0)
+        dodgeForce.Parent = workspace.VirtualBody.HumanoidRootPart
+        
+        spawn(function()
+            wait(0.2)
+            dodgeForce:Destroy()
+        end)
+    end
+    
+    spawn(function()
+        wait(dodgeAnim.duration + 0.05)
+        StateVars.AutoDodgeActive = false
+        StateVars.AutoDodgeType = "none"
+        wait(SmartDodge.DodgeCooldownTime)
+        StateVars.AutoDodgeCooldown = false
+    end)
+end
+
+-- Get dodge animation transforms for current frame
+function SmartDodge.GetCurrentDodgeTransforms()
+    if not StateVars.AutoDodgeActive then return nil end
+    
+    local dodgeAnim = SmartDodge.GetDodgeAnimation(StateVars.AutoDodgeType)
+    local elapsed = tick() - StateVars.LastDodgeTime
+    local progress = math.clamp(elapsed / dodgeAnim.duration, 0, 1)
+    
+    return {
+        progress = progress,
+        anim = dodgeAnim,
+        direction = StateVars.DodgeDirection
+    }
+end
+
+-- ═══════════════════════════════════════════
+-- FLIP SYSTEM
+-- ═══════════════════════════════════════════
+
+local FlipTypes = {
+    FrontFlip = {
+        duration = 0.6, emoji = "🔄",
+        calc = function(p, tp, md)
+            return tp * CFrame.Angles(-p * math.pi * 2, 0, 0) * CFrame.new(0, math.sin(p * math.pi) * 3, 0)
+        end,
+        armCalc = function(p, s)
+            return CFrame.Angles(-p * math.pi * 2 - math.rad(90), 0, s == "left" and math.rad(30) or math.rad(-30))
+        end,
+        legCalc = function(p, s)
+            return CFrame.Angles(math.sin(p * math.pi) * math.rad(120), 0, 0)
+        end
+    },
+    BackFlip = {
+        duration = 0.7, emoji = "🔙",
+        calc = function(p, tp, md)
+            return tp * CFrame.new(0, math.sin(p * math.pi) * 4, 0) * CFrame.Angles(p * math.pi * 2, 0, 0)
+        end,
+        armCalc = function(p, s)
+            return CFrame.Angles(math.sin(p * math.pi) * math.rad(160), 0, s == "left" and math.rad(45) or math.rad(-45))
+        end,
+        legCalc = function(p, s)
+            return CFrame.Angles(-math.sin(p * math.pi) * math.rad(90), 0, 0)
+        end
+    },
+    SideFlipLeft = {
+        duration = 0.65, emoji = "⬅️",
+        calc = function(p, tp, md)
+            return tp * CFrame.new(0, math.sin(p * math.pi) * 3.5, 0) * CFrame.Angles(0, 0, p * math.pi * 2)
+        end,
+        armCalc = function(p, s)
+            return CFrame.Angles(0, 0, p * math.pi * 2 + (s == "left" and math.rad(90) or math.rad(-90)))
+        end,
+        legCalc = function(p, s)
+            return CFrame.Angles(0, 0, s == "left" and math.sin(p * math.pi) * math.rad(60) or -math.sin(p * math.pi) * math.rad(60))
+        end
+    },
+    SideFlipRight = {
+        duration = 0.65, emoji = "➡️",
+        calc = function(p, tp, md)
+            return tp * CFrame.new(0, math.sin(p * math.pi) * 3.5, 0) * CFrame.Angles(0, 0, -p * math.pi * 2)
+        end,
+        armCalc = function(p, s)
+            return CFrame.Angles(0, 0, -p * math.pi * 2 + (s == "left" and math.rad(90) or math.rad(-90)))
+        end,
+        legCalc = function(p, s)
+            return CFrame.Angles(0, 0, s == "left" and -math.sin(p * math.pi) * math.rad(60) or math.sin(p * math.pi) * math.rad(60))
+        end
+    },
+    SpinFlip360 = {
+        duration = 0.8, emoji = "🌀",
+        calc = function(p, tp, md)
+            return tp * CFrame.new(0, math.sin(p * math.pi) * 5, 0) * CFrame.Angles(-p * math.pi * 2, p * math.pi * 2, 0)
+        end,
+        armCalc = function(p, s)
+            return CFrame.Angles(-math.sin(p * math.pi) * math.rad(180), 0, s == "left" and math.rad(90) or math.rad(-90))
+        end,
+        legCalc = function(p, s) return CFrame.Angles(math.sin(p * math.pi) * math.rad(100), 0, 0) end
+    },
+    BarrelRoll = {
+        duration = 0.55, emoji = "🛢️",
+        calc = function(p, tp, md)
+            return tp * CFrame.Angles(math.rad(70), 0, 0) * CFrame.Angles(0, 0, p * math.pi * 2) * CFrame.new(0, math.sin(p * math.pi) * 1.5, 0)
+        end,
+        armCalc = function(p, s) return CFrame.Angles(math.rad(-90), 0, s == "left" and math.rad(45) or math.rad(-45)) end,
+        legCalc = function(p, s) return CFrame.Angles(math.rad(30), 0, 0) end
+    },
+    DoubleFlip = {
+        duration = 1.0, emoji = "✌️",
+        calc = function(p, tp, md)
+            return tp * CFrame.new(0, math.sin(p * math.pi) * 6, 0) * CFrame.Angles(-p * math.pi * 4, 0, 0)
+        end,
+        armCalc = function(p, s)
+            return CFrame.Angles(math.rad(-90) + math.cos(p * math.pi * 4) * math.rad(45), 0, s == "left" and math.rad(20) or math.rad(-20))
+        end,
+        legCalc = function(p, s) return CFrame.Angles(math.sin(p * math.pi) * math.rad(130), 0, 0) end
+    },
+    CorkScrew = {
+        duration = 0.9, emoji = "🌪️",
+        calc = function(p, tp, md)
+            return tp * CFrame.new(0, math.sin(p * math.pi) * 5, 0) * CFrame.Angles(-p * math.pi * 2, p * math.pi * 4, math.rad(45) * math.sin(p * math.pi))
+        end,
+        armCalc = function(p, s)
+            return CFrame.Angles(-p * math.pi * 2, 0, s == "left" and math.rad(60) or math.rad(-60))
+        end,
+        legCalc = function(p, s)
+            return CFrame.Angles(math.sin(p * math.pi) * math.rad(80), 0, s == "left" and math.rad(20) or math.rad(-20))
+        end
+    },
+    BellyFlop = {
+        duration = 0.7, emoji = "🤸",
+        calc = function(p, tp, md)
+            local angle = p < 0.5 and (p / 0.5) * math.rad(90) or math.rad(90) + ((p - 0.5) / 0.5) * math.rad(90)
+            local height = math.sin(p * math.pi) * 3
+            if p > 0.7 then height = height - (p - 0.7) * 10 end
+            return tp * CFrame.new(0, height, 0) * CFrame.Angles(-angle, 0, 0)
+        end,
+        armCalc = function(p, s)
+            if p > 0.6 then return CFrame.Angles(math.rad(-180), 0, s == "left" and math.rad(60) or math.rad(-60)) end
+            return CFrame.Angles(math.rad(-90) * p * 2, 0, 0)
+        end,
+        legCalc = function(p, s)
+            if p > 0.5 then return CFrame.Angles(math.rad(-30), 0, s == "left" and math.rad(20) or math.rad(-20)) end
+            return CFrame.Angles(math.rad(60) * p, 0, 0)
+        end
+    },
+    Helicopter = {
+        duration = 1.2, emoji = "🚁",
+        calc = function(p, tp, md)
+            return tp * CFrame.new(0, math.sin(p * math.pi) * 4, 0) * CFrame.Angles(math.rad(90), p * math.pi * 6, 0)
+        end,
+        armCalc = function(p, s) return CFrame.Angles(0, 0, s == "left" and math.rad(90) or math.rad(-90)) end,
+        legCalc = function(p, s) return CFrame.Angles(0, 0, s == "left" and math.rad(30) or math.rad(-30)) end
+    },
+}
+
+local FlipOrder = {"FrontFlip", "BackFlip", "SideFlipLeft", "SideFlipRight", "SpinFlip360", "BarrelRoll", "DoubleFlip", "CorkScrew", "BellyFlop", "Helicopter"}
+
+local function StartFlip(flipName)
+    if StateVars.FlipCooldown or StateVars.Flipping or StateVars.TrueRagdoll then return end
+    local flipData = FlipTypes[flipName]
+    if not flipData then return end
+    StateVars.Flipping = true
+    StateVars.FlipType = flipName
+    StateVars.FlipStartTime = tick()
+    StateVars.FlipDuration = flipData.duration
+    StateVars.FlipCooldown = true
+    spawn(function()
+        wait(flipData.duration + 0.05)
+        StateVars.Flipping = false
+        StateVars.FlipType = "None"
+        wait(0.3)
+        StateVars.FlipCooldown = false
+    end)
+end
+
+-- ═══════════════════════════════════════════
+-- TRUE RAGDOLL SYSTEM
+-- ═══════════════════════════════════════════
+
+local RagdollAlignments = {}
+local RagdollActive = false
+
+local function EnableTrueRagdoll()
+    if RagdollActive then return end
+    RagdollActive = true
+    for _, obj in pairs(reanimation["HumanoidRootPart"]:GetChildren()) do
+        if obj:IsA("AlignPosition") or obj:IsA("AlignOrientation") then
+            table.insert(RagdollAlignments, {
+                obj = obj,
+                origResponsiveness = obj.Responsiveness,
+                origMaxForce = obj:IsA("AlignPosition") and obj.MaxForce or nil,
+                origMaxTorque = obj:IsA("AlignOrientation") and obj.MaxTorque or nil,
+            })
+            obj.Responsiveness = 0.5
+            if obj:IsA("AlignPosition") then obj.MaxForce = 50 end
+            if obj:IsA("AlignOrientation") then obj.MaxTorque = 20 end
+        end
+    end
+    for _, part in pairs(reanimation:GetChildren()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            part.Velocity = Vector3.new(math.random(-30, 30), math.random(20, 60), math.random(-30, 30))
+            part.RotVelocity = Vector3.new(math.random(-15, 15), math.random(-15, 15), math.random(-15, 15))
+        end
+    end
+    spawn(function()
+        while StateVars.TrueRagdoll and RagdollActive do
+            for _, part in pairs(reanimation:GetChildren()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    part.RotVelocity = part.RotVelocity + Vector3.new(math.random(-3, 3), math.random(-3, 3), math.random(-3, 3))
+                end
+            end
+            wait(0.3)
+        end
+    end)
+end
+
+local function DisableTrueRagdoll()
+    if not RagdollActive then return end
+    RagdollActive = false
+    StateVars.RagdollRecovering = true
+    spawn(function()
+        for step = 1, 20 do
+            local t = step / 20
+            for _, data in pairs(RagdollAlignments) do
+                if data.obj and data.obj.Parent then
+                    data.obj.Responsiveness = 0.5 + (data.origResponsiveness - 0.5) * t
+                    if data.obj:IsA("AlignPosition") and data.origMaxForce then
+                        data.obj.MaxForce = 50 + (data.origMaxForce - 50) * t
+                    end
+                    if data.obj:IsA("AlignOrientation") and data.origMaxTorque then
+                        data.obj.MaxTorque = 20 + (data.origMaxTorque - 20) * t
+                    end
+                end
+            end
+            wait(0.05)
+        end
+        for _, data in pairs(RagdollAlignments) do
+            if data.obj and data.obj.Parent then
+                data.obj.Responsiveness = data.origResponsiveness
+                if data.obj:IsA("AlignPosition") and data.origMaxForce then data.obj.MaxForce = data.origMaxForce end
+                if data.obj:IsA("AlignOrientation") and data.origMaxTorque then data.obj.MaxTorque = data.origMaxTorque end
+            end
+        end
+        RagdollAlignments = {}
+        StateVars.RagdollRecovering = false
+    end)
+end
+
+-- ═══════════════════════════════════════════
+-- SMART CLIMBING + LEDGE VAULT
+-- ═══════════════════════════════════════════
+
+local function CastWallRay(origin, direction, distance)
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = {
+        workspace:FindFirstChild("VirtualRig"), workspace:FindFirstChild("VirtualBody"),
+        character1, reanimation
+    }
+    return workspace:Raycast(origin, direction * distance, rayParams)
+end
+
+local function CheckWallInFront()
+    if not workspace:FindFirstChild("VirtualBody") then return false, nil, nil end
+    local rootCF = workspace.VirtualBody.HumanoidRootPart.CFrame
+    for heightOffset = -1, 2, 0.5 do
+        local origin = rootCF.Position + Vector3.new(0, heightOffset, 0)
+        local result = CastWallRay(origin, rootCF.LookVector, 2.5)
+        if result then return true, result.Position, result.Normal end
+    end
+    return false, nil, nil
+end
+
+local function CheckLedgeAbove()
+    if not workspace:FindFirstChild("VirtualBody") then return false, nil end
+    local rootCF = workspace.VirtualBody.HumanoidRootPart.CFrame
+    local headPos = rootCF.Position + Vector3.new(0, 3, 0)
+    local forwardResult = CastWallRay(headPos, rootCF.LookVector, 2.5)
+    local aboveResult = CastWallRay(headPos + rootCF.LookVector * 1.5, Vector3.new(0, -1, 0), 4)
+    if not forwardResult and aboveResult then
+        return true, aboveResult.Position + Vector3.new(0, 3, 0)
+    end
+    return false, nil
+end
+
+-- ═══════════════════════════════════════════
+-- UI SYSTEM v3
+-- ═══════════════════════════════════════════
+
+local function CreateEnhancedUI()
+    local TweenService = game:GetService("TweenService")
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "UltraVR_UI_v5"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.Parent = game.Players.LocalPlayer.PlayerGui
+
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainPanel"
+    MainFrame.Size = UDim2.new(0, 350, 0, 580)
+    MainFrame.Position = UDim2.new(0, 10, 0.5, -290)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(8, 6, 18)
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Active = true
+    MainFrame.Draggable = true
+    MainFrame.ClipsDescendants = true
+    MainFrame.Parent = ScreenGui
+
+    local MainCorner = Instance.new("UICorner", MainFrame)
+    MainCorner.CornerRadius = UDim.new(0, 14)
+
+    local MainStroke = Instance.new("UIStroke", MainFrame)
+    MainStroke.Thickness = 2.5
+    MainStroke.Transparency = 0.1
+
+    local StrokeGradient = Instance.new("UIGradient", MainStroke)
+    StrokeGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 100)),
+        ColorSequenceKeypoint.new(0.25, Color3.fromRGB(255, 100, 0)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 150)),
+        ColorSequenceKeypoint.new(0.75, Color3.fromRGB(0, 100, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(200, 0, 255)),
+    })
+
+    spawn(function()
+        local offset = 0
+        while ScreenGui and ScreenGui.Parent do
+            offset = (offset + 0.003) % 1
+            StrokeGradient.Offset = Vector2.new(offset, 0)
+            StrokeGradient.Rotation = StrokeGradient.Rotation + 0.5
+            game:GetService("RunService").Heartbeat:Wait()
+        end
+    end)
+
+    -- Title
+    local TitleBar = Instance.new("Frame", MainFrame)
+    TitleBar.Size = UDim2.new(1, 0, 0, 45)
+    TitleBar.BackgroundColor3 = Color3.fromRGB(15, 12, 30)
+    TitleBar.BorderSizePixel = 0 TitleBar.ZIndex = 2
+    Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 14)
+    local TitleFix = Instance.new("Frame", TitleBar)
+    TitleFix.Size = UDim2.new(1, 0, 0, 14) TitleFix.Position = UDim2.new(0, 0, 1, -14)
+    TitleFix.BackgroundColor3 = Color3.fromRGB(15, 12, 30) TitleFix.BorderSizePixel = 0 TitleFix.ZIndex = 2
+
+    local TitleLabel = Instance.new("TextLabel", TitleBar)
+    TitleLabel.Size = UDim2.new(1, -80, 1, 0) TitleLabel.Position = UDim2.new(0, 12, 0, 0)
+    TitleLabel.BackgroundTransparency = 1 TitleLabel.Text = "⚡ ULTRA VR v5.0"
+    TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255) TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.TextSize = 17 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left TitleLabel.ZIndex = 3
+
+    spawn(function()
+        local hue = 0
+        while TitleLabel and TitleLabel.Parent do
+            hue = (hue + 0.005) % 1
+            TitleLabel.TextColor3 = Color3.fromHSV(hue, 0.3, 1)
+            game:GetService("RunService").Heartbeat:Wait()
+        end
+    end)
+
+    -- Threat indicator
+    local ThreatBar = Instance.new("Frame", TitleBar)
+    ThreatBar.Size = UDim2.new(0, 60, 0, 8)
+    ThreatBar.Position = UDim2.new(1, -110, 0.5, -4)
+    ThreatBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    ThreatBar.BorderSizePixel = 0 ThreatBar.ZIndex = 4
+    Instance.new("UICorner", ThreatBar).CornerRadius = UDim.new(1, 0)
+
+    local ThreatFill = Instance.new("Frame", ThreatBar)
+    ThreatFill.Name = "Fill"
+    ThreatFill.Size = UDim2.new(0, 0, 1, 0)
+    ThreatFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    ThreatFill.BorderSizePixel = 0 ThreatFill.ZIndex = 5
+    Instance.new("UICorner", ThreatFill).CornerRadius = UDim.new(1, 0)
+
+    local ThreatLabel = Instance.new("TextLabel", TitleBar)
+    ThreatLabel.Size = UDim2.new(0, 50, 0, 12)
+    ThreatLabel.Position = UDim2.new(1, -110, 0, 2)
+    ThreatLabel.BackgroundTransparency = 1
+    ThreatLabel.Text = "SAFE" ThreatLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    ThreatLabel.Font = Enum.Font.GothamBold ThreatLabel.TextSize = 8 ThreatLabel.ZIndex = 4
+
+    -- Update threat display
+    spawn(function()
+        while ScreenGui and ScreenGui.Parent do
+            local threat = StateVars.ThreatLevel
+            local fillWidth = math.clamp(threat / 100, 0, 1)
+            ThreatFill.Size = UDim2.new(fillWidth, 0, 1, 0)
+            
+            if threat < 25 then
+                ThreatFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+                ThreatLabel.Text = "SAFE"
+                ThreatLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+            elseif threat < 50 then
+                ThreatFill.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+                ThreatLabel.Text = "CAUTION"
+                ThreatLabel.TextColor3 = Color3.fromRGB(255, 255, 100)
+            elseif threat < 75 then
+                ThreatFill.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+                ThreatLabel.Text = "DANGER"
+                ThreatLabel.TextColor3 = Color3.fromRGB(255, 150, 50)
+            else
+                ThreatFill.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+                ThreatLabel.Text = "DODGE!"
+                ThreatLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+            end
+            
+            if StateVars.AutoDodgeActive then
+                ThreatLabel.Text = "⚡DODGING"
+            end
+            
+            wait(0.05)
+        end
+    end)
+
+    -- Minimize
+    local MinBtn = Instance.new("TextButton", TitleBar)
+    MinBtn.Size = UDim2.new(0, 32, 0, 32) MinBtn.Position = UDim2.new(1, -40, 0, 6)
+    MinBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 80) MinBtn.Text = "−"
+    MinBtn.TextColor3 = Color3.fromRGB(255, 255, 255) MinBtn.Font = Enum.Font.GothamBold
+    MinBtn.TextSize = 20 MinBtn.BorderSizePixel = 0 MinBtn.ZIndex = 4
+    Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(0, 8)
+    local isMinimized = false
+    MinBtn.MouseButton1Click:Connect(function()
+        isMinimized = not isMinimized
+        TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back),
+            {Size = isMinimized and UDim2.new(0, 350, 0, 45) or UDim2.new(0, 350, 0, 580)}):Play()
+        MinBtn.Text = isMinimized and "+" or "−"
+    end)
+
+    -- Tab System
+    local TabBar = Instance.new("Frame", MainFrame)
+    TabBar.Size = UDim2.new(1, -12, 0, 28) TabBar.Position = UDim2.new(0, 6, 0, 48)
+    TabBar.BackgroundTransparency = 1 TabBar.ZIndex = 2
+    local TabLayout = Instance.new("UIListLayout", TabBar)
+    TabLayout.FillDirection = Enum.FillDirection.Horizontal TabLayout.Padding = UDim.new(0, 2)
+
+    local tabs = {"Main", "Flips", "Dodge", "Tools", "Utility"}
+    local tabButtons = {} local tabFrames = {}
+
+    for i, tabName in pairs(tabs) do
+        local TabBtn = Instance.new("TextButton", TabBar)
+        TabBtn.Size = UDim2.new(1 / #tabs, -2, 1, 0)
+        TabBtn.BackgroundColor3 = Color3.fromRGB(25, 20, 45) TabBtn.Text = tabName
+        TabBtn.TextColor3 = Color3.fromRGB(160, 160, 180) TabBtn.Font = Enum.Font.GothamBold
+        TabBtn.TextSize = 10 TabBtn.BorderSizePixel = 0 TabBtn.ZIndex = 3
+        Instance.new("UICorner", TabBtn).CornerRadius = UDim.new(0, 6)
+        tabButtons[tabName] = TabBtn
+
+        local ScrollFrame = Instance.new("ScrollingFrame", MainFrame)
+        ScrollFrame.Name = "Tab_" .. tabName
+        ScrollFrame.Size = UDim2.new(1, -12, 1, -84) ScrollFrame.Position = UDim2.new(0, 6, 0, 80)
+        ScrollFrame.BackgroundTransparency = 1 ScrollFrame.ScrollBarThickness = 4
+        ScrollFrame.ScrollBarImageColor3 = Color3.fromRGB(150, 50, 255) ScrollFrame.BorderSizePixel = 0
+        ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0) ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        ScrollFrame.Visible = (tabName == "Main") ScrollFrame.ZIndex = 2
+        Instance.new("UIListLayout", ScrollFrame).Padding = UDim.new(0, 4)
+        Instance.new("UIListLayout", ScrollFrame).SortOrder = Enum.SortOrder.LayoutOrder
+        local Pad = Instance.new("UIPadding", ScrollFrame)
+        Pad.PaddingTop = UDim.new(0, 2) Pad.PaddingBottom = UDim.new(0, 8)
+        tabFrames[tabName] = ScrollFrame
+    end
+
+    -- Fix: UIListLayout duplicate - remove first one
+    for _, tabName in pairs(tabs) do
+        local sf = tabFrames[tabName]
+        local layouts = {}
+        for _, c in pairs(sf:GetChildren()) do
+            if c:IsA("UIListLayout") then table.insert(layouts, c) end
+        end
+        for i = 2, #layouts do layouts[i]:Destroy() end
+    end
+
+    local function SwitchTab(tabName)
+        for name, frame in pairs(tabFrames) do frame.Visible = (name == tabName) end
+        for name, btn in pairs(tabButtons) do
+            if name == tabName then
+                TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(70, 35, 140), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+            else
+                TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 20, 45), TextColor3 = Color3.fromRGB(160, 160, 180)}):Play()
+            end
+        end
+    end
+    for name, btn in pairs(tabButtons) do btn.MouseButton1Click:Connect(function() SwitchTab(name) end) end
+    SwitchTab("Main")
+
+    -- UI Element Creators
+    local function CreateSection(parent, name, order)
+        local f = Instance.new("Frame", parent) f.Size = UDim2.new(1, 0, 0, 24) f.BackgroundTransparency = 1 f.LayoutOrder = order or 0 f.ZIndex = 3
+        local l = Instance.new("TextLabel", f) l.Size = UDim2.new(1, 0, 1, 0) l.BackgroundTransparency = 1
+        l.Text = "━━ " .. name .. " ━━" l.TextColor3 = Color3.fromRGB(180, 100, 255)
+        l.Font = Enum.Font.GothamBold l.TextSize = 12 l.ZIndex = 3
+    end
+
+    local function CreateToggle(parent, text, emoji, callback, layoutOrder)
+        local bf = Instance.new("Frame", parent) bf.Size = UDim2.new(1, -4, 0, 36) bf.BackgroundColor3 = Color3.fromRGB(20, 16, 38)
+        bf.BorderSizePixel = 0 bf.LayoutOrder = layoutOrder or 0 bf.ZIndex = 3
+        Instance.new("UICorner", bf).CornerRadius = UDim.new(0, 10)
+        local bs = Instance.new("UIStroke", bf) bs.Color = Color3.fromRGB(45, 38, 70) bs.Thickness = 1 bs.Transparency = 0.5
+
+        local btn = Instance.new("TextButton", bf) btn.Size = UDim2.new(1, 0, 1, 0) btn.BackgroundTransparency = 1 btn.Text = "" btn.ZIndex = 4
+        local el = Instance.new("TextLabel", bf) el.Size = UDim2.new(0, 26, 1, 0) el.Position = UDim2.new(0, 8, 0, 0)
+        el.BackgroundTransparency = 1 el.Text = emoji el.TextSize = 14 el.Font = Enum.Font.GothamBold el.TextColor3 = Color3.fromRGB(255, 255, 255) el.ZIndex = 4
+        local ll = Instance.new("TextLabel", bf) ll.Size = UDim2.new(1, -85, 1, 0) ll.Position = UDim2.new(0, 38, 0, 0)
+        ll.BackgroundTransparency = 1 ll.Text = text ll.TextColor3 = Color3.fromRGB(210, 210, 225) ll.Font = Enum.Font.Gotham ll.TextSize = 12
+        ll.TextXAlignment = Enum.TextXAlignment.Left ll.ZIndex = 4
+
+        local sbg = Instance.new("Frame", bf) sbg.Size = UDim2.new(0, 36, 0, 18) sbg.Position = UDim2.new(1, -46, 0.5, -9)
+        sbg.BackgroundColor3 = Color3.fromRGB(50, 42, 70) sbg.BorderSizePixel = 0 sbg.ZIndex = 4
+        Instance.new("UICorner", sbg).CornerRadius = UDim.new(1, 0)
+        local sk = Instance.new("Frame", sbg) sk.Size = UDim2.new(0, 14, 0, 14) sk.Position = UDim2.new(0, 2, 0.5, -7)
+        sk.BackgroundColor3 = Color3.fromRGB(180, 180, 180) sk.BorderSizePixel = 0 sk.ZIndex = 5
+        Instance.new("UICorner", sk).CornerRadius = UDim.new(1, 0)
+
+        local toggled = false
+        btn.MouseButton1Click:Connect(function()
+            toggled = not toggled
+            if toggled then
+                TweenService:Create(sk, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {Position = UDim2.new(1, -16, 0.5, -7)}):Play()
+                TweenService:Create(sk, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(100, 255, 130)}):Play()
+                TweenService:Create(sbg, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(35, 110, 55)}):Play()
+                TweenService:Create(bs, TweenInfo.new(0.2), {Color = Color3.fromRGB(50, 180, 90)}):Play()
+            else
+                TweenService:Create(sk, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {Position = UDim2.new(0, 2, 0.5, -7)}):Play()
+                TweenService:Create(sk, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(180, 180, 180)}):Play()
+                TweenService:Create(sbg, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 42, 70)}):Play()
+                TweenService:Create(bs, TweenInfo.new(0.2), {Color = Color3.fromRGB(45, 38, 70)}):Play()
+            end
+            callback(toggled)
+        end)
+        return btn
+    end
+
+    local function CreateAction(parent, text, emoji, callback, layoutOrder)
+        local bf = Instance.new("Frame", parent) bf.Size = UDim2.new(1, -4, 0, 36) bf.BackgroundColor3 = Color3.fromRGB(32, 18, 55)
+        bf.BorderSizePixel = 0 bf.LayoutOrder = layoutOrder or 0 bf.ZIndex = 3
+        Instance.new("UICorner", bf).CornerRadius = UDim.new(0, 10)
+        local bs = Instance.new("UIStroke", bf) bs.Color = Color3.fromRGB(70, 45, 110) bs.Thickness = 1 bs.Transparency = 0.4
+
+        local btn = Instance.new("TextButton", bf) btn.Size = UDim2.new(1, 0, 1, 0) btn.BackgroundTransparency = 1 btn.Text = "" btn.ZIndex = 4
+        local ll = Instance.new("TextLabel", bf) ll.Size = UDim2.new(1, -14, 1, 0) ll.Position = UDim2.new(0, 10, 0, 0)
+        ll.BackgroundTransparency = 1 ll.Text = emoji .. "  " .. text ll.TextColor3 = Color3.fromRGB(255, 200, 100)
+        ll.Font = Enum.Font.GothamBold ll.TextSize = 12 ll.TextXAlignment = Enum.TextXAlignment.Left ll.ZIndex = 4
+
+        btn.MouseButton1Click:Connect(function()
+            TweenService:Create(bf, TweenInfo.new(0.08), {BackgroundColor3 = Color3.fromRGB(90, 55, 160)}):Play()
+            wait(0.08)
+            TweenService:Create(bf, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(32, 18, 55)}):Play()
+            callback()
+        end)
+        return btn
+    end
+
+    -- ═══ TAB: MAIN ═══
+    local m = tabFrames["Main"]
+    CreateSection(m, "🦵 LEG CONTROLS", 0)
+    CreateToggle(m, "Lift Left Leg [Q]", "🦶", function(s) StateVars.LiftLeftLeg = s StateVars.TargetLeftLegAngle = s and math.rad(90) or 0 end, 1)
+    CreateToggle(m, "Lift Right Leg [E]", "🦶", function(s) StateVars.LiftRightLeg = s StateVars.TargetRightLegAngle = s and math.rad(90) or 0 end, 2)
+    CreateSection(m, "🏃 MOVEMENT", 3)
+    CreateToggle(m, "Wall Climb [G]", "🧗", function(s) StateVars.Climbing = s end, 4)
+    CreateToggle(m, "Crawl [V]", "🐛", function(s) StateVars.Crawling = s end, 5)
+    CreateToggle(m, "Flight [F]", "✈️", function(s) StateVars.Flying = s end, 6)
+    CreateToggle(m, "Jump Boost", "🚀", function(s) StateVars.JumpBoost = s if workspace:FindFirstChild("VirtualBody") then workspace.VirtualBody.Humanoid.JumpPower = s and 100 or 50 end end, 7)
+    CreateToggle(m, "Slow Motion [L]", "🕐", function(s) StateVars.SlowMotion = s if not s and workspace:FindFirstChild("VirtualBody") then workspace.VirtualBody.Humanoid.WalkSpeed = 8 end end, 8)
+    CreateSection(m, "🎭 POSES", 9)
+    CreateToggle(m, "T-Pose [T]", "✝️", function(s) StateVars.TPose = s end, 10)
+    CreateToggle(m, "Superman [Z]", "🦸", function(s) StateVars.Superman = s end, 11)
+    CreateToggle(m, "Headless [J]", "👻", function(s) StateVars.Headless = s end, 12)
+    CreateToggle(m, "TRUE Ragdoll [P]", "💀", function(s) StateVars.TrueRagdoll = s if s then EnableTrueRagdoll() else DisableTrueRagdoll() end end, 13)
+
+    -- ═══ TAB: FLIPS ═══
+    local fl = tabFrames["Flips"]
+    CreateSection(fl, "🤸 FLIP MOVES", 0)
+    local fo = 1
+    for _, fn in ipairs(FlipOrder) do
+        local fd = FlipTypes[fn]
+        CreateAction(fl, fn:gsub("(%u)", " %1"):sub(2), fd.emoji, function() StartFlip(fn) end, fo)
+        fo = fo + 1
+    end
+    CreateSection(fl, "🎲 COMBOS", fo) fo = fo + 1
+    CreateAction(fl, "Random Flip! [N]", "🎰", function() StartFlip(FlipOrder[math.random(1, #FlipOrder)]) end, fo) fo = fo + 1
+    CreateAction(fl, "Flip Combo x3 [M]", "🔥", function()
+        spawn(function() for i = 1, 3 do StartFlip(FlipOrder[math.random(1, #FlipOrder)]) repeat wait() until not StateVars.Flipping wait(0.1) end end)
+    end, fo)
+
+    -- ═══ TAB: DODGE ═══
+    local dg = tabFrames["Dodge"]
+    CreateSection(dg, "🧠 SMART AUTO-DODGE", 0)
+    CreateToggle(dg, "Enable Auto-Dodge [Y]", "🧠", function(s) StateVars.AutoDodge = s end, 1)
+    CreateSection(dg, "⚙️ SETTINGS", 2)
+    CreateToggle(dg, "High Sensitivity", "📡", function(s) StateVars.DodgeSensitivity = s and 2.0 or 1.0 end, 3)
+    CreateToggle(dg, "Extended Range (50)", "📏", function(s) StateVars.DodgeRange = s and 50 or 30 end, 4)
+    CreateToggle(dg, "Anti-Fling Shield", "🛡️", function(s) StateVars.AntiFling = s end, 5)
+    CreateToggle(dg, "Fling Mode [K]", "💥", function(s) StateVars.Fling = s end, 6)
+    CreateSection(dg, "📊 HOW IT WORKS", 7)
+    local di = Instance.new("Frame", dg) di.Size = UDim2.new(1, -4, 0, 150) di.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    di.BorderSizePixel = 0 di.LayoutOrder = 8 di.ZIndex = 3 Instance.new("UICorner", di).CornerRadius = UDim.new(0, 8)
+    local dil = Instance.new("TextLabel", di) dil.Size = UDim2.new(1, -10, 1, -6) dil.Position = UDim2.new(0, 5, 0, 3)
+    dil.BackgroundTransparency = 1 dil.TextColor3 = Color3.fromRGB(160, 160, 180) dil.Font = Enum.Font.Gotham dil.TextSize = 10
+    dil.TextXAlignment = Enum.TextXAlignment.Left dil.TextYAlignment = Enum.TextYAlignment.Top dil.TextWrapped = true dil.ZIndex = 4
+    dil.Text = [[🔍 Scans all workspace parts for projectiles
+📐 Calculates trajectory & impact prediction
+🎯 Rates threat level 0-100 in real-time
+⚡ Picks optimal dodge direction (perpendicular)
+🧠 Detects player weapon swings nearby
+🌪️ Detects fling attacks (insane velocity)
+🎲 Varies dodge type based on threat angle
+📊 Threat bar shows danger level live
+⏱️ Cooldown prevents seizure-dodging]]
+
+    -- ═══ TAB: TOOLS ═══
+    local tl = tabFrames["Tools"]
+    CreateSection(tl, "🔧 TOOL SYSTEM", 0)
+    CreateToggle(tl, "Animation Mimicry", "🎭", function(s) StateVars.AnimMimicEnabled = s end, 1)
+    CreateSection(tl, "📋 HOW TOOLS WORK", 2)
+    local ti = Instance.new("Frame", tl) ti.Size = UDim2.new(1, -4, 0, 140) ti.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    ti.BorderSizePixel = 0 ti.LayoutOrder = 3 ti.ZIndex = 3 Instance.new("UICorner", ti).CornerRadius = UDim.new(0, 8)
+    local til = Instance.new("TextLabel", ti) til.Size = UDim2.new(1, -10, 1, -6) til.Position = UDim2.new(0, 5, 0, 3)
+    til.BackgroundTransparency = 1 til.TextColor3 = Color3.fromRGB(160, 160, 180) til.Font = Enum.Font.Gotham til.TextSize = 10
+    til.TextXAlignment = Enum.TextXAlignment.Left til.TextYAlignment = Enum.TextYAlignment.Top til.TextWrapped = true til.ZIndex = 4
+    til.Text = [[🔧 Tools now work automatically!
+⚔️ Equip any tool from your inventory
+🖱️ Click to use/swing (tool .Activated fires)
+🤖 Virtual body mimics tool animations:
+   • Holding pose when tool equipped
+   • Swing animation on click
+   • Walk/run arm swing with tool
+   • Idle breathing animation
+🎭 Animation mimicry tracks movement
+   and applies walk/run/jump/fall poses]]
+
+    -- ═══ TAB: UTILITY ═══
+    local ut = tabFrames["Utility"]
+    CreateSection(ut, "🔧 ACTIONS", 0)
+    CreateAction(ut, "Teleport to Mouse [C]", "📍", function()
+        local h = player1:GetMouse().Hit
+        if workspace:FindFirstChild("VirtualBody") then workspace.VirtualBody:MoveTo(h.p) end
+        if workspace:FindFirstChild("VirtualRig") then workspace.VirtualRig:MoveTo(h.p) end
+    end, 1)
+    CreateAction(ut, "Respawn [X]", "♻️", function() Respawn() end, 2)
+    CreateAction(ut, "Reset Character", "💀", function() character1:BreakJoints() end, 3)
+    CreateToggle(ut, "Spin Attack [H]", "🌀", function(s) StateVars.SpinAttack = s end, 4)
+
+    CreateSection(ut, "⌨️ ALL KEYBINDS", 5)
+    local ki = Instance.new("Frame", ut) ki.Size = UDim2.new(1, -4, 0, 240) ki.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    ki.BorderSizePixel = 0 ki.LayoutOrder = 6 ki.ZIndex = 3 Instance.new("UICorner", ki).CornerRadius = UDim.new(0, 8)
+    local kil = Instance.new("TextLabel", ki) kil.Size = UDim2.new(1, -10, 1, -6) kil.Position = UDim2.new(0, 5, 0, 3)
+    kil.BackgroundTransparency = 1 kil.TextColor3 = Color3.fromRGB(160, 160, 180) kil.Font = Enum.Font.Gotham kil.TextSize = 10
+    kil.TextXAlignment = Enum.TextXAlignment.Left kil.TextYAlignment = Enum.TextYAlignment.Top kil.TextWrapped = true kil.ZIndex = 4
+    kil.Text = [[Q/E - Lift Left/Right Leg
+R - Front Flip  |  B - Back Flip
+N - Random Flip  |  M - Flip Combo x3
+1-0 - Individual flip types
+Y - Toggle Auto-Dodge (NEW!)
+F - Flight  |  G - Climb  |  V - Crawl
+T - T-Pose  |  Z - Superman  |  J - Headless
+H - Spin Attack  |  K - Fling  |  L - Slow Mo
+P - TRUE Ragdoll
+C - Teleport to Mouse  |  X - Respawn
+LShift - Sprint  |  LCtrl - Crouch
+Click - Use equipped tool / Point arms
+Tools equip normally from backpack!]]
+
+    -- Status display
+    CreateSection(ut, "📊 STATUS", 7)
+    local sf = Instance.new("Frame", ut) sf.Size = UDim2.new(1, -4, 0, 70) sf.BackgroundColor3 = Color3.fromRGB(15, 12, 28)
+    sf.BorderSizePixel = 0 sf.LayoutOrder = 8 sf.ZIndex = 3 Instance.new("UICorner", sf).CornerRadius = UDim.new(0, 8)
+    local sl = Instance.new("TextLabel", sf) sl.Name = "StatusText" sl.Size = UDim2.new(1, -10, 1, -6) sl.Position = UDim2.new(0, 5, 0, 3)
+    sl.BackgroundTransparency = 1 sl.TextColor3 = Color3.fromRGB(100, 255, 150) sl.Font = Enum.Font.GothamBold sl.TextSize = 10
+    sl.TextXAlignment = Enum.TextXAlignment.Left sl.TextYAlignment = Enum.TextYAlignment.Top sl.TextWrapped = true sl.ZIndex = 4
+
+    spawn(function()
+        while ScreenGui and ScreenGui.Parent do
+            local status = {}
+            if StateVars.Flipping then table.insert(status, "🤸 Flip: " .. StateVars.FlipType) end
+            if StateVars.AutoDodge then table.insert(status, "🧠 Auto-Dodge ON (Threat:" .. math.floor(StateVars.ThreatLevel) .. ")") end
+            if StateVars.AutoDodgeActive then table.insert(status, "⚡ DODGING: " .. StateVars.AutoDodgeType) end
+            if StateVars.TrueRagdoll then table.insert(status, "💀 RAGDOLLED") end
+            if StateVars.ToolEquipped then table.insert(status, "🔧 Tool: " .. (StateVars.CurrentTool and StateVars.CurrentTool.Name or "?")) end
+            if StateVars.ClimbingActive then table.insert(status, "🧗 Climbing") end
+            if StateVars.Flying then table.insert(status, "✈️ Flying") end
+            if StateVars.CurrentAnimState ~= "idle" then table.insert(status, "🎭 Anim: " .. StateVars.CurrentAnimState) end
+            if #status == 0 then table.insert(status, "✅ Ready!") end
+            sl.Text = table.concat(status, "\n")
+            wait(0.1)
+        end
+    end)
+
+    return ScreenGui
+end
+
+-- ═══════════════════════════════════════════
+-- CLOVR VR CORE
+-- ═══════════════════════════════════════════
+
+local StudsOffset = 0
+local Smoothness = .5
+local AnchorCharacter = false
+local HideCharacter = false
+local NoCollision = false
+local ChatEnabled = true
+local ChatLocalRange = 75
+local ViewportEnabled = true
+local ViewportRange = 30
+local RagdollEnabled = true
+local RagdollHeadMovement = true
+local AutoRun = false
+local AutoRespawn = true
+local WearAllAccessories = true
+local AccurateHandPosition = true
+local AccessorySettings = {
+    LeftArm = "", RightArm = "", LeftLeg = "", RightLeg = "", Torso = "",
+    Head = true, BlockArms = true, BlockLegs = true, BlockTorso = true,
+    LimbOffset = CFrame.Angles(math.rad(90), 0, 0)
+}
+local FootPlacementSettings = {
+    RightOffset = Vector3.new(.5, 0, 0), LeftOffset = Vector3.new(-.5, 0, 0)
+}
+
+local Script = nil
+Script = function()
+    local Players = game:GetService("Players")
+    local Client = Players.LocalPlayer
+    local Character = Client.Character or Client.CharacterAdded:Wait()
+    local WeldBase = Character:WaitForChild("HumanoidRootPart")
+    local ArmBase = Character:FindFirstChild("RightHand") or Character:FindFirstChild("Right Arm") or WeldBase
+    local Backpack = Client:WaitForChild("Backpack")
+    local Mouse = Client:GetMouse()
+    local Camera = workspace.CurrentCamera
+    local VRService = game:GetService("VRService")
+    local VRReady = VRService.VREnabled
+    local UserInputService = game:GetService("UserInputService")
+    local RunService = game:GetService("RunService")
+    local TweenService = game:GetService("TweenService")
+    local StarterGui = game:GetService("StarterGui")
+    local HeadAccessories = {}
+    local UsedAccessories = {}
+    local Pointer = false
+    local Point1 = false
+    local Point2 = false
+    local VirtualRig = game:GetObjects("rbxassetid://4468539481")[1]
+    local VirtualBody = game:GetObjects("rbxassetid://4464983829")[1]
+    local Anchor = Instance.new("Part") Anchor.Anchored = true Anchor.Transparency = 1 Anchor.CanCollide = false Anchor.Parent = workspace
+
+    StarterGui:SetCore("VRLaserPointerMode", 3)
+    local CharacterCFrame = WeldBase.CFrame
+
+    if not RagdollEnabled then
+        Character.Humanoid.AnimationPlayed:Connect(function(a) a:Stop() end)
+        for _, t in next, Character.Humanoid:GetPlayingAnimationTracks() do t:Stop() end
+    end
+
+    function Tween(Object, Style, Direction, Time, Goal)
+        local t = TweenService:Create(Object, TweenInfo.new(Time, Enum.EasingStyle[Style], Enum.EasingDirection[Direction]), Goal)
+        t.Completed:Connect(function() t:Destroy() end) t:Play() return t
+    end
+
+    local function GetMotorForLimb(Limb)
+        for _, M in next, Character:GetDescendants() do if M:IsA("Motor6D") and M.Part1 == Limb then return M end end
+    end
+
+    local function CreateAlignment(Limb, Part0)
+        local A0 = Instance.new("Attachment", Part0 or Anchor)
+        local A1 = Instance.new("Attachment", Limb)
+        local O = Instance.new("AlignOrientation") local P = Instance.new("AlignPosition")
+        O.Attachment0 = A1 O.Attachment1 = A0 O.RigidityEnabled = false O.MaxTorque = 20000 O.Responsiveness = 40
+        O.Parent = reanimation["HumanoidRootPart"] O.Name = Limb.Name.."'s AlignRot" O.MaxAngularVelocity = 100
+        P.Attachment0 = A1 P.Attachment1 = A0 P.RigidityEnabled = false P.MaxForce = 40000 P.Responsiveness = 40
+        P.Parent = reanimation["HumanoidRootPart"] P.Name = Limb.Name.."'s AlignPos" P.MaxVelocity = 100
+        Limb.Massless = false
+        local Motor = GetMotorForLimb(Limb) if Motor then Motor:Destroy() end
+        return function(CF, Local) if Local then A0.CFrame = CF else A0.WorldCFrame = CF end end
+    end
+
+    local function GetExtraTool()
+        for _, Tool in next, Character:GetChildren() do
+            if Tool:IsA("Tool") and not Tool.Name:match("LIMB_TOOL") then return Tool end
+        end
+    end
+
+    local function GetGripForHandle(Handle)
+        for _, W in next, Character:GetDescendants() do
+            if W:IsA("Weld") and (W.Part0 == Handle or W.Part1 == Handle) then return W end
+        end
+        wait(.2)
+        for _, W in next, Character:GetDescendants() do
+            if W:IsA("Weld") and (W.Part0 == Handle or W.Part1 == Handle) then return W end
+        end
+    end
+
+    local function CreateRightGrip(Handle)
+        local RG = Instance.new("Weld") RG.Name = "RightGrip" RG.Part1 = Handle RG.Part0 = WeldBase RG.Parent = WeldBase return RG
+    end
+
+    local function CreateAccessory(Accessory, DeleteMeshes)
+        if not Accessory then return end
+        local HA = Accessory.Handle:FindFirstChildWhichIsA("Attachment")
+        local HeadA = VirtualRig:FindFirstChild(HA.Name, true)
+        local BP = HeadA.Parent local HatAtt = HA.CFrame local HeadAtt = HA.CFrame
+        if DeleteMeshes and Accessory.Handle:FindFirstChild("Mesh") then Accessory.Handle.Mesh:Destroy() end
+        wait()
+        local Handle = Accessory:WaitForChild("Handle")
+        if Handle:FindFirstChildWhichIsA("Weld", true) then Handle:FindFirstChildWhichIsA("Weld", true):Destroy() Handle:BreakJoints()
+        else Handle:BreakJoints() end
+        Handle.Massless = true Handle.Transparency = 0.5 UsedAccessories[Accessory] = true
+        local RG = CreateRightGrip(Handle) wait()
+        for _, O in pairs(Handle:GetDescendants()) do
+            if not O:IsA("BasePart") then pcall(function() O.Transparency = 1 end) pcall(function() O.Enabled = false end) end
+        end
+        return Handle, RG, HatAtt, HeadAtt, BP
+    end
+
+    local function GetHeadAccessories()
+        for _, A in next, Character:GetChildren() do
+            if A:IsA("Accessory") and not UsedAccessories[A] then
+                local H, RG, HA, HeA, BP = CreateAccessory(A)
+                table.insert(HeadAccessories, {H, RG, HA, HeA, BP}) do H.Transparency = 1 end
+                if not WearAllAccessories then break end
+            end
+        end
+    end
+
+    -- Setup ragdoll alignments
+    if RagdollEnabled then
+        if RagdollHeadMovement then Permadeath() MoveHead = CreateAlignment(reanimation["Head"]) end
+        MoveRightArm = CreateAlignment(reanimation["Right Arm"])
+        MoveLeftArm = CreateAlignment(reanimation["Left Arm"])
+        MoveRightLeg = CreateAlignment(reanimation["Right Leg"])
+        MoveLeftLeg = CreateAlignment(reanimation["Left Leg"])
+        MoveTorso = CreateAlignment(reanimation["Torso"])
+        MoveRoot = CreateAlignment(reanimation["HumanoidRootPart"])
+        if RagdollHeadMovement then
+            for _, Acc in next, reanimation:GetChildren() do
+                if Acc:IsA("Accessory") and Acc:FindFirstChild("Handle") then
+                    local A1 = Acc.Handle:FindFirstChildWhichIsA("Attachment")
+                    local A0 = reanimation:FindFirstChild(tostring(A1), true)
+                    local O = Instance.new("AlignOrientation") local P = Instance.new("AlignPosition")
+                    O.Attachment0 = A1 O.Attachment1 = A0 O.RigidityEnabled = false O.ReactionTorqueEnabled = true
+                    O.MaxTorque = 20000 O.Responsiveness = 40 O.Parent = reanimation["Head"]
+                    P.Attachment0 = A1 P.Attachment1 = A0 P.RigidityEnabled = false P.ReactionForceEnabled = true
+                    P.MaxForce = 40000 P.Responsiveness = 40 P.Parent = reanimation["Head"]
+                end
+            end
+        end
+    end
+
+    -- Virtual Rig/Body setup
+    VirtualRig.Name = "VirtualRig"
+    VirtualRig.RightFoot.BodyPosition.Position = CharacterCFrame.p
+    VirtualRig.LeftFoot.BodyPosition.Position = CharacterCFrame.p
+    VirtualRig.Parent = workspace VirtualRig:SetPrimaryPartCFrame(CharacterCFrame)
+    VirtualRig.Humanoid.Health = 0 VirtualRig:BreakJoints()
+    for _, v in pairs(VirtualRig:GetChildren()) do if v:IsA("BasePart") then v.CFrame = character1.HumanoidRootPart.CFrame end end
+
+    VirtualBody.Parent = workspace VirtualBody.Name = "VirtualBody"
+    VirtualBody.Humanoid.WalkSpeed = 8 VirtualBody.Humanoid.CameraOffset = Vector3.new(0, StudsOffset, 0)
+    VirtualBody:SetPrimaryPartCFrame(CharacterCFrame)
+    VirtualBody.Humanoid.Died:Connect(function()
+        if AutoRespawn then Character:BreakJoints() if RagdollHeadMovement and RagdollEnabled then Respawn() end end
+    end)
+
+    -- ═══ TOOL SYSTEM HOOKS ═══
+    -- Watch for tool equip/unequip
+    Character.ChildAdded:Connect(function(child)
+        if child:IsA("Tool") then
+            ToolSystem.OnToolEquipped(child)
+            -- Hook tool activation
+            child.Activated:Connect(function()
+                ToolSystem.TriggerSwing()
+            end)
+        end
+    end)
+    Character.ChildRemoved:Connect(function(child)
+        if child:IsA("Tool") then
+            ToolSystem.OnToolUnequipped()
+        end
+    end)
+    -- Check if tool already equipped
+    local existingTool = ToolSystem.GetEquippedTool()
+    if existingTool then
+        ToolSystem.OnToolEquipped(existingTool)
+        existingTool.Activated:Connect(function() ToolSystem.TriggerSwing() end)
+    end
+
+    -- Create UI
+    local UltraUI = CreateEnhancedUI()
+
+    -- Arm point buttons
+    local SG2 = Instance.new("ScreenGui") SG2.Parent = player1.PlayerGui SG2.ZIndexBehavior = Enum.ZIndexBehavior.Sibling SG2.Name = "ArmPointUI"
+    local W = Instance.new("TextButton") W.Parent = SG2 W.BackgroundColor3 = Color3.fromRGB(20, 16, 38) W.Position = UDim2.new(0.161, 0, 0.6, 0)
+    W.Size = UDim2.new(0, 58, 0, 50) W.Font = Enum.Font.GothamBold W.Text = "L-Arm" W.TextColor3 = Color3.fromRGB(200, 150, 255)
+    W.TextScaled = true W.TextWrapped = true Instance.new("UICorner", W).CornerRadius = UDim.new(0, 8)
+    local WS = Instance.new("UIStroke", W) WS.Color = Color3.fromRGB(100, 50, 255)
+    W.MouseButton1Down:Connect(function() Point1 = not Point1 W.BackgroundColor3 = Point1 and Color3.fromRGB(35, 70, 35) or Color3.fromRGB(20, 16, 38) end)
+
+    local S = Instance.new("TextButton") S.Parent = SG2 S.BackgroundColor3 = Color3.fromRGB(20, 16, 38) S.Position = UDim2.new(0.69, 0, 0.6, 0)
+    S.Size = UDim2.new(0, 58, 0, 50) S.Font = Enum.Font.GothamBold S.Text = "R-Arm" S.TextColor3 = Color3.fromRGB(200, 150, 255)
+    S.TextScaled = true S.TextWrapped = true Instance.new("UICorner", S).CornerRadius = UDim.new(0, 8)
+    local SS = Instance.new("UIStroke", S) SS.Color = Color3.fromRGB(100, 50, 255)
+    S.MouseButton1Down:Connect(function() Point2 = not Point2 S.BackgroundColor3 = Point2 and Color3.fromRGB(35, 70, 35) or Color3.fromRGB(20, 16, 38) end)
+
+    Camera.CameraSubject = VirtualBody.Humanoid
+    Character.Humanoid.WalkSpeed = 0 Character.Humanoid.JumpPower = 1
+    for _, P in next, VirtualBody:GetChildren() do if P:IsA("BasePart") then P.Transparency = 1 end end
+    for _, P in next, VirtualRig:GetChildren() do if P:IsA("BasePart") then P.Transparency = 1 end end
+    if not VRReady then
+        VirtualRig.RightUpperArm.ShoulderConstraint.RigidityEnabled = true
+        VirtualRig.LeftUpperArm.ShoulderConstraint.RigidityEnabled = true
+    end
+
+    local OnMoving = RunService.Stepped:Connect(function()
+        local Dir = Character.Humanoid.MoveDirection
+        VirtualBody.Humanoid:MoveTo(VirtualBody.HumanoidRootPart.Position + Dir * 6)
+    end)
+    Character.Humanoid.Jumping:Connect(function() VirtualBody.Humanoid.Jump = true end)
+    UserInputService.JumpRequest:Connect(function() VirtualBody.Humanoid.Jump = true end)
+
+    if RagdollEnabled then
+        for _, P in pairs(Character:GetDescendants()) do
+            if P:IsA("BasePart") and P.Name == "Handle" and P.Parent:IsA("Accessory") then P.LocalTransparencyModifier = 1
+            elseif P:IsA("BasePart") and P.Transparency < 0.5 and P.Name ~= "Head" then P.LocalTransparencyModifier = bodyTransparency
+            elseif P:IsA("BasePart") and P.Name == "Head" then P.LocalTransparencyModifier = 1 end
+            if not P:IsA("BasePart") and not P:IsA("AlignPosition") and not P:IsA("AlignOrientation") then
+                pcall(function() P.Transparency = 1 end) pcall(function() P.Enabled = false end)
+            end
+        end
+    end
+
+    local FootUpdateDebounce = tick()
+    local function FloorRay(Part, Distance)
+        local Pos = Part.CFrame.p local Tgt = Pos - Vector3.new(0, Distance, 0)
+        local Line = Ray.new(Pos, (Tgt - Pos).Unit * Distance)
+        local FP, FPos, FN = workspace:FindPartOnRayWithIgnoreList(Line, {VirtualRig, VirtualBody, Character})
+        if FP then return FP, FPos, FN, (FPos - Pos).Magnitude else return nil, Tgt, Vector3.new(), Distance end
+    end
+    local function Flatten(CF)
+        local X, Y, Z = CF.X, CF.Y, CF.Z local LX, LZ = CF.lookVector.X, CF.lookVector.Z
+        return CFrame.new(X, Y, Z) * CFrame.Angles(0, math.atan2(LX, LZ), 0)
+    end
+    local function FootReady(Foot, Target)
+        local MD = Character.Humanoid.MoveDirection.Magnitude > 0 and .5 or 1
+        local PT = (Foot.Position - Target.Position).Magnitude > MD
+        local PTi = tick() - FootUpdateDebounce >= 2
+        if PT or PTi then FootUpdateDebounce = tick() end return PT or PTi
+    end
+    local mss = player1:GetMouse()
+    local function FootYield()
+        local RF = VirtualRig.RightFoot.BodyPosition local LF = VirtualRig.LeftFoot.BodyPosition local LT = VirtualRig.LowerTorso
+        local Y = tick()
+        repeat RunService.Stepped:Wait()
+            if (LT.Position - RF.Position).Y > 4 or (LT.Position - LF.Position).Y > 4 or
+                ((LT.Position - RF.Position) * Vector3.new(1, 0, 1)).Magnitude > 4 or
+                ((LT.Position - LF.Position) * Vector3.new(1, 0, 1)).Magnitude > 4 then break end
+        until tick() - Y >= .17
+    end
+    local function UpdateFooting()
+        if not VirtualRig:FindFirstChild("LowerTorso") then wait() return end
+        local _, _, _, Dist = FloorRay(VirtualRig.LowerTorso, 3) Dist = math.clamp(Dist, 0, 5)
+        local FT = VirtualRig.LowerTorso.CFrame * CFrame.new(FootPlacementSettings.RightOffset) - Vector3.new(0, Dist, 0) +
+            Character.Humanoid.MoveDirection * (VirtualBody.Humanoid.WalkSpeed / 8) * 2
+        if FootReady(VirtualRig.RightFoot, FT) then
+            VirtualRig.RightFoot.BodyPosition.Position = FT.p
+            VirtualRig.RightFoot.BodyGyro.CFrame = Flatten(VirtualRig.LowerTorso.CFrame)
+        end
+        FootYield()
+        FT = VirtualRig.LowerTorso.CFrame * CFrame.new(FootPlacementSettings.LeftOffset) - Vector3.new(0, Dist, 0) +
+            Character.Humanoid.MoveDirection * (VirtualBody.Humanoid.WalkSpeed / 8) * 2
+        if FootReady(VirtualRig.LeftFoot, FT) then
+            VirtualRig.LeftFoot.BodyPosition.Position = FT.p
+            VirtualRig.LeftFoot.BodyGyro.CFrame = Flatten(VirtualRig.LowerTorso.CFrame)
+        end
+    end
+
+    -- ═══ TORSO UPDATE ═══
+    local function UpdateTorsoPosition()
+        if StateVars.TrueRagdoll then return end
+        if RagdollEnabled then
+            local Pos = VirtualRig.UpperTorso.CFrame
+
+            -- Auto-dodge torso transform
+            local dodgeData = SmartDodge.GetCurrentDodgeTransforms()
+            if dodgeData then
+                Pos = dodgeData.anim.torso(dodgeData.progress, Pos, dodgeData.direction)
+            elseif StateVars.Flipping and FlipTypes[StateVars.FlipType] then
+                local fd = FlipTypes[StateVars.FlipType]
+                local p = math.clamp((tick() - StateVars.FlipStartTime) / fd.duration, 0, 1)
+                Pos = fd.calc(p, Pos, Character.Humanoid.MoveDirection)
+            elseif StateVars.Crawling then
+                Pos = Pos * CFrame.Angles(math.rad(90), 0, 0) * CFrame.new(0, 0, -1.5)
+            elseif StateVars.SpinAttack then
+                Pos = CFrame.new(Pos.Position) * CFrame.Angles(0, tick() * StateVars.SpinSpeed, 0)
+            elseif StateVars.Climbing and StateVars.ClimbingActive then
+                Pos = Pos * CFrame.Angles(math.rad(-10), 0, 0)
+            end
+
+            MoveTorso(Pos * CFrame.new(0, -0.25, 0))
+            MoveRoot(Pos * CFrame.new(0, -0.25, 0))
+        end
+    end
+
+    -- ═══ LEG UPDATE ═══
+    local function UpdateLegPosition()
+        if StateVars.TrueRagdoll then return end
+        if RagdollEnabled then
+            -- RIGHT LEG
+            do
+                local Pos = VirtualRig.RightLowerLeg.CFrame:Lerp(VirtualRig.RightFoot.CFrame, 0.5) *
+                    CFrame.Angles(0, math.rad(180), 0) + Vector3.new(0, 0.5, 0)
+                StateVars.RightLegAngle = StateVars.RightLegAngle + (StateVars.TargetRightLegAngle - StateVars.RightLegAngle) * 0.15
+
+                local dodgeData = SmartDodge.GetCurrentDodgeTransforms()
+                if dodgeData then
+                    local torsoPos = VirtualRig.UpperTorso.CFrame
+                    local dodgeTorso = dodgeData.anim.torso(dodgeData.progress, torsoPos, dodgeData.direction)
+                    local legOff = dodgeData.anim.legs(dodgeData.progress, "right")
+                    Pos = dodgeTorso * CFrame.new(0.5, -1.5, 0) * legOff * CFrame.Angles(0, math.rad(180), 0)
+                elseif StateVars.Flipping and FlipTypes[StateVars.FlipType] then
+                    local fd = FlipTypes[StateVars.FlipType]
+                    local p = math.clamp((tick() - StateVars.FlipStartTime) / fd.duration, 0, 1)
+                    local tp = VirtualRig.UpperTorso.CFrame
+                    local ft = fd.calc(p, tp, Character.Humanoid.MoveDirection)
+                    Pos = ft * CFrame.new(0.5, -1.5, 0) * fd.legCalc(p, "right") * CFrame.Angles(0, math.rad(180), 0)
+                elseif StateVars.LiftRightLeg then
+                    local tp = VirtualRig.UpperTorso.CFrame
+                    Pos = tp * CFrame.new(0.5, -1, -0.8) * CFrame.Angles(-StateVars.RightLegAngle, math.rad(180), 0)
+                elseif StateVars.Climbing and StateVars.ClimbingActive then
+                    local tp = VirtualRig.UpperTorso.CFrame
+                    Pos = tp * CFrame.new(0.5, -0.5 + math.sin(tick() * 4) * 0.5, -0.3) * CFrame.Angles(math.rad(-45), math.rad(180), 0)
+                elseif StateVars.Superman then
+                    Pos = VirtualRig.UpperTorso.CFrame * CFrame.new(0.3, 0, 1) * CFrame.Angles(math.rad(90), math.rad(180), 0)
+                elseif StateVars.AnimMimicEnabled and not StateVars.ToolEquipped then
+                    local tp = VirtualRig.UpperTorso.CFrame
+                    local legOff = AnimMimic.GetRightLegOffset()
+                    Pos = tp * legOff * CFrame.Angles(0, math.rad(180), 0)
+                end
+                MoveRightLeg(Pos)
+            end
+            -- LEFT LEG
+            do
+                local Pos = VirtualRig.LeftLowerLeg.CFrame:Lerp(VirtualRig.LeftFoot.CFrame, 0.5) *
+                    CFrame.Angles(0, math.rad(180), 0) + Vector3.new(0, 0.5, 0)
+                StateVars.LeftLegAngle = StateVars.LeftLegAngle + (StateVars.TargetLeftLegAngle - StateVars.LeftLegAngle) * 0.15
+
+                local dodgeData = SmartDodge.GetCurrentDodgeTransforms()
+                if dodgeData then
+                    local torsoPos = VirtualRig.UpperTorso.CFrame
+                    local dodgeTorso = dodgeData.anim.torso(dodgeData.progress, torsoPos, dodgeData.direction)
+                    local legOff = dodgeData.anim.legs(dodgeData.progress, "left")
+                    Pos = dodgeTorso * CFrame.new(-0.5, -1.5, 0) * legOff * CFrame.Angles(0, math.rad(180), 0)
+                elseif StateVars.Flipping and FlipTypes[StateVars.FlipType] then
+                    local fd = FlipTypes[StateVars.FlipType]
+                    local p = math.clamp((tick() - StateVars.FlipStartTime) / fd.duration, 0, 1)
+                    local tp = VirtualRig.UpperTorso.CFrame
+                    Pos = fd.calc(p, tp, Character.Humanoid.MoveDirection) * CFrame.new(-0.5, -1.5, 0) * fd.legCalc(p, "left") * CFrame.Angles(0, math.rad(180), 0)
+                elseif StateVars.LiftLeftLeg then
+                    local tp = VirtualRig.UpperTorso.CFrame
+                    Pos = tp * CFrame.new(-0.5, -1, -0.8) * CFrame.Angles(-StateVars.LeftLegAngle, math.rad(180), 0)
+                elseif StateVars.Climbing and StateVars.ClimbingActive then
+                    local tp = VirtualRig.UpperTorso.CFrame
+                    Pos = tp * CFrame.new(-0.5, -0.5 + math.sin(tick() * 4 + math.pi) * 0.5, -0.3) * CFrame.Angles(math.rad(-45), math.rad(180), 0)
+                elseif StateVars.Superman then
+                    Pos = VirtualRig.UpperTorso.CFrame * CFrame.new(-0.3, 0, 1) * CFrame.Angles(math.rad(90), math.rad(180), 0)
+                elseif StateVars.AnimMimicEnabled and not StateVars.ToolEquipped then
+                    local tp = VirtualRig.UpperTorso.CFrame
+                    Pos = tp * AnimMimic.GetLeftLegOffset() * CFrame.Angles(0, math.rad(180), 0)
+                end
+                MoveLeftLeg(Pos)
+            end
+        end
+    end
+
+    -- ═══ MAIN CFRAME UPDATE ═══
+    local function OnUserCFrameChanged(UserCFrame, Positioning, IgnoreTorso)
+        Positioning = workspace.VirtualBody.Head.CFrame * Positioning
+        if not IgnoreTorso then UpdateTorsoPosition() UpdateLegPosition() end
+
+        if RagdollEnabled then
+            if StateVars.TrueRagdoll then return end
+
+            if UserCFrame == Enum.UserCFrame.Head and RagdollHeadMovement then
+                local hPos = Positioning
+                if StateVars.Headless then hPos = hPos * CFrame.new(0, -100, 0) end
+                if StateVars.Flipping and FlipTypes[StateVars.FlipType] then
+                    local fd = FlipTypes[StateVars.FlipType]
+                    local p = math.clamp((tick() - StateVars.FlipStartTime) / fd.duration, 0, 1)
+                    hPos = fd.calc(p, VirtualRig.UpperTorso.CFrame, Character.Humanoid.MoveDirection) * CFrame.new(0, 1.5, 0)
+                end
+                local dodgeData = SmartDodge.GetCurrentDodgeTransforms()
+                if dodgeData then
+                    hPos = dodgeData.anim.torso(dodgeData.progress, VirtualRig.UpperTorso.CFrame, dodgeData.direction) * CFrame.new(0, 1.5, 0)
+                end
+                MoveHead(hPos)
+
+            elseif UserCFrame == Enum.UserCFrame.RightHand then
+                local AP = Positioning
+                if not VRReady then
+                    AP = VirtualRig.RightUpperArm.CFrame:Lerp(VirtualRig.RightLowerArm.CFrame, 0.5)
+                elseif AccurateHandPosition then AP = AP * CFrame.new(0, 0, 1) end
+                if VRReady then AP = AP * AccessorySettings.LimbOffset end
+
+                local torsoCF = VirtualRig.UpperTorso.CFrame
+
+                -- Priority: dodge > flip > tool > pose > climb > anim mimic > default
+                local dodgeData = SmartDodge.GetCurrentDodgeTransforms()
+                if dodgeData then
+                    local dodgeTorso = dodgeData.anim.torso(dodgeData.progress, torsoCF, dodgeData.direction)
+                    AP = dodgeTorso * CFrame.new(1.5, 0.5, 0) * dodgeData.anim.rightArm(dodgeData.progress)
+                elseif StateVars.Flipping and FlipTypes[StateVars.FlipType] then
+                    local fd = FlipTypes[StateVars.FlipType]
+                    local p = math.clamp((tick() - StateVars.FlipStartTime) / fd.duration, 0, 1)
+                    AP = fd.calc(p, torsoCF, Character.Humanoid.MoveDirection) * CFrame.new(1.5, 0.5, 0) * fd.armCalc(p, "right")
+                elseif StateVars.ToolEquipped then
+                    -- TOOL ARM POSITION
+                    AP = ToolSystem.GetToolArmCFrame(torsoCF, 0)
+                elseif StateVars.TPose then
+                    AP = torsoCF * CFrame.new(2, 0.3, 0) * CFrame.Angles(0, 0, math.rad(-90))
+                elseif StateVars.Superman then
+                    AP = torsoCF * CFrame.new(0.3, 1.5, -1) * CFrame.Angles(math.rad(-150), 0, 0)
+                elseif StateVars.Climbing and StateVars.ClimbingActive then
+                    AP = torsoCF * CFrame.new(0.8, 1.2 + math.sin(tick() * 4 + math.pi) * 0.5, -0.5) * CFrame.Angles(math.rad(-160), 0, 0)
+                elseif StateVars.VaultingLedge then
+                    AP = torsoCF * CFrame.new(0.8, -0.5, -0.8) * CFrame.Angles(math.rad(60), 0, math.rad(-20))
+                elseif StateVars.AnimMimicEnabled then
+                    AP = torsoCF * AnimMimic.GetRightArmOffset(torsoCF)
+                end
+
+                MoveRightArm(AP)
+                if Point2 then
+                    VirtualRig.RightUpperArm.Aim.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                    VirtualRig.RightUpperArm.Aim.CFrame = mss.hit * AccessorySettings.LimbOffset
+                elseif VirtualRig.RightUpperArm.Aim.MaxTorque ~= Vector3.new(0, 0, 0) then
+                    VirtualRig.RightUpperArm.Aim.MaxTorque = Vector3.new(0, 0, 0)
+                end
+
+            elseif UserCFrame == Enum.UserCFrame.LeftHand then
+                local AP = Positioning
+                if not VRReady then
+                    AP = VirtualRig.LeftUpperArm.CFrame:Lerp(VirtualRig.LeftLowerArm.CFrame, 0.5)
+                elseif AccurateHandPosition then AP = AP * CFrame.new(0, 0, 1) end
+                if VRReady then AP = AP * AccessorySettings.LimbOffset end
+
+                local torsoCF = VirtualRig.UpperTorso.CFrame
+
+                local dodgeData = SmartDodge.GetCurrentDodgeTransforms()
+                if dodgeData then
+                    local dodgeTorso = dodgeData.anim.torso(dodgeData.progress, torsoCF, dodgeData.direction)
+                    AP = dodgeTorso * CFrame.new(-1.5, 0.5, 0) * dodgeData.anim.leftArm(dodgeData.progress)
+                elseif StateVars.Flipping and FlipTypes[StateVars.FlipType] then
+                    local fd = FlipTypes[StateVars.FlipType]
+                    local p = math.clamp((tick() - StateVars.FlipStartTime) / fd.duration, 0, 1)
+                    AP = fd.calc(p, torsoCF, Character.Humanoid.MoveDirection) * CFrame.new(-1.5, 0.5, 0) * fd.armCalc(p, "left")
+                elseif StateVars.ToolEquipped then
+                    local leftToolCF = ToolSystem.GetLeftArmToolCFrame(torsoCF)
+                    if leftToolCF then AP = leftToolCF end
+                elseif StateVars.TPose then
+                    AP = torsoCF * CFrame.new(-2, 0.3, 0) * CFrame.Angles(0, 0, math.rad(90))
+                elseif StateVars.Superman then
+                    AP = torsoCF * CFrame.new(-0.3, 1.5, -1) * CFrame.Angles(math.rad(-150), 0, 0)
+                elseif StateVars.Climbing and StateVars.ClimbingActive then
+                    AP = torsoCF * CFrame.new(-0.8, 1.2 + math.sin(tick() * 4) * 0.5, -0.5) * CFrame.Angles(math.rad(-160), 0, 0)
+                elseif StateVars.VaultingLedge then
+                    AP = torsoCF * CFrame.new(-0.8, -0.5, -0.8) * CFrame.Angles(math.rad(60), 0, math.rad(20))
+                elseif StateVars.AnimMimicEnabled then
+                    AP = torsoCF * AnimMimic.GetLeftArmOffset(torsoCF)
+                end
+
+                MoveLeftArm(AP)
+                if Point1 then
+                    VirtualRig.LeftUpperArm.Aim.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+                    VirtualRig.LeftUpperArm.Aim.CFrame = mss.hit * AccessorySettings.LimbOffset
+                elseif VirtualRig.LeftUpperArm.Aim.MaxTorque ~= Vector3.new(0, 0, 0) then
+                    VirtualRig.LeftUpperArm.Aim.MaxTorque = Vector3.new(0, 0, 0)
+                end
+            end
+        end
+
+        if UserCFrame == Enum.UserCFrame.Head then VirtualRig.Head.CFrame = Positioning
+        elseif UserCFrame == Enum.UserCFrame.RightHand and VRReady then VirtualRig.RightHand.CFrame = Positioning
+        elseif UserCFrame == Enum.UserCFrame.LeftHand and VRReady then VirtualRig.LeftHand.CFrame = Positioning end
+        if not VRReady and VirtualRig.LeftHand.Anchored then VirtualRig.RightHand.Anchored = false VirtualRig.LeftHand.Anchored = false
+        elseif VRReady and not VirtualRig.LeftHand.Anchored then VirtualRig.RightHand.Anchored = true VirtualRig.LeftHand.Anchored = true end
+    end
+
+    local CFrameChanged = VRService.UserCFrameChanged:Connect(OnUserCFrameChanged)
+
+    local OnStepped = RunService.Stepped:Connect(function()
+        for _, P in pairs(VirtualRig:GetChildren()) do if P:IsA("BasePart") then P.CanCollide = false end end
+        if RagdollEnabled then for _, P in pairs(Character:GetChildren()) do if P:IsA("BasePart") then P.CanCollide = false end end end
+        if StateVars.AntiFling then
+            for _, v in pairs(Character:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    if v.Velocity.Magnitude > 100 then v.Velocity = Vector3.new(0, 0, 0) end
+                    if v.RotVelocity.Magnitude > 50 then v.RotVelocity = Vector3.new(0, 0, 0) end
+                end
+            end
+        end
+        if StateVars.Fling then
+            for _, v in pairs(Character:GetChildren()) do
+                if v:IsA("BasePart") then
+                    v.Velocity = Vector3.new(math.random(-200, 200), math.random(50, 150), math.random(-200, 200))
+                end
+            end
+        end
+    end)
+
+    -- Flight
+    local flyBV, flyBG = nil, nil
+    local function StartFlight()
+        if not VirtualBody:FindFirstChild("HumanoidRootPart") then return end
+        flyBV = Instance.new("BodyVelocity") flyBV.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        flyBV.Velocity = Vector3.new(0, 0, 0) flyBV.Parent = VirtualBody.HumanoidRootPart
+        flyBG = Instance.new("BodyGyro") flyBG.MaxTorque = Vector3.new(math.huge, math.huge, math.huge) flyBG.P = 10000 flyBG.Parent = VirtualBody.HumanoidRootPart
+    end
+    local function StopFlight() if flyBV then flyBV:Destroy() flyBV = nil end if flyBG then flyBG:Destroy() flyBG = nil end end
+
+    local lastDt = 0
+    local OnRenderStepped = RunService.Stepped:Connect(function(_, dt)
+        lastDt = dt
+        Camera.CameraSubject = VirtualBody.Humanoid
+        if RagdollEnabled then Character.HumanoidRootPart.CFrame = VirtualRig.UpperTorso.CFrame end
+
+        -- Update animation mimicry
+        AnimMimic.Update(dt)
+
+        -- AUTO-DODGE SCAN
+        if workspace:FindFirstChild("VirtualBody") and VirtualBody:FindFirstChild("HumanoidRootPart") then
+            SmartDodge.Scan(VirtualBody.HumanoidRootPart.Position)
+        end
+
+        -- Climbing
+        if StateVars.Climbing then
+            local wf, wp, wn = CheckWallInFront()
+            StateVars.ClimbingActive = wf
+            if wf then
+                StateVars.WallHitPos = wp StateVars.WallNormal = wn
+                if Character.Humanoid.MoveDirection.Magnitude > 0 then
+                    VirtualBody.HumanoidRootPart.Velocity = Vector3.new(VirtualBody.HumanoidRootPart.Velocity.X * 0.3, StateVars.ClimbSpeed, VirtualBody.HumanoidRootPart.Velocity.Z * 0.3)
+                end
+                local lf, lp = CheckLedgeAbove()
+                if lf then
+                    StateVars.VaultingLedge = true
+                    VirtualBody:MoveTo(lp) VirtualRig:MoveTo(lp)
+                    spawn(function() wait(0.5) StateVars.VaultingLedge = false end)
+                else StateVars.VaultingLedge = false end
+            else StateVars.VaultingLedge = false end
+        else StateVars.ClimbingActive = false StateVars.VaultingLedge = false end
+
+        -- Flight
+        if StateVars.Flying then
+            if not flyBV then StartFlight() end
+            local cam = Camera.CFrame local md = Character.Humanoid.MoveDirection local fd = Vector3.new(0, 0, 0)
+            if md.Magnitude > 0 then fd = (cam.LookVector * md.Z + cam.RightVector * md.X).Unit * StateVars.FlySpeed end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then fd = fd + Vector3.new(0, StateVars.FlySpeed * 0.5, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then fd = fd - Vector3.new(0, StateVars.FlySpeed * 0.5, 0) end
+            flyBV.Velocity = fd flyBG.CFrame = cam
+        else if flyBV then StopFlight() end end
+
+        if StateVars.SlowMotion and workspace:FindFirstChild("VirtualBody") then workspace.VirtualBody.Humanoid.WalkSpeed = 4 end
+
+        if not VRReady then
+            OnUserCFrameChanged(Enum.UserCFrame.Head, CFrame.new(0, 0, 0))
+            OnUserCFrameChanged(Enum.UserCFrame.RightHand, CFrame.new(0, 0, 0), true)
+            OnUserCFrameChanged(Enum.UserCFrame.LeftHand, CFrame.new(0, 0, 0), true)
+        end
+    end)
+
+    spawn(function() while Character and Character.Parent do FootYield() UpdateFooting() end end)
+
+    -- ═══ KEYBINDS ═══
+    local OnInput = UserInputService.InputBegan:Connect(function(Input, Processed)
+        if not Processed then
+            if Input.KeyCode == Enum.KeyCode.LeftControl then Tween(VirtualBody.Humanoid, "Elastic", "Out", 1, {CameraOffset = Vector3.new(0, StudsOffset - 1.5, 0)}) end
+            if Input.KeyCode == Enum.KeyCode.X then if RagdollEnabled and RagdollHeadMovement then Respawn() end end
+            if Input.KeyCode == Enum.KeyCode.C then VirtualBody:MoveTo(Mouse.Hit.p) VirtualRig:MoveTo(Mouse.Hit.p) end
+            if Input.KeyCode == Enum.KeyCode.Q then StateVars.LiftLeftLeg = not StateVars.LiftLeftLeg StateVars.TargetLeftLegAngle = StateVars.LiftLeftLeg and math.rad(90) or 0 end
+            if Input.KeyCode == Enum.KeyCode.E then StateVars.LiftRightLeg = not StateVars.LiftRightLeg StateVars.TargetRightLegAngle = StateVars.LiftRightLeg and math.rad(90) or 0 end
+            if Input.KeyCode == Enum.KeyCode.R then StartFlip("FrontFlip") end
+            if Input.KeyCode == Enum.KeyCode.B then StartFlip("BackFlip") end
+            if Input.KeyCode == Enum.KeyCode.N then StartFlip(FlipOrder[math.random(1, #FlipOrder)]) end
+            if Input.KeyCode == Enum.KeyCode.M then spawn(function() for i = 1, 3 do StartFlip(FlipOrder[math.random(1, #FlipOrder)]) repeat wait() until not StateVars.Flipping wait(0.1) end end) end
+            if Input.KeyCode == Enum.KeyCode.One then StartFlip("FrontFlip") end
+            if Input.KeyCode == Enum.KeyCode.Two then StartFlip("BackFlip") end
+            if Input.KeyCode == Enum.KeyCode.Three then StartFlip("SideFlipLeft") end
+            if Input.KeyCode == Enum.KeyCode.Four then StartFlip("SideFlipRight") end
+            if Input.KeyCode == Enum.KeyCode.Five then StartFlip("SpinFlip360") end
+            if Input.KeyCode == Enum.KeyCode.Six then StartFlip("BarrelRoll") end
+            if Input.KeyCode == Enum.KeyCode.Seven then StartFlip("DoubleFlip") end
+            if Input.KeyCode == Enum.KeyCode.Eight then StartFlip("CorkScrew") end
+            if Input.KeyCode == Enum.KeyCode.Nine then StartFlip("BellyFlop") end
+            if Input.KeyCode == Enum.KeyCode.Zero then StartFlip("Helicopter") end
+            if Input.KeyCode == Enum.KeyCode.F then StateVars.Flying = not StateVars.Flying end
+            if Input.KeyCode == Enum.KeyCode.G then StateVars.Climbing = not StateVars.Climbing end
+            if Input.KeyCode == Enum.KeyCode.V then StateVars.Crawling = not StateVars.Crawling end
+            if Input.KeyCode == Enum.KeyCode.T then StateVars.TPose = not StateVars.TPose end
+            if Input.KeyCode == Enum.KeyCode.Z then StateVars.Superman = not StateVars.Superman end
+            if Input.KeyCode == Enum.KeyCode.H then StateVars.SpinAttack = not StateVars.SpinAttack end
+            if Input.KeyCode == Enum.KeyCode.J then StateVars.Headless = not StateVars.Headless end
+            if Input.KeyCode == Enum.KeyCode.K then StateVars.Fling = not StateVars.Fling end
+            if Input.KeyCode == Enum.KeyCode.L then StateVars.SlowMotion = not StateVars.SlowMotion if not StateVars.SlowMotion then VirtualBody.Humanoid.WalkSpeed = 8 end end
+            if Input.KeyCode == Enum.KeyCode.P then StateVars.TrueRagdoll = not StateVars.TrueRagdoll if StateVars.TrueRagdoll then EnableTrueRagdoll() else DisableTrueRagdoll() end end
+            if Input.KeyCode == Enum.KeyCode.Y then StateVars.AutoDodge = not StateVars.AutoDodge end
+        end
+
+        if Input.KeyCode == Enum.KeyCode.LeftShift then if not StateVars.SlowMotion then Tween(VirtualBody.Humanoid, "Sine", "Out", 1, {WalkSpeed = 16}) end end
+
+        -- Tool click handling
+        if not VRReady and Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if StateVars.ToolEquipped then
+                ToolSystem.TriggerSwing()
+                -- Fire the tool's Activated event
+                if StateVars.CurrentTool then
+                    StateVars.CurrentTool:Activate()
+                end
+            else
+                Point1 = true
+            end
+        end
+        if not VRReady and Input.UserInputType == Enum.UserInputType.MouseButton2 then Point2 = true end
+    end)
+
+    local OnInputEnded = UserInputService.InputEnded:Connect(function(Input, Processed)
+        if not Processed then
+            if Input.KeyCode == Enum.KeyCode.LeftControl then Tween(VirtualBody.Humanoid, "Elastic", "Out", 1, {CameraOffset = Vector3.new(0, StudsOffset, 0)}) end
+        end
+        if Input.KeyCode == Enum.KeyCode.LeftShift then if not StateVars.SlowMotion then Tween(VirtualBody.Humanoid, "Sine", "Out", 1, {WalkSpeed = 8}) end end
+        if not VRReady and Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if not StateVars.ToolEquipped then Point1 = false end
+            if StateVars.CurrentTool then StateVars.CurrentTool:Deactivate() end
+        end
+        if not VRReady and Input.UserInputType == Enum.UserInputType.MouseButton2 then Point2 = false end
+    end)
+
+    local OnReset OnReset = Client.CharacterAdded:Connect(function()
+        OnReset:Disconnect() CFrameChanged:Disconnect() OnStepped:Disconnect() OnRenderStepped:Disconnect()
+        OnMoving:Disconnect() OnInput:Disconnect() OnInputEnded:Disconnect()
+        VirtualRig:Destroy() VirtualBody:Destroy() StopFlight()
+        if UltraUI then UltraUI:Destroy() end
+        if AutoRun then delay(2, function() Script() end) end
+    end)
+
+    if ChatEnabled then spawn(ChatHUDFunc) end
+    if ViewportEnabled then spawn(ViewHUDFunc) end
+
+    do
+        local VRReady = VRService.VREnabled
+        if VRReady then
+            local Ptr = game:GetObjects("rbxassetid://4476173280")[1] Ptr.Parent = workspace
+            Ptr.Beam.Enabled = false Ptr.Target.ParticleEmitter.Enabled = false
+            local RS = RunService.RenderStepped:Connect(function()
+                if Ptr.Beam.Enabled then
+                    local RH = Camera.CFrame * VRService:GetUserCFrame(Enum.UserCFrame.RightHand)
+                    local L = Ray.new(RH.p, (RH * CFrame.new(0, 0, -10)).p - RH.p)
+                    local _, Pos = workspace:FindPartOnRayWithIgnoreList(Ray.new(RH.p, L.Direction.Unit * 128), {VirtualRig, VirtualBody, Character, Ptr})
+                    Ptr.Target.Position = Vector3.new(0, 0, -(Pos - RH.p).Magnitude) Ptr.CFrame = RH
+                end
+            end)
+            local Inp = UserInputService.InputBegan:Connect(function(I)
+                if I.KeyCode == Enum.KeyCode.ButtonB then Ptr.Beam.Enabled = not Ptr.Beam.Enabled Ptr.Target.ParticleEmitter.Enabled = not Ptr.Target.ParticleEmitter.Enabled end
+            end)
+            local CA CA = Client.CharacterAdded:Connect(function() RS:Disconnect() Inp:Disconnect() CA:Disconnect() Ptr:Destroy() end)
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════
+-- UTILITY
+-- ═══════════════════════════════════════════
+
+Permadeath = function()
+    local ch = player1.Character
+    local prt = Instance.new("Model", workspace)
+    Instance.new("Part", prt).Name = "Torso" prt.Torso.CanCollide = false prt.Torso.Anchored = true prt.Torso.Position = Vector3.new(0, 9999, 0)
+    Instance.new("Part", prt).Name = "Head" prt.Head.Anchored = true prt.Head.CanCollide = false prt.Head.Position = Vector3.new(0, 9991, 0)
+    Instance.new("Humanoid", prt).Name = "Humanoid"
+    player1.Character = prt wait(game.Players.RespawnTime / 2) player1.Character = ch wait(game.Players.RespawnTime / 2 + 0.5)
+end
+
+Respawn = function()
+    local ch = player1.Character
+    local prt = Instance.new("Model", workspace)
+    Instance.new("Part", prt).Name = "Torso" prt.Torso.CanCollide = false prt.Torso.Anchored = true prt.Torso.Position = Vector3.new(0, 9999, 0)
+    Instance.new("Part", prt).Name = "Head" prt.Head.Anchored = true prt.Head.CanCollide = false prt.Head.Position = Vector3.new(0, 9991, 0)
+    Instance.new("Humanoid", prt)
+    player1.Character = prt wait(game.Players.RespawnTime) player1.Character = ch
+end
+
+ChatHUDFunc = function()
+    local UIS = game:GetService("UserInputService") local RS = game:GetService("RunService")
+    local VRS = game:GetService("VRService") local VRR = VRS.VREnabled
+    local Ps = game:GetService("Players") local C = Ps.LocalPlayer
+    local CH = game:GetObjects("rbxassetid://4476067885")[1]
+    local GF = CH.GlobalFrame local T = GF.Template local LF = CH.LocalFrame local G = CH.Global local L = CH.Local local Cam = workspace.CurrentCamera
+    T.Parent = nil CH.Parent = game:GetService("CoreGui")
+    local Hi = G.Frame.BackgroundColor3 local De = L.Frame.BackgroundColor3
+    local OG = function() G.Frame.BackgroundColor3 = Hi L.Frame.BackgroundColor3 = De G.Font = Enum.Font.SourceSansBold L.Font = Enum.Font.SourceSans GF.Visible = true LF.Visible = false end
+    local OL = function() G.Frame.BackgroundColor3 = De L.Frame.BackgroundColor3 = Hi G.Font = Enum.Font.SourceSans L.Font = Enum.Font.SourceSansBold GF.Visible = false LF.Visible = true end
+    G.MouseButton1Down:Connect(OG) L.MouseButton1Down:Connect(OL) G.MouseButton1Click:Connect(OG) L.MouseButton1Click:Connect(OL) OL()
+    local function GPD(S) if S.Character and S.Character:FindFirstChild("Head") then return math.floor((S.Character.Head.Position - Cam:GetRenderCFrame().p).Magnitude + 0.5) end end
+    local function NG(M, S, Co) local F = T:Clone() F.Text = ("[%s]: %s"):format(S.Name, M) F.User.Text = ("[%s]:"):format(S.Name) F.User.TextColor3 = Co F.BackgroundColor3 = Co F.Parent = GF delay(60, function() F:Destroy() end) end
+    local function NL(M, S, Co, D) local F = T:Clone() F.Text = ("(%s) [%s]: %s"):format(tostring(D), S.Name, M) F.User.Text = ("(%s) [%s]:"):format(tostring(D), S.Name) F.User.TextColor3 = Co F.BackgroundColor3 = Co F.Parent = LF delay(60, function() F:Destroy() end) end
+    local function ONC(M, S, Co) if not CH or not CH.Parent then return end NG(M, S, Co) local D = GPD(S) if D and D <= ChatLocalRange then NL(M, S, Co, D) end end
+    local function OPA(P) if not CH or not CH.Parent then return end local Co = BrickColor.Random().Color P.Chatted:Connect(function(M) ONC(M, P, Co) end) end
+    Ps.PlayerAdded:Connect(OPA) for _, P in pairs(Ps:GetPlayers()) do OPA(P) end
+    local CP = CH.Part CH.Adornee = CP
+    if VRR then CH.Parent = game:GetService("CoreGui") CH.Enabled = true CH.AlwaysOnTop = true
+        local OI = UIS.InputBegan:Connect(function(I, Pr) if not Pr and I.KeyCode == Enum.KeyCode.ButtonX then CH.Enabled = not CH.Enabled end end)
+        local RSt = RS.RenderStepped:Connect(function() CP.CFrame = Cam.CFrame * VRS:GetUserCFrame(Enum.UserCFrame.LeftHand) end)
+        local CA CA = C.CharacterAdded:Connect(function() OI:Disconnect() RSt:Disconnect() CA:Disconnect() CH:Destroy() end)
+    end
+    wait(9e9)
+end
+
+ViewHUDFunc = function()
+    local VR2 = ViewportRange or 32 local UIS = game:GetService("UserInputService") local RS = game:GetService("RunService")
+    local VRS = game:GetService("VRService") local VRR = VRS.VREnabled local Ps = game:GetService("Players")
+    local C = Ps.LocalPlayer local Cam = workspace.CurrentCamera local CP = Cam.CFrame
+    local VH = script:FindFirstChild("ViewHUD") or game:GetObjects("rbxassetid://4480405425")[1]
+    local VP = VH.Viewport local VC = Instance.new("Camera") local VPt = VH.Part
+    VH.Parent = game:GetService("CoreGui") VC.Parent = VP VC.CameraType = Enum.CameraType.Scriptable VP.CurrentCamera = VC VP.BackgroundTransparency = 1
+    local function Cl(Ch) local A = Ch.Archivable Ch.Archivable = true local Cn = Ch:Clone() Ch.Archivable = A return Cn end
+    local function GP(N, P, D) for i = 1, #D do if D[i].Name == N and D[i].Parent.Name == P then return D[i] end end end
+    local function OPA(Pl)
+        if not VH or not VH.Parent then return end
+        local function CA(Ch) if not VH or not VH.Parent then return end Ch:WaitForChild("Head") Ch:WaitForChild("Humanoid") wait(3)
+            local FC = Cl(Ch) local R = FC:FindFirstChild("HumanoidRootPart") or FC:FindFirstChild("Head")
+            local D = FC:GetDescendants() local RD = Ch:GetDescendants() local Cs = {} FC.Humanoid.DisplayDistanceType = "None"
+            for i = 1, #D do local P = D[i] local Re = P:IsA("BasePart") and GP(P.Name, P.Parent.Name, RD)
+                if P:IsA("BasePart") and Re then P.Anchored = true P:BreakJoints() if P.Parent:IsA("Accessory") then P.Transparency = 0 end table.insert(Cs, {P, Re}) end end
+            local RC = RS.RenderStepped:Connect(function() if not Ch or not Ch.Parent then RC:Disconnect() FC:Destroy() return end
+                if (R and (R.Position - Cam.CFrame.p).Magnitude <= VR2) or Pl == C or not R then
+                    for i = 1, #Cs do local P, Re = unpack(Cs[i]) if P and Re and P.Parent and Re.Parent then P.CFrame = Re.CFrame elseif P.Parent and not Re.Parent then P:Destroy() end end
+                end end)
+            FC.Parent = VC end
+        Pl.CharacterAdded:Connect(CA) if Pl.Character then spawn(function() CA(Pl.Character) end) end
+    end
+    local PA = Ps.PlayerAdded:Connect(OPA) for _, P in pairs(Ps:GetPlayers()) do OPA(P) end
+    VPt.Size = Vector3.new()
+    if VRR then VP.Position = UDim2.new(.62, 0, .89, 0) VP.Size = UDim2.new(.3, 0, .3, 0) VP.AnchorPoint = Vector2.new(.5, 1)
+    else VP.Size = UDim2.new(0.3, 0, 0.3, 0) end
+    local RSt = RS.RenderStepped:Connect(function()
+        local R = Cam.CFrame local Sc = Cam.ViewportSize if VRR then R = R * VRS:GetUserCFrame(Enum.UserCFrame.Head) end
+        CP = CFrame.new(R.p + Vector3.new(5, 2, 0), R.p) VP.Camera.CFrame = CP VPt.CFrame = R * CFrame.new(0, 0, -16)
+        VH.Size = UDim2.new(0, Sc.X - 6, 0, Sc.Y - 6) end)
+    local CA2 CA2 = C.CharacterAdded:Connect(function() RSt:Disconnect() CA2:Disconnect() PA:Disconnect() VH:Destroy() end)
+
+    -- Reanimation core
+    for _, v in pairs(character1:GetDescendants()) do if v:IsA("Motor6D") then v:Destroy() end end
+    if character1.Humanoid.RigType == Enum.HumanoidRigType.R15 then character1:BreakJoints() end
+    for _, v in pairs(reanimation:GetChildren()) do if v:IsA("BasePart") then v.Anchored = false end end
+
+    game:GetService("RunService").Heartbeat:Connect(function()
+        for _, v in pairs(character1:GetChildren()) do
+            if v:IsA("BasePart") then
+                v.Velocity = Vector3.new(bodyVelocity[1], bodyVelocity[2], bodyVelocity[3])
+                if character1.Humanoid.RigType == Enum.HumanoidRigType.R6 then
+                    if reanimation:FindFirstChild(v.Name) then v.CFrame = reanimation[v.Name].CFrame end
+                else
+                    pcall(function()
+                        if character1:FindFirstChild("Head") then character1.Head.CFrame = reanimation.Head.CFrame end
+                        if character1:FindFirstChild("UpperTorso") then character1.UpperTorso.CFrame = reanimation.Torso.CFrame * CFrame.new(0, 0.185, 0) end
+                        if character1:FindFirstChild("LowerTorso") then character1.LowerTorso.CFrame = reanimation.Torso.CFrame * CFrame.new(0, -0.8, 0) end
+                        if character1:FindFirstChild("HumanoidRootPart") then character1.HumanoidRootPart.CFrame = cHRP.CFrame end
+                        if character1:FindFirstChild("LeftUpperArm") then character1.LeftUpperArm.CFrame = reanimation["Left Arm"].CFrame * CFrame.new(0, 0.4, 0) end
+                        if character1:FindFirstChild("LeftLowerArm") then character1.LeftLowerArm.CFrame = reanimation["Left Arm"].CFrame * CFrame.new(0, -0.19, 0) end
+                        if character1:FindFirstChild("LeftHand") then character1.LeftHand.CFrame = reanimation["Left Arm"].CFrame * CFrame.new(0, -0.84, 0) end
+                        if character1:FindFirstChild("RightUpperArm") then character1.RightUpperArm.CFrame = reanimation["Right Arm"].CFrame * CFrame.new(0, 0.4, 0) end
+                        if character1:FindFirstChild("RightLowerArm") then character1.RightLowerArm.CFrame = reanimation["Right Arm"].CFrame * CFrame.new(0, -0.19, 0) end
+                        if character1:FindFirstChild("RightHand") then character1.RightHand.CFrame = reanimation["Right Arm"].CFrame * CFrame.new(0, -0.84, 0) end
+                        if character1:FindFirstChild("LeftUpperLeg") then character1.LeftUpperLeg.CFrame = reanimation["Left Leg"].CFrame * CFrame.new(0, 0.55, 0) end
+                        if character1:FindFirstChild("LeftLowerLeg") then character1.LeftLowerLeg.CFrame = reanimation["Left Leg"].CFrame * CFrame.new(0, -0.19, 0) end
+                        if character1:FindFirstChild("LeftFoot") then character1.LeftFoot.CFrame = reanimation["Left Leg"].CFrame * CFrame.new(0, -0.85, 0) end
+                        if character1:FindFirstChild("RightUpperLeg") then character1.RightUpperLeg.CFrame = reanimation["Right Leg"].CFrame * CFrame.new(0, 0.55, 0) end
+                        if character1:FindFirstChild("RightLowerLeg") then character1.RightLowerLeg.CFrame = reanimation["Right Leg"].CFrame * CFrame.new(0, -0.19, 0) end
+                        if character1:FindFirstChild("RightFoot") then character1.RightFoot.CFrame = reanimation["Right Leg"].CFrame * CFrame.new(0, -0.85, 0) end
+                    end)
+                end
+            end
+            if v:IsA("Accessory") and reanimation:FindFirstChild(v.Name) then
+                v.Handle.Velocity = Vector3.new(hatVelocity[1], hatVelocity[2], hatVelocity[3])
+                v.Handle.CFrame = reanimation[v.Name].Handle.CFrame
+            end
+        end
+    end)
+
+    game:GetService("RunService").Stepped:Connect(function()
+        for _, v in pairs(reanimation:GetChildren()) do if v:IsA("BasePart") then v.CanCollide = false end end
+    end)
+    wait(9e9)
+end
+
+-- ═══════════════════════════════════════════
+-- START
+-- ═══════════════════════════════════════════
+Script()
+wait(2)
+
+local ch = reanimation
+local A0LL = Instance.new("Attachment", ch["Left Leg"]) A0LL.Position = Vector3.new(0, 1, 0)
+local A1LL = Instance.new("Attachment", ch["Torso"]) A1LL.Position = Vector3.new(-0.5, -1, 0)
+local s1 = Instance.new("BallSocketConstraint", ch["Left Leg"]) s1.Attachment0 = A0LL s1.Attachment1 = A1LL
+local A0RL = Instance.new("Attachment", ch["Right Leg"]) A0RL.Position = Vector3.new(0, 1, 0)
+local A1RL = Instance.new("Attachment", ch["Torso"]) A1RL.Position = Vector3.new(0.5, -1, 0)
+local s2 = Instance.new("BallSocketConstraint", ch["Right Leg"]) s2.Attachment0 = A0RL s2.Attachment1 = A1RL
+local A0H = Instance.new("Attachment", ch["Head"]) A0H.Position = Vector3.new(0, -0.5, 0)
+local A1H = Instance.new("Attachment", ch["Torso"]) A1H.Position = Vector3.new(0, 1, 0)
+local s5 = Instance.new("BallSocketConstraint", ch["Head"]) s5.Attachment0 = A0H s5.Attachment1 = A1H
+
+pcall(function() workspace.VirtualBody.Head.Face:Destroy() end)
+
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "⚡ Ultra VR v5.0 LOADED!",
+    Text = "Tools work! Auto-Dodge AI! Animation mimicry! Press Y for dodge!",
+    Duration = 8,
+})
+
+print("═══════════════════════════════════════════════")
+print("⚡ ULTRA VR v5.0 - SMART DODGE & TOOL EDITION")
+print("═══════════════════════════════════════════════")
+print("")
+print("🔧 NEW: Tools work! Equip from backpack, click to use")
+print("🧠 NEW: Auto-Dodge AI [Y] - Dodges projectiles & attacks")
+print("🎭 NEW: Animation mimicry (walk/run/jump/fall/idle)")
+print("")
+print("🤸 R=FrontFlip B=BackFlip N=Random M=Combo 1-0=All")
+print("💀 P=Ragdoll  Y=AutoDodge  G=Climb  F=Fly  V=Crawl")
+print("🦶 Q/E=Legs  T=TPose  Z=Superman  J=Headless")
+print("🌀 H=Spin  K=Fling  L=SlowMo  C=TP  X=Respawn")
+print("═══════════════════════════════════════════════")
+
+wait(9e9)
