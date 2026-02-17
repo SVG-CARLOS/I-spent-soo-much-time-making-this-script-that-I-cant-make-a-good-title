@@ -1,0 +1,3006 @@
+-- Mineblox - StarterPlayerScript
+-- A Minecraft x Roblox fusion experience
+-- Place this in StarterPlayer > StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local SoundService = game:GetService("SoundService")
+local Workspace = game:GetService("Workspace")
+
+local Player = Players.LocalPlayer
+local Mouse = Player:GetMouse()
+local Camera = Workspace.CurrentCamera
+
+-- ============================================================
+-- CONFIGURATION
+-- ============================================================
+local CONFIG = {
+	-- Movement
+	WALK_SPEED = 16,
+	SPRINT_SPEED = 24,
+	CROUCH_SPEED = 8,
+	CROUCH_CAMERA_OFFSET = Vector3.new(0, -1.5, 0),
+
+	-- Mining
+	MINE_RANGE = 20,
+	MINE_TIME = 0.8,
+	BLOCK_SIZE = 4,
+
+	-- World Generation
+	WORLD_SIZE = 40,
+	TREE_COUNT = 18,
+	TREE_MIN_HEIGHT = 4,
+	TREE_MAX_HEIGHT = 7,
+	LEAF_RADIUS = 3,
+
+	-- Mobs
+	MOB_SPAWN_INTERVAL = 25,
+	MOB_SPEED = 10,
+	MOB_HEALTH = 20,
+	MOB_DAMAGE = 5,
+	MOB_AGGRO_RANGE = 30,
+	MOB_ATTACK_RANGE = 6,
+	MAX_MOBS = 12,
+
+	-- Items / Weapons
+	SWORD_DAMAGE = 10,
+	PICKAXE_SPEED_MULT = 2.5,
+
+	-- Inventory
+	HOTBAR_SLOTS = 9,
+	INVENTORY_ROWS = 3,
+	INVENTORY_COLS = 9,
+
+	-- Colors (Minecraft-style)
+	COLORS = {
+		DIRT = Color3.fromRGB(134, 96, 67),
+		GRASS_TOP = Color3.fromRGB(95, 159, 53),
+		GRASS_SIDE = Color3.fromRGB(134, 96, 67),
+		STONE = Color3.fromRGB(128, 128, 128),
+		WOOD = Color3.fromRGB(156, 127, 78),
+		LEAVES = Color3.fromRGB(58, 120, 38),
+		SAND = Color3.fromRGB(219, 211, 160),
+		COBBLESTONE = Color3.fromRGB(100, 100, 100),
+		PLANKS = Color3.fromRGB(188, 152, 98),
+		BEDROCK = Color3.fromRGB(50, 50, 50),
+		COAL_ORE = Color3.fromRGB(70, 70, 70),
+		IRON_ORE = Color3.fromRGB(170, 150, 130),
+		GOLD_ORE = Color3.fromRGB(200, 180, 80),
+		DIAMOND_ORE = Color3.fromRGB(80, 200, 210),
+		WATER = Color3.fromRGB(40, 100, 200),
+	},
+
+	UI_COLORS = {
+		SLOT_BG = Color3.fromRGB(50, 50, 50),
+		SLOT_BORDER = Color3.fromRGB(30, 30, 30),
+		SLOT_HIGHLIGHT = Color3.fromRGB(200, 200, 200),
+		SLOT_SELECTED = Color3.fromRGB(220, 220, 220),
+		HOTBAR_BG = Color3.fromRGB(0, 0, 0),
+		INVENTORY_BG = Color3.fromRGB(198, 198, 198),
+		TOOLTIP_BG = Color3.fromRGB(20, 0, 40),
+		HEALTH_RED = Color3.fromRGB(200, 30, 30),
+		HEALTH_BG = Color3.fromRGB(40, 40, 40),
+		HUNGER_ORANGE = Color3.fromRGB(200, 150, 30),
+		XP_GREEN = Color3.fromRGB(100, 200, 50),
+		TEXT_WHITE = Color3.fromRGB(255, 255, 255),
+		TEXT_SHADOW = Color3.fromRGB(60, 60, 60),
+		CROSSHAIR = Color3.fromRGB(255, 255, 255),
+	}
+}
+
+-- ============================================================
+-- DATA DEFINITIONS
+-- ============================================================
+local BLOCK_DATA = {
+	dirt = {name = "Dirt", color = CONFIG.COLORS.DIRT, hardness = 0.5, tool = "shovel", stackSize = 64, icon = "🟫"},
+	grass = {name = "Grass Block", color = CONFIG.COLORS.GRASS_TOP, hardness = 0.6, tool = "shovel", stackSize = 64, icon = "🟩"},
+	stone = {name = "Stone", color = CONFIG.COLORS.STONE, hardness = 1.5, tool = "pickaxe", stackSize = 64, drop = "cobblestone", icon = "⬜"},
+	cobblestone = {name = "Cobblestone", color = CONFIG.COLORS.COBBLESTONE, hardness = 2.0, tool = "pickaxe", stackSize = 64, icon = "🔲"},
+	wood = {name = "Oak Log", color = CONFIG.COLORS.WOOD, hardness = 1.0, tool = "axe", stackSize = 64, icon = "🪵"},
+	leaves = {name = "Oak Leaves", color = CONFIG.COLORS.LEAVES, hardness = 0.2, tool = "shears", stackSize = 64, icon = "🍃"},
+	sand = {name = "Sand", color = CONFIG.COLORS.SAND, hardness = 0.5, tool = "shovel", stackSize = 64, icon = "🟨"},
+	planks = {name = "Oak Planks", color = CONFIG.COLORS.PLANKS, hardness = 1.0, tool = "axe", stackSize = 64, icon = "🪵"},
+	coal_ore = {name = "Coal Ore", color = CONFIG.COLORS.COAL_ORE, hardness = 2.0, tool = "pickaxe", stackSize = 64, drop = "coal", icon = "⚫"},
+	iron_ore = {name = "Iron Ore", color = CONFIG.COLORS.IRON_ORE, hardness = 3.0, tool = "pickaxe", stackSize = 64, icon = "⬛"},
+	gold_ore = {name = "Gold Ore", color = CONFIG.COLORS.GOLD_ORE, hardness = 3.5, tool = "pickaxe", stackSize = 64, icon = "🟡"},
+	diamond_ore = {name = "Diamond Ore", color = CONFIG.COLORS.DIAMOND_ORE, hardness = 4.0, tool = "pickaxe", stackSize = 64, drop = "diamond", icon = "💎"},
+}
+
+local ITEM_DATA = {
+	coal = {name = "Coal", stackSize = 64, icon = "⚫", type = "material"},
+	diamond = {name = "Diamond", stackSize = 64, icon = "💎", type = "material"},
+	iron_ingot = {name = "Iron Ingot", stackSize = 64, icon = "🔩", type = "material"},
+	gold_ingot = {name = "Gold Ingot", stackSize = 64, icon = "🥇", type = "material"},
+	stick = {name = "Stick", stackSize = 64, icon = "🥢", type = "material"},
+	wooden_sword = {name = "Wooden Sword", stackSize = 1, icon = "🗡️", type = "weapon", damage = 5},
+	stone_sword = {name = "Stone Sword", stackSize = 1, icon = "⚔️", type = "weapon", damage = 7},
+	iron_sword = {name = "Iron Sword", stackSize = 1, icon = "🗡️", type = "weapon", damage = 9},
+	diamond_sword = {name = "Diamond Sword", stackSize = 1, icon = "💠", type = "weapon", damage = 12},
+	wooden_pickaxe = {name = "Wooden Pickaxe", stackSize = 1, icon = "⛏️", type = "tool", toolType = "pickaxe", speedMult = 1.5},
+	stone_pickaxe = {name = "Stone Pickaxe", stackSize = 1, icon = "⛏️", type = "tool", toolType = "pickaxe", speedMult = 2.0},
+	iron_pickaxe = {name = "Iron Pickaxe", stackSize = 1, icon = "⛏️", type = "tool", toolType = "pickaxe", speedMult = 3.0},
+	diamond_pickaxe = {name = "Diamond Pickaxe", stackSize = 1, icon = "⛏️", type = "tool", toolType = "pickaxe", speedMult = 4.0},
+	wooden_axe = {name = "Wooden Axe", stackSize = 1, icon = "🪓", type = "tool", toolType = "axe", speedMult = 1.5},
+	apple = {name = "Apple", stackSize = 64, icon = "🍎", type = "food", hunger = 4},
+	bread = {name = "Bread", stackSize = 64, icon = "🍞", type = "food", hunger = 5},
+	cooked_porkchop = {name = "Cooked Porkchop", stackSize = 64, icon = "🥩", type = "food", hunger = 8},
+	raw_porkchop = {name = "Raw Porkchop", stackSize = 64, icon = "🥓", type = "food", hunger = 3},
+}
+
+local CRAFTING_RECIPES = {
+	{result = "planks", resultCount = 4, ingredients = {wood = 1}},
+	{result = "stick", resultCount = 4, ingredients = {planks = 2}},
+	{result = "wooden_sword", resultCount = 1, ingredients = {planks = 2, stick = 1}},
+	{result = "stone_sword", resultCount = 1, ingredients = {cobblestone = 2, stick = 1}},
+	{result = "iron_sword", resultCount = 1, ingredients = {iron_ingot = 2, stick = 1}},
+	{result = "diamond_sword", resultCount = 1, ingredients = {diamond = 2, stick = 1}},
+	{result = "wooden_pickaxe", resultCount = 1, ingredients = {planks = 3, stick = 2}},
+	{result = "stone_pickaxe", resultCount = 1, ingredients = {cobblestone = 3, stick = 2}},
+	{result = "iron_pickaxe", resultCount = 1, ingredients = {iron_ingot = 3, stick = 2}},
+	{result = "diamond_pickaxe", resultCount = 1, ingredients = {diamond = 3, stick = 2}},
+	{result = "wooden_axe", resultCount = 1, ingredients = {planks = 3, stick = 2}},
+	{result = "bread", resultCount = 1, ingredients = {sand = 3}}, -- wheat substitute
+}
+
+local SMELT_RECIPES = {
+	{input = "iron_ore", output = "iron_ingot", time = 3},
+	{input = "gold_ore", output = "gold_ingot", time = 3},
+	{input = "cobblestone", output = "stone", time = 3},
+	{input = "raw_porkchop", output = "cooked_porkchop", time = 3},
+	{input = "sand", output = "sand", time = 3}, -- glass placeholder
+}
+
+local MOB_TYPES = {
+	zombie = {
+		name = "Zombie",
+		health = 20,
+		damage = 5,
+		speed = 8,
+		color = Color3.fromRGB(80, 130, 80),
+		headColor = Color3.fromRGB(80, 130, 80),
+		drops = {"raw_porkchop", "iron_ingot"},
+		hostile = true,
+		size = Vector3.new(3, 5, 2),
+	},
+	skeleton = {
+		name = "Skeleton",
+		health = 20,
+		damage = 4,
+		speed = 10,
+		color = Color3.fromRGB(200, 200, 200),
+		headColor = Color3.fromRGB(210, 210, 210),
+		drops = {"stick", "coal"},
+		hostile = true,
+		size = Vector3.new(2.5, 5, 2),
+	},
+	creeper = {
+		name = "Creeper",
+		health = 20,
+		damage = 15,
+		speed = 9,
+		color = Color3.fromRGB(70, 160, 70),
+		headColor = Color3.fromRGB(70, 160, 70),
+		drops = {"coal", "diamond"},
+		hostile = true,
+		size = Vector3.new(2.5, 5, 2),
+		explodes = true,
+	},
+	spider = {
+		name = "Spider",
+		health = 16,
+		damage = 4,
+		speed = 14,
+		color = Color3.fromRGB(50, 40, 40),
+		headColor = Color3.fromRGB(100, 10, 10),
+		drops = {"stick"},
+		hostile = true,
+		size = Vector3.new(4, 2.5, 4),
+	},
+	pig = {
+		name = "Pig",
+		health = 10,
+		damage = 0,
+		speed = 5,
+		color = Color3.fromRGB(230, 170, 160),
+		headColor = Color3.fromRGB(230, 170, 160),
+		drops = {"raw_porkchop"},
+		hostile = false,
+		size = Vector3.new(3, 3, 4),
+	},
+}
+
+-- ============================================================
+-- STATE
+-- ============================================================
+local State = {
+	-- Player state
+	isSprinting = false,
+	isCrouching = false,
+	isMining = false,
+	mineProgress = 0,
+	mineTarget = nil,
+	mineStartTime = 0,
+
+	-- Inventory: array of {id = string, count = number} or nil
+	inventory = {},
+	hotbarSelected = 1,
+	inventoryOpen = false,
+	craftingOpen = false,
+
+	-- Player stats
+	health = 20,
+	maxHealth = 20,
+	hunger = 20,
+	maxHunger = 20,
+	xp = 0,
+	xpLevel = 0,
+
+	-- World
+	worldBlocks = {},
+	trees = {},
+	mobs = {},
+	mobModels = {},
+	spawnedBlocks = {},
+
+	-- UI references
+	ui = {},
+
+	-- Mobile
+	isMobile = false,
+	mobileButtons = {},
+
+	-- Damage cooldown
+	lastDamageTick = 0,
+	hungerTimer = 0,
+
+	-- Tooltip
+	tooltipItem = nil,
+}
+
+-- Initialize inventory with empty slots
+for i = 1, CONFIG.HOTBAR_SLOTS + (CONFIG.INVENTORY_ROWS * CONFIG.INVENTORY_COLS) do
+	State.inventory[i] = nil
+end
+
+-- Give starter items
+local function giveStarterItems()
+	State.inventory[1] = {id = "wooden_pickaxe", count = 1}
+	State.inventory[2] = {id = "wooden_sword", count = 1}
+	State.inventory[3] = {id = "wooden_axe", count = 1}
+	State.inventory[4] = {id = "dirt", count = 32}
+	State.inventory[5] = {id = "cobblestone", count = 16}
+	State.inventory[6] = {id = "planks", count = 16}
+	State.inventory[7] = {id = "apple", count = 10}
+	State.inventory[8] = {id = "bread", count = 5}
+end
+
+-- ============================================================
+-- UTILITY FUNCTIONS
+-- ============================================================
+local function getItemInfo(id)
+	if BLOCK_DATA[id] then
+		return BLOCK_DATA[id]
+	elseif ITEM_DATA[id] then
+		return ITEM_DATA[id]
+	end
+	return nil
+end
+
+local function getItemIcon(id)
+	local info = getItemInfo(id)
+	if info then return info.icon or "?" end
+	return "?"
+end
+
+local function getItemName(id)
+	local info = getItemInfo(id)
+	if info then return info.name or id end
+	return id
+end
+
+local function getStackSize(id)
+	local info = getItemInfo(id)
+	if info then return info.stackSize or 64 end
+	return 64
+end
+
+local function findInventorySlot(id)
+	for i, slot in ipairs(State.inventory) do
+		if slot and slot.id == id and slot.count < getStackSize(id) then
+			return i
+		end
+	end
+	return nil
+end
+
+local function findEmptySlot()
+	for i, slot in ipairs(State.inventory) do
+		if not slot then return i end
+	end
+	return nil
+end
+
+local function addToInventory(id, count)
+	count = count or 1
+	local remaining = count
+
+	while remaining > 0 do
+		local existingSlot = findInventorySlot(id)
+		if existingSlot then
+			local maxAdd = getStackSize(id) - State.inventory[existingSlot].count
+			local toAdd = math.min(remaining, maxAdd)
+			State.inventory[existingSlot].count = State.inventory[existingSlot].count + toAdd
+			remaining = remaining - toAdd
+		else
+			local emptySlot = findEmptySlot()
+			if emptySlot then
+				local toAdd = math.min(remaining, getStackSize(id))
+				State.inventory[emptySlot] = {id = id, count = toAdd}
+				remaining = remaining - toAdd
+			else
+				break -- Inventory full
+			end
+		end
+	end
+
+	return remaining == 0
+end
+
+local function removeFromInventory(slotIndex, count)
+	count = count or 1
+	if State.inventory[slotIndex] then
+		State.inventory[slotIndex].count = State.inventory[slotIndex].count - count
+		if State.inventory[slotIndex].count <= 0 then
+			State.inventory[slotIndex] = nil
+		end
+		return true
+	end
+	return false
+end
+
+local function countItem(id)
+	local total = 0
+	for _, slot in ipairs(State.inventory) do
+		if slot and slot.id == id then
+			total = total + slot.count
+		end
+	end
+	return total
+end
+
+local function removeItemByID(id, count)
+	local remaining = count
+	for i, slot in ipairs(State.inventory) do
+		if slot and slot.id == id and remaining > 0 then
+			local toRemove = math.min(remaining, slot.count)
+			slot.count = slot.count - toRemove
+			remaining = remaining - toRemove
+			if slot.count <= 0 then
+				State.inventory[i] = nil
+			end
+		end
+	end
+	return remaining <= 0
+end
+
+local function getSelectedItem()
+	return State.inventory[State.hotbarSelected]
+end
+
+-- ============================================================
+-- WORLD GENERATION
+-- ============================================================
+local WorldFolder
+
+local function createBlock(position, blockType, parent)
+	local data = BLOCK_DATA[blockType]
+	if not data then return nil end
+
+	local block = Instance.new("Part")
+	block.Size = Vector3.new(CONFIG.BLOCK_SIZE, CONFIG.BLOCK_SIZE, CONFIG.BLOCK_SIZE)
+	block.Position = position
+	block.Anchored = true
+	block.Material = Enum.Material.SmoothPlastic
+	block.Color = data.color
+	block.Name = blockType
+	block.TopSurface = Enum.SurfaceType.Smooth
+	block.BottomSurface = Enum.SurfaceType.Smooth
+
+	-- Add block texture detail
+	if blockType == "grass" then
+		-- Green top face
+		local topDecal = Instance.new("Texture")
+		topDecal.Face = Enum.NormalId.Top
+		topDecal.Color3 = CONFIG.COLORS.GRASS_TOP
+		topDecal.Transparency = 0.3
+		topDecal.StudsPerTileU = CONFIG.BLOCK_SIZE
+		topDecal.StudsPerTileV = CONFIG.BLOCK_SIZE
+		topDecal.Parent = block
+
+		block.Color = Color3.fromRGB(120, 100, 70)
+	elseif blockType == "leaves" then
+		block.Transparency = 0.1
+	elseif blockType == "diamond_ore" or blockType == "gold_ore" or blockType == "iron_ore" or blockType == "coal_ore" then
+		-- Add ore speckles via a small inner part
+		local speckle = Instance.new("PointLight")
+		speckle.Brightness = 0.3
+		speckle.Range = 2
+		speckle.Color = data.color
+		speckle.Parent = block
+	end
+
+	-- Store block type as attribute
+	block:SetAttribute("BlockType", blockType)
+	block:SetAttribute("Hardness", data.hardness)
+
+	block.Parent = parent or WorldFolder
+	table.insert(State.worldBlocks, block)
+	return block
+end
+
+local function generateTerrain()
+	WorldFolder = Instance.new("Folder")
+	WorldFolder.Name = "MinebloxWorld"
+	WorldFolder.Parent = Workspace
+
+	local halfSize = CONFIG.WORLD_SIZE / 2
+	local bs = CONFIG.BLOCK_SIZE
+
+	-- Generate heightmap with simple noise
+	local heightMap = {}
+	for x = -halfSize, halfSize do
+		heightMap[x] = {}
+		for z = -halfSize, halfSize do
+			local noise1 = math.noise(x * 0.05, z * 0.05, 42) * 6
+			local noise2 = math.noise(x * 0.1, z * 0.1, 84) * 3
+			local height = math.floor(noise1 + noise2 + 4)
+			heightMap[x][z] = math.max(1, height)
+		end
+	end
+
+	-- Place blocks
+	for x = -halfSize, halfSize do
+		for z = -halfSize, halfSize do
+			local h = heightMap[x][z]
+			local worldX = x * bs
+			local worldZ = z * bs
+
+			-- Bedrock layer
+			createBlock(Vector3.new(worldX, -3 * bs, worldZ), "bedrock")
+
+			-- Stone layers
+			for y = -2, h - 3 do
+				local worldY = y * bs
+				local blockType = "stone"
+
+				-- Ore generation
+				local oreNoise = math.noise(x * 0.3, y * 0.3, z * 0.3 + 100)
+				if y < -1 and oreNoise > 0.6 then
+					blockType = "diamond_ore"
+				elseif y < 0 and oreNoise > 0.45 then
+					blockType = "gold_ore"
+				elseif oreNoise > 0.35 then
+					blockType = "iron_ore"
+				elseif oreNoise > 0.25 then
+					blockType = "coal_ore"
+				end
+
+				createBlock(Vector3.new(worldX, worldY, worldZ), blockType)
+			end
+
+			-- Dirt layers
+			for y = math.max(h - 2, -2), h - 1 do
+				createBlock(Vector3.new(worldX, y * bs, worldZ), "dirt")
+			end
+
+			-- Surface block
+			local surfaceType = "grass"
+			if h <= 2 then
+				surfaceType = "sand"
+			end
+			createBlock(Vector3.new(worldX, h * bs, worldZ), surfaceType)
+		end
+	end
+
+	return heightMap
+end
+
+local function generateTree(baseX, baseZ, heightMap)
+	local halfSize = CONFIG.WORLD_SIZE / 2
+	if baseX < -halfSize or baseX > halfSize or baseZ < -halfSize or baseZ > halfSize then return end
+	if not heightMap[baseX] or not heightMap[baseX][baseZ] then return end
+
+	local h = heightMap[baseX][baseZ]
+	if h <= 2 then return end -- No trees on sand
+
+	local bs = CONFIG.BLOCK_SIZE
+	local treeHeight = math.random(CONFIG.TREE_MIN_HEIGHT, CONFIG.TREE_MAX_HEIGHT)
+	local baseWorldX = baseX * bs
+	local baseWorldZ = baseZ * bs
+
+	-- Trunk
+	for y = 1, treeHeight do
+		local pos = Vector3.new(baseWorldX, (h + y) * bs, baseWorldZ)
+		createBlock(pos, "wood")
+	end
+
+	-- Leaves (spherical-ish canopy)
+	local leafY = h + treeHeight - 1
+	local lr = CONFIG.LEAF_RADIUS
+	for lx = -lr, lr do
+		for ly = -1, lr do
+			for lz = -lr, lr do
+				local dist = math.sqrt(lx*lx + ly*ly + lz*lz)
+				if dist <= lr + 0.5 and math.random() > 0.15 then
+					local pos = Vector3.new(baseWorldX + lx * bs, (leafY + ly) * bs, baseWorldZ + lz * bs)
+					-- Don't overwrite trunk
+					if not (lx == 0 and lz == 0 and ly <= 0) then
+						createBlock(pos, "leaves")
+					end
+				end
+			end
+		end
+	end
+
+	table.insert(State.trees, {x = baseX, z = baseZ, height = treeHeight})
+end
+
+local function generateTrees(heightMap)
+	local halfSize = CONFIG.WORLD_SIZE / 2
+	local placed = 0
+	local attempts = 0
+	while placed < CONFIG.TREE_COUNT and attempts < 500 do
+		local x = math.random(-halfSize + 3, halfSize - 3)
+		local z = math.random(-halfSize + 3, halfSize - 3)
+
+		-- Check minimum distance from other trees
+		local tooClose = false
+		for _, tree in ipairs(State.trees) do
+			if math.abs(tree.x - x) < 5 and math.abs(tree.z - z) < 5 then
+				tooClose = true
+				break
+			end
+		end
+
+		if not tooClose then
+			generateTree(x, z, heightMap)
+			placed = placed + 1
+		end
+		attempts = attempts + 1
+	end
+end
+
+-- ============================================================
+-- MOB SYSTEM
+-- ============================================================
+local function createMobModel(mobType, position)
+	local data = MOB_TYPES[mobType]
+	if not data then return nil end
+
+	local model = Instance.new("Model")
+	model.Name = data.name
+
+	-- Body
+	local body = Instance.new("Part")
+	body.Size = data.size
+	body.Color = data.color
+	body.Anchored = true
+	body.CanCollide = true
+	body.Material = Enum.Material.SmoothPlastic
+	body.Position = position
+	body.Name = "Body"
+	body.Parent = model
+
+	-- Head
+	local headSize = Vector3.new(data.size.X * 0.8, data.size.X * 0.8, data.size.X * 0.8)
+	local head = Instance.new("Part")
+	head.Size = headSize
+	head.Color = data.headColor
+	head.Anchored = true
+	head.CanCollide = false
+	head.Material = Enum.Material.SmoothPlastic
+	head.Position = position + Vector3.new(0, data.size.Y/2 + headSize.Y/2, 0)
+	head.Name = "Head"
+	head.Parent = model
+
+	-- Eyes
+	for _, side in ipairs({-1, 1}) do
+		local eye = Instance.new("Part")
+		eye.Size = Vector3.new(headSize.X * 0.2, headSize.Y * 0.25, 0.2)
+		eye.Color = mobType == "spider" and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(255, 255, 255)
+		eye.Anchored = true
+		eye.CanCollide = false
+		eye.Material = mobType == "creeper" and Enum.Material.SmoothPlastic or Enum.Material.Neon
+		eye.Position = head.Position + Vector3.new(side * headSize.X * 0.2, headSize.Y * 0.1, -headSize.Z/2 - 0.1)
+		eye.Name = "Eye"
+
+		if mobType == "creeper" then
+			eye.Color = Color3.fromRGB(0, 0, 0)
+			eye.Size = Vector3.new(headSize.X * 0.15, headSize.Y * 0.35, 0.2)
+		end
+
+		eye.Parent = model
+	end
+
+	-- Creeper mouth
+	if mobType == "creeper" then
+		local mouth = Instance.new("Part")
+		mouth.Size = Vector3.new(headSize.X * 0.4, headSize.Y * 0.2, 0.2)
+		mouth.Color = Color3.fromRGB(0, 0, 0)
+		mouth.Anchored = true
+		mouth.CanCollide = false
+		mouth.Material = Enum.Material.SmoothPlastic
+		mouth.Position = head.Position + Vector3.new(0, -headSize.Y * 0.15, -headSize.Z/2 - 0.1)
+		mouth.Name = "Mouth"
+		mouth.Parent = model
+	end
+
+	-- Legs (except spider which is low)
+	if mobType ~= "spider" then
+		for _, side in ipairs({-1, 1}) do
+			local leg = Instance.new("Part")
+			leg.Size = Vector3.new(data.size.X * 0.35, data.size.Y * 0.6, data.size.Z * 0.4)
+			leg.Color = data.color
+			leg.Anchored = true
+			leg.CanCollide = false
+			leg.Material = Enum.Material.SmoothPlastic
+			leg.Position = position + Vector3.new(side * data.size.X * 0.2, -data.size.Y/2 - leg.Size.Y/2 + 0.5, 0)
+			leg.Name = "Leg"
+			leg.Parent = model
+		end
+	else
+		-- Spider legs
+		for i = 1, 4 do
+			for _, side in ipairs({-1, 1}) do
+				local leg = Instance.new("Part")
+				leg.Size = Vector3.new(0.5, 0.5, 3)
+				leg.Color = Color3.fromRGB(30, 25, 25)
+				leg.Anchored = true
+				leg.CanCollide = false
+				leg.Material = Enum.Material.SmoothPlastic
+				local angle = (i - 2.5) * 0.4
+				leg.Position = position + Vector3.new(
+					side * (data.size.X/2 + 1),
+					-data.size.Y * 0.2,
+					(i - 2.5) * 1.2
+				)
+				leg.Rotation = Vector3.new(0, 0, side * 30)
+				leg.Name = "Leg"
+				leg.Parent = model
+			end
+		end
+	end
+
+	-- Health bar
+	local healthBar = Instance.new("BillboardGui")
+	healthBar.Size = UDim2.new(4, 0, 0.5, 0)
+	healthBar.StudsOffset = Vector3.new(0, data.size.Y/2 + headSize.Y + 1, 0)
+	healthBar.AlwaysOnTop = true
+	healthBar.Adornee = body
+	healthBar.Name = "HealthBar"
+	healthBar.Parent = model
+
+	local healthBg = Instance.new("Frame")
+	healthBg.Size = UDim2.new(1, 0, 1, 0)
+	healthBg.BackgroundColor3 = Color3.fromRGB(60, 0, 0)
+	healthBg.BorderSizePixel = 0
+	healthBg.Parent = healthBar
+
+	local healthFill = Instance.new("Frame")
+	healthFill.Size = UDim2.new(1, 0, 1, 0)
+	healthFill.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+	healthFill.BorderSizePixel = 0
+	healthFill.Name = "Fill"
+	healthFill.Parent = healthBg
+
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, 0, 1, 0)
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.TextColor3 = Color3.new(1, 1, 1)
+	nameLabel.TextStrokeTransparency = 0
+	nameLabel.Text = data.name
+	nameLabel.TextScaled = true
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.Parent = healthBg
+
+	model:SetAttribute("MobType", mobType)
+	model:SetAttribute("Health", data.health)
+	model:SetAttribute("MaxHealth", data.health)
+	model:SetAttribute("Hostile", data.hostile)
+
+	model.Parent = WorldFolder
+
+	return model
+end
+
+local function spawnMob()
+	if #State.mobs >= CONFIG.MAX_MOBS then return end
+
+	local char = Player.Character
+	if not char then return end
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	-- Pick random mob type
+	local mobTypes = {"zombie", "skeleton", "creeper", "spider", "pig"}
+	local mobType = mobTypes[math.random(1, #mobTypes)]
+
+	-- Spawn at random position around player
+	local angle = math.random() * math.pi * 2
+	local dist = math.random(30, 60)
+	local spawnPos = root.Position + Vector3.new(math.cos(angle) * dist, 20, math.sin(angle) * dist)
+
+	-- Raycast down to find ground
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Include
+	rayParams.FilterDescendantsInstances = {WorldFolder}
+	local rayResult = Workspace:Raycast(spawnPos, Vector3.new(0, -100, 0), rayParams)
+
+	if rayResult then
+		local data = MOB_TYPES[mobType]
+		local groundPos = rayResult.Position + Vector3.new(0, data.size.Y / 2 + 1, 0)
+		local model = createMobModel(mobType, groundPos)
+		if model then
+			table.insert(State.mobs, {
+				model = model,
+				type = mobType,
+				health = data.health,
+				maxHealth = data.health,
+				position = groundPos,
+				target = nil,
+				lastAttack = 0,
+				wanderDir = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5).Unit,
+				wanderTimer = 0,
+				alive = true,
+			})
+		end
+	end
+end
+
+local function damageMob(mob, damage)
+	mob.health = mob.health - damage
+	local model = mob.model
+	if model then
+		model:SetAttribute("Health", mob.health)
+
+		-- Update health bar
+		local body = model:FindFirstChild("Body")
+		if body then
+			local healthBar = model:FindFirstChild("HealthBar")
+			if healthBar then
+				local bg = healthBar:FindFirstChildWhichIsA("Frame")
+				if bg then
+					local fill = bg:FindFirstChild("Fill")
+					if fill then
+						fill.Size = UDim2.new(math.max(0, mob.health / mob.maxHealth), 0, 1, 0)
+					end
+				end
+			end
+		end
+
+		-- Damage flash
+		for _, part in ipairs(model:GetDescendants()) do
+			if part:IsA("BasePart") and part.Name ~= "Eye" then
+				local origColor = part.Color
+				part.Color = Color3.fromRGB(255, 100, 100)
+				task.delay(0.15, function()
+					if part and part.Parent then
+						part.Color = origColor
+					end
+				end)
+			end
+		end
+
+		-- Knockback
+		-- Death
+		if mob.health <= 0 then
+			mob.alive = false
+
+			-- Drop items
+			local data = MOB_TYPES[mob.type]
+			if data and data.drops then
+				for _, dropId in ipairs(data.drops) do
+					if math.random() < 0.6 then
+						addToInventory(dropId, math.random(1, 2))
+					end
+				end
+			end
+
+			-- XP
+			State.xp = State.xp + math.random(3, 7)
+			if State.xp >= (State.xpLevel + 1) * 10 then
+				State.xp = 0
+				State.xpLevel = State.xpLevel + 1
+			end
+
+			-- Death animation
+			for _, part in ipairs(model:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.Anchored = false
+					part.CanCollide = false
+					part:ApplyImpulse(Vector3.new(
+						math.random(-50, 50),
+						math.random(50, 150),
+						math.random(-50, 50)
+					))
+				end
+			end
+
+			task.delay(1.5, function()
+				if model and model.Parent then
+					model:Destroy()
+				end
+			end)
+		end
+	end
+end
+
+local function updateMobs(dt)
+	local char = Player.Character
+	if not char then return end
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+	local humanoid = char:FindFirstChild("Humanoid")
+	if not humanoid then return end
+
+	for i = #State.mobs, 1, -1 do
+		local mob = State.mobs[i]
+		if not mob.alive or not mob.model or not mob.model.Parent then
+			table.remove(State.mobs, i)
+		else
+			local data = MOB_TYPES[mob.type]
+			local body = mob.model:FindFirstChild("Body")
+			if not body then
+				table.remove(State.mobs, i)
+			else
+				local distToPlayer = (body.Position - root.Position).Magnitude
+
+				-- Despawn far mobs
+				if distToPlayer > 120 then
+					mob.model:Destroy()
+					table.remove(State.mobs, i)
+				else
+					local moveDir = Vector3.zero
+					local speed = data.speed
+
+					if data.hostile and distToPlayer < CONFIG.MOB_AGGRO_RANGE then
+						-- Chase player
+						local toPlayer = (root.Position - body.Position)
+						moveDir = Vector3.new(toPlayer.X, 0, toPlayer.Z)
+						if moveDir.Magnitude > 0.1 then
+							moveDir = moveDir.Unit
+						end
+
+						-- Attack
+						if distToPlayer < CONFIG.MOB_ATTACK_RANGE then
+							if tick() - mob.lastAttack > 1.2 then
+								mob.lastAttack = tick()
+								State.health = math.max(0, State.health - data.damage)
+
+								-- Screen shake effect
+								local cam = Camera
+								task.spawn(function()
+									for j = 1, 5 do
+										cam.CFrame = cam.CFrame * CFrame.new(
+											math.random(-10, 10) / 30,
+											math.random(-10, 10) / 30,
+											0
+										)
+										task.wait(0.03)
+									end
+								end)
+
+								if State.health <= 0 then
+									-- Respawn
+									humanoid.Health = 0
+									task.wait(3)
+									State.health = State.maxHealth
+									State.hunger = State.maxHunger
+								end
+							end
+						end
+
+						-- Creeper explosion
+						if data.explodes and distToPlayer < 4 then
+							-- Explode effect
+							local explosion = Instance.new("Explosion")
+							explosion.Position = body.Position
+							explosion.BlastRadius = 12
+							explosion.BlastPressure = 0
+							explosion.Parent = Workspace
+
+							-- Damage nearby blocks
+							for _, block in ipairs(State.worldBlocks) do
+								if block and block.Parent and (block.Position - body.Position).Magnitude < 12 then
+									if block.Name ~= "bedrock" and math.random() < 0.5 then
+										block:Destroy()
+									end
+								end
+							end
+
+							State.health = math.max(0, State.health - 15)
+							mob.alive = false
+							mob.model:Destroy()
+							table.remove(State.mobs, i)
+						end
+					else
+						-- Wander
+						mob.wanderTimer = mob.wanderTimer - dt
+						if mob.wanderTimer <= 0 then
+							mob.wanderDir = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5)
+							if mob.wanderDir.Magnitude > 0.1 then
+								mob.wanderDir = mob.wanderDir.Unit
+							end
+							mob.wanderTimer = math.random(2, 5)
+						end
+						moveDir = mob.wanderDir
+						speed = speed * 0.4
+					end
+
+					-- Move mob
+					if moveDir.Magnitude > 0.1 then
+						local newPos = body.Position + moveDir * speed * dt
+
+						-- Ground check
+						local rayParams = RaycastParams.new()
+						rayParams.FilterType = Enum.RaycastFilterType.Include
+						rayParams.FilterDescendantsInstances = {WorldFolder}
+						local rayResult = Workspace:Raycast(
+							newPos + Vector3.new(0, 10, 0),
+							Vector3.new(0, -30, 0),
+							rayParams
+						)
+
+						if rayResult then
+							newPos = Vector3.new(newPos.X, rayResult.Position.Y + data.size.Y/2 + 0.5, newPos.Z)
+						end
+
+						-- Move all parts
+						local delta = newPos - body.Position
+						for _, part in ipairs(mob.model:GetDescendants()) do
+							if part:IsA("BasePart") then
+								part.Position = part.Position + delta
+							end
+						end
+
+						-- Rotate to face movement direction
+						local lookDir = Vector3.new(moveDir.X, 0, moveDir.Z)
+						if lookDir.Magnitude > 0.1 then
+							local angle = math.atan2(-lookDir.X, -lookDir.Z)
+							for _, part in ipairs(mob.model:GetDescendants()) do
+								if part:IsA("BasePart") then
+									local relPos = part.Position - body.Position
+									local rotatedRel = CFrame.Angles(0, angle, 0) * Vector3.new(0, 0, 0)
+									-- Simple face direction (just rotate body)
+									if part.Name == "Body" or part.Name == "Head" then
+										part.CFrame = CFrame.new(part.Position) * CFrame.Angles(0, angle, 0)
+									end
+								end
+							end
+						end
+					end
+
+					-- Animate legs (simple bob)
+					local t = tick()
+					local legIndex = 0
+					for _, part in ipairs(mob.model:GetDescendants()) do
+						if part:IsA("BasePart") and part.Name == "Leg" then
+							legIndex = legIndex + 1
+							local bobOffset = math.sin(t * 6 + legIndex * math.pi) * 0.3
+							-- Slight leg animation
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+-- ============================================================
+-- MINING SYSTEM
+-- ============================================================
+local function getBlockAtRay()
+	local char = Player.Character
+	if not char then return nil, nil end
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then return nil, nil end
+	local head = char:FindFirstChild("Head")
+	if not head then return nil, nil end
+
+	local origin = Camera.CFrame.Position
+	local direction = Camera.CFrame.LookVector * CONFIG.MINE_RANGE
+
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Include
+	rayParams.FilterDescendantsInstances = {WorldFolder}
+
+	local result = Workspace:Raycast(origin, direction, rayParams)
+	if result and result.Instance then
+		local blockType = result.Instance:GetAttribute("BlockType")
+		if blockType then
+			return result.Instance, result.Normal
+		end
+	end
+	return nil, nil
+end
+
+local function startMining(block)
+	if not block then return end
+	if block.Name == "bedrock" then return end
+
+	State.isMining = true
+	State.mineTarget = block
+	State.mineStartTime = tick()
+	State.mineProgress = 0
+
+	local hardness = block:GetAttribute("Hardness") or 1
+	local selectedItem = getSelectedItem()
+	local speedMult = 1
+
+	if selectedItem then
+		local itemInfo = getItemInfo(selectedItem.id)
+		if itemInfo and itemInfo.type == "tool" then
+			local blockData = BLOCK_DATA[block.Name]
+			if blockData and itemInfo.toolType == blockData.tool then
+				speedMult = itemInfo.speedMult or 1
+			end
+		end
+	end
+
+	State.mineTime = hardness / speedMult
+end
+
+local function updateMining(dt)
+	if not State.isMining or not State.mineTarget or not State.mineTarget.Parent then
+		State.isMining = false
+		State.mineTarget = nil
+		State.mineProgress = 0
+		return
+	end
+
+	-- Check range
+	local char = Player.Character
+	if char then
+		local root = char:FindFirstChild("HumanoidRootPart")
+		if root then
+			local dist = (root.Position - State.mineTarget.Position).Magnitude
+			if dist > CONFIG.MINE_RANGE + 5 then
+				State.isMining = false
+				State.mineTarget = nil
+				State.mineProgress = 0
+				return
+			end
+		end
+	end
+
+	State.mineProgress = State.mineProgress + dt / State.mineTime
+
+	-- Mining crack effect
+	if State.mineTarget and State.mineTarget.Parent then
+		local progress = math.clamp(State.mineProgress, 0, 1)
+		State.mineTarget.Transparency = progress * 0.6
+
+		-- Particle effect
+		if math.random() < 0.3 then
+			-- Visual feedback on block
+		end
+	end
+
+	if State.mineProgress >= 1 then
+		-- Block broken!
+		local block = State.mineTarget
+		local blockType = block:GetAttribute("BlockType") or block.Name
+		local blockData = BLOCK_DATA[blockType]
+
+		-- Determine drop
+		local dropId = blockType
+		if blockData and blockData.drop then
+			dropId = blockData.drop
+		end
+
+		-- Add to inventory
+		addToInventory(dropId, 1)
+
+		-- Leaves can drop apples
+		if blockType == "leaves" and math.random() < 0.1 then
+			addToInventory("apple", 1)
+		end
+
+		-- Break particles (create small parts that fly off)
+		local blockColor = block.Color
+		local blockPos = block.Position
+		task.spawn(function()
+			for j = 1, 6 do
+				local particle = Instance.new("Part")
+				particle.Size = Vector3.new(0.6, 0.6, 0.6)
+				particle.Color = blockColor
+				particle.Material = Enum.Material.SmoothPlastic
+				particle.Position = blockPos + Vector3.new(
+					math.random(-10, 10) / 10,
+					math.random(-10, 10) / 10,
+					math.random(-10, 10) / 10
+				)
+				particle.Anchored = false
+				particle.CanCollide = false
+				particle.Parent = WorldFolder
+				particle:ApplyImpulse(Vector3.new(
+					math.random(-30, 30),
+					math.random(20, 60),
+					math.random(-30, 30)
+				))
+
+				task.delay(1, function()
+					if particle and particle.Parent then
+						particle:Destroy()
+					end
+				end)
+			end
+		end)
+
+		-- Remove block
+		block:Destroy()
+
+		-- Remove from tracking
+		for k, b in ipairs(State.worldBlocks) do
+			if b == block then
+				table.remove(State.worldBlocks, k)
+				break
+			end
+		end
+
+		State.isMining = false
+		State.mineTarget = nil
+		State.mineProgress = 0
+	end
+end
+
+local function placeBlock()
+	local block, normal = getBlockAtRay()
+	if not block or not normal then return end
+
+	local selectedItem = getSelectedItem()
+	if not selectedItem then return end
+
+	-- Check if selected item is a block
+	if not BLOCK_DATA[selectedItem.id] then return end
+
+	local placePos = block.Position + normal * CONFIG.BLOCK_SIZE
+
+	-- Check if position is too close to player
+	local char = Player.Character
+	if char then
+		local root = char:FindFirstChild("HumanoidRootPart")
+		if root then
+			if (root.Position - placePos).Magnitude < CONFIG.BLOCK_SIZE then
+				return
+			end
+		end
+	end
+
+	-- Place the block
+	createBlock(placePos, selectedItem.id)
+	removeFromInventory(State.hotbarSelected, 1)
+end
+
+-- ============================================================
+-- ATTACK SYSTEM
+-- ============================================================
+local function attackMobs()
+	local char = Player.Character
+	if not char then return end
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	local origin = Camera.CFrame.Position
+	local direction = Camera.CFrame.LookVector * 8
+
+	local selectedItem = getSelectedItem()
+	local damage = 1 -- Fist damage
+
+	if selectedItem then
+		local itemInfo = getItemInfo(selectedItem.id)
+		if itemInfo and itemInfo.type == "weapon" then
+			damage = itemInfo.damage or 5
+		end
+	end
+
+	-- Check all mobs for hit
+	for _, mob in ipairs(State.mobs) do
+		if mob.alive and mob.model and mob.model.Parent then
+			local body = mob.model:FindFirstChild("Body")
+			if body then
+				local toMob = body.Position - origin
+				local dist = toMob.Magnitude
+				if dist < 10 then
+					-- Simple angle check
+					local dot = toMob.Unit:Dot(direction.Unit)
+					if dot > 0.7 then
+						damageMob(mob, damage)
+
+						-- Knockback
+						local knockDir = (body.Position - root.Position)
+						knockDir = Vector3.new(knockDir.X, 2, knockDir.Z).Unit * 8
+						for _, part in ipairs(mob.model:GetDescendants()) do
+							if part:IsA("BasePart") then
+								part.Position = part.Position + knockDir
+							end
+						end
+
+						break -- Only hit one mob per swing
+					end
+				end
+			end
+		end
+	end
+end
+
+-- ============================================================
+-- UI SYSTEM - MINECRAFT STYLE
+-- ============================================================
+local ScreenGui
+
+local function createPixelBorder(parent, thickness, color)
+	-- Top
+	local top = Instance.new("Frame")
+	top.Size = UDim2.new(1, thickness * 2, 0, thickness)
+	top.Position = UDim2.new(0, -thickness, 0, -thickness)
+	top.BackgroundColor3 = color
+	top.BorderSizePixel = 0
+	top.ZIndex = parent.ZIndex + 1
+	top.Parent = parent
+
+	-- Bottom
+	local bottom = Instance.new("Frame")
+	bottom.Size = UDim2.new(1, thickness * 2, 0, thickness)
+	bottom.Position = UDim2.new(0, -thickness, 1, 0)
+	bottom.BackgroundColor3 = color
+	bottom.BorderSizePixel = 0
+	bottom.ZIndex = parent.ZIndex + 1
+	bottom.Parent = parent
+
+	-- Left
+	local left = Instance.new("Frame")
+	left.Size = UDim2.new(0, thickness, 1, 0)
+	left.Position = UDim2.new(0, -thickness, 0, 0)
+	left.BackgroundColor3 = color
+	left.BorderSizePixel = 0
+	left.ZIndex = parent.ZIndex + 1
+	left.Parent = parent
+
+	-- Right
+	local right = Instance.new("Frame")
+	right.Size = UDim2.new(0, thickness, 1, 0)
+	right.Position = UDim2.new(1, 0, 0, 0)
+	right.BackgroundColor3 = color
+	right.BorderSizePixel = 0
+	right.ZIndex = parent.ZIndex + 1
+	right.Parent = parent
+end
+
+local function createMinecraftSlot(parent, index, size, position, isHotbar)
+	local slotSize = size or UDim2.new(0, 44, 0, 44)
+	local slotPos = position or UDim2.new(0, 0, 0, 0)
+
+	local slot = Instance.new("TextButton")
+	slot.Size = slotSize
+	slot.Position = slotPos
+	slot.BackgroundColor3 = Color3.fromRGB(139, 139, 139)
+	slot.BorderSizePixel = 0
+	slot.Text = ""
+	slot.ZIndex = 5
+	slot.AutoButtonColor = false
+	slot.Name = "Slot_" .. index
+	slot.Parent = parent
+
+	-- 3D border effect (Minecraft-style beveled)
+	-- Top-left highlight
+	local highlight1 = Instance.new("Frame")
+	highlight1.Size = UDim2.new(1, 0, 0, 2)
+	highlight1.Position = UDim2.new(0, 0, 0, 0)
+	highlight1.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	highlight1.BorderSizePixel = 0
+	highlight1.ZIndex = 6
+	highlight1.BackgroundTransparency = 0.5
+	highlight1.Parent = slot
+
+	local highlight2 = Instance.new("Frame")
+	highlight2.Size = UDim2.new(0, 2, 1, 0)
+	highlight2.Position = UDim2.new(0, 0, 0, 0)
+	highlight2.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	highlight2.BorderSizePixel = 0
+	highlight2.ZIndex = 6
+	highlight2.BackgroundTransparency = 0.5
+	highlight2.Parent = slot
+
+	-- Bottom-right shadow
+	local shadow1 = Instance.new("Frame")
+	shadow1.Size = UDim2.new(1, 0, 0, 2)
+	shadow1.Position = UDim2.new(0, 0, 1, -2)
+	shadow1.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+	shadow1.BorderSizePixel = 0
+	shadow1.ZIndex = 6
+	shadow1.Parent = slot
+
+	local shadow2 = Instance.new("Frame")
+	shadow2.Size = UDim2.new(0, 2, 1, 0)
+	shadow2.Position = UDim2.new(1, -2, 0, 0)
+	shadow2.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+	shadow2.BorderSizePixel = 0
+	shadow2.ZIndex = 6
+	shadow2.Parent = slot
+
+	-- Inner darker area
+	local inner = Instance.new("Frame")
+	inner.Size = UDim2.new(1, -4, 1, -4)
+	inner.Position = UDim2.new(0, 2, 0, 2)
+	inner.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+	inner.BorderSizePixel = 0
+	inner.ZIndex = 6
+	inner.Name = "Inner"
+	inner.Parent = slot
+
+	-- Item icon
+	local icon = Instance.new("TextLabel")
+	icon.Size = UDim2.new(1, -4, 1, -12)
+	icon.Position = UDim2.new(0, 2, 0, 2)
+	icon.BackgroundTransparency = 1
+	icon.Text = ""
+	icon.TextScaled = true
+	icon.Font = Enum.Font.GothamBold
+	icon.TextColor3 = Color3.new(1, 1, 1)
+	icon.ZIndex = 7
+	icon.Name = "Icon"
+	icon.Parent = inner
+
+	-- Count label
+	local countLabel = Instance.new("TextLabel")
+	countLabel.Size = UDim2.new(0.6, 0, 0.35, 0)
+	countLabel.Position = UDim2.new(0.4, 0, 0.65, 0)
+	countLabel.BackgroundTransparency = 1
+	countLabel.Text = ""
+	countLabel.TextScaled = true
+	countLabel.Font = Enum.Font.GothamBold
+	countLabel.TextColor3 = Color3.new(1, 1, 1)
+	countLabel.TextStrokeTransparency = 0
+	countLabel.TextStrokeColor3 = Color3.fromRGB(60, 60, 60)
+	countLabel.ZIndex = 8
+	countLabel.Name = "Count"
+	countLabel.Parent = inner
+
+	-- Item color preview (small colored block)
+	local colorPreview = Instance.new("Frame")
+	colorPreview.Size = UDim2.new(0.6, 0, 0.6, 0)
+	colorPreview.Position = UDim2.new(0.2, 0, 0.1, 0)
+	colorPreview.BackgroundTransparency = 1
+	colorPreview.BorderSizePixel = 0
+	colorPreview.ZIndex = 7
+	colorPreview.Name = "ColorPreview"
+	colorPreview.Parent = inner
+
+	local uiCorner = Instance.new("UICorner")
+	uiCorner.CornerRadius = UDim.new(0.1, 0)
+	uiCorner.Parent = colorPreview
+
+	-- Selection indicator (for hotbar)
+	if isHotbar then
+		local selection = Instance.new("Frame")
+		selection.Size = UDim2.new(1, 6, 1, 6)
+		selection.Position = UDim2.new(0, -3, 0, -3)
+		selection.BackgroundTransparency = 1
+		selection.BorderSizePixel = 0
+		selection.ZIndex = 4
+		selection.Name = "Selection"
+		selection.Parent = slot
+
+		local selBorder = Instance.new("UIStroke")
+		selBorder.Thickness = 3
+		selBorder.Color = CONFIG.UI_COLORS.SLOT_SELECTED
+		selBorder.Transparency = 1
+		selBorder.Parent = selection
+	end
+
+	-- Click handler
+	slot.MouseButton1Click:Connect(function()
+		if State.inventoryOpen then
+			-- Swap items or handle inventory click
+			local clickedSlotIndex = index
+			if State.dragItem then
+				-- Place item
+				local existingItem = State.inventory[clickedSlotIndex]
+				State.inventory[clickedSlotIndex] = State.dragItem
+				State.dragItem = existingItem
+			else
+				-- Pick up item
+				if State.inventory[clickedSlotIndex] then
+					State.dragItem = State.inventory[clickedSlotIndex]
+					State.inventory[clickedSlotIndex] = nil
+				end
+			end
+		else
+			if isHotbar then
+				State.hotbarSelected = index
+			end
+		end
+	end)
+
+	slot.MouseButton2Click:Connect(function()
+		if not State.inventoryOpen and isHotbar and index == State.hotbarSelected then
+			-- Right click to place block
+			placeBlock()
+		end
+	end)
+
+	return slot
+end
+
+local function updateSlotUI(slotUI, item)
+	local inner = slotUI:FindFirstChild("Inner")
+	if not inner then return end
+
+	local icon = inner:FindFirstChild("Icon")
+	local countLabel = inner:FindFirstChild("Count")
+	local colorPreview = inner:FindFirstChild("ColorPreview")
+
+	if item then
+		local itemInfo = getItemInfo(item.id)
+		if icon then
+			icon.Text = itemInfo and itemInfo.icon or "?"
+		end
+		if countLabel then
+			countLabel.Text = item.count > 1 and tostring(item.count) or ""
+		end
+		if colorPreview and itemInfo then
+			if itemInfo.color then
+				colorPreview.BackgroundTransparency = 0
+				colorPreview.BackgroundColor3 = itemInfo.color
+			else
+				colorPreview.BackgroundTransparency = 1
+			end
+		end
+	else
+		if icon then icon.Text = "" end
+		if countLabel then countLabel.Text = "" end
+		if colorPreview then colorPreview.BackgroundTransparency = 1 end
+	end
+end
+
+local function createUI()
+	ScreenGui = Instance.new("ScreenGui")
+	ScreenGui.Name = "MinebloxUI"
+	ScreenGui.ResetOnSpawn = false
+	ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	ScreenGui.IgnoreGuiInset = true
+	ScreenGui.Parent = Player.PlayerGui
+
+	local ui = State.ui
+
+	-- =====================
+	-- CROSSHAIR
+	-- =====================
+	local crosshair = Instance.new("Frame")
+	crosshair.Size = UDim2.new(0, 24, 0, 24)
+	crosshair.Position = UDim2.new(0.5, -12, 0.5, -12)
+	crosshair.BackgroundTransparency = 1
+	crosshair.ZIndex = 20
+	crosshair.Name = "Crosshair"
+	crosshair.Parent = ScreenGui
+
+	-- Crosshair lines
+	local function createCrosshairLine(size, pos)
+		local line = Instance.new("Frame")
+		line.Size = size
+		line.Position = pos
+		line.BackgroundColor3 = CONFIG.UI_COLORS.CROSSHAIR
+		line.BorderSizePixel = 0
+		line.ZIndex = 20
+		line.BackgroundTransparency = 0.3
+		line.Parent = crosshair
+		return line
+	end
+
+	createCrosshairLine(UDim2.new(0, 2, 0, 10), UDim2.new(0.5, -1, 0, 0)) -- Top
+	createCrosshairLine(UDim2.new(0, 2, 0, 10), UDim2.new(0.5, -1, 1, -10)) -- Bottom
+	createCrosshairLine(UDim2.new(0, 10, 0, 2), UDim2.new(0, 0, 0.5, -1)) -- Left
+	createCrosshairLine(UDim2.new(0, 10, 0, 2), UDim2.new(1, -10, 0.5, -1)) -- Right
+
+	ui.crosshair = crosshair
+
+	-- =====================
+	-- HOTBAR
+	-- =====================
+	local hotbarWidth = CONFIG.HOTBAR_SLOTS * 48 + (CONFIG.HOTBAR_SLOTS - 1) * 2 + 8
+	local hotbar = Instance.new("Frame")
+	hotbar.Size = UDim2.new(0, hotbarWidth, 0, 52)
+	hotbar.Position = UDim2.new(0.5, -hotbarWidth/2, 1, -62)
+	hotbar.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+	hotbar.BorderSizePixel = 0
+	hotbar.ZIndex = 3
+	hotbar.Name = "Hotbar"
+	hotbar.Parent = ScreenGui
+
+	-- Hotbar 3D border
+	local hotbarHighlightT = Instance.new("Frame")
+	hotbarHighlightT.Size = UDim2.new(1, 4, 0, 2)
+	hotbarHighlightT.Position = UDim2.new(0, -2, 0, -2)
+	hotbarHighlightT.BackgroundColor3 = Color3.fromRGB(180, 180, 180)
+	hotbarHighlightT.BorderSizePixel = 0
+	hotbarHighlightT.ZIndex = 3
+	hotbarHighlightT.Parent = hotbar
+
+	local hotbarHighlightL = Instance.new("Frame")
+	hotbarHighlightL.Size = UDim2.new(0, 2, 1, 4)
+	hotbarHighlightL.Position = UDim2.new(0, -2, 0, -2)
+	hotbarHighlightL.BackgroundColor3 = Color3.fromRGB(180, 180, 180)
+	hotbarHighlightL.BorderSizePixel = 0
+	hotbarHighlightL.ZIndex = 3
+	hotbarHighlightL.Parent = hotbar
+
+	local hotbarShadowB = Instance.new("Frame")
+	hotbarShadowB.Size = UDim2.new(1, 4, 0, 2)
+	hotbarShadowB.Position = UDim2.new(0, -2, 1, 0)
+	hotbarShadowB.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	hotbarShadowB.BorderSizePixel = 0
+	hotbarShadowB.ZIndex = 3
+	hotbarShadowB.Parent = hotbar
+
+	local hotbarShadowR = Instance.new("Frame")
+	hotbarShadowR.Size = UDim2.new(0, 2, 1, 2)
+	hotbarShadowR.Position = UDim2.new(1, 0, 0, -2)
+	hotbarShadowR.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	hotbarShadowR.BorderSizePixel = 0
+	hotbarShadowR.ZIndex = 3
+	hotbarShadowR.Parent = hotbar
+
+	ui.hotbarSlots = {}
+	for i = 1, CONFIG.HOTBAR_SLOTS do
+		local slotPos = UDim2.new(0, 4 + (i-1) * 50, 0, 4)
+		local slot = createMinecraftSlot(hotbar, i, UDim2.new(0, 44, 0, 44), slotPos, true)
+		ui.hotbarSlots[i] = slot
+	end
+
+	-- Hotbar slot numbers
+	for i = 1, CONFIG.HOTBAR_SLOTS do
+		local numLabel = Instance.new("TextLabel")
+		numLabel.Size = UDim2.new(0, 14, 0, 14)
+		numLabel.Position = UDim2.new(0, 6 + (i-1) * 50, 0, -16)
+		numLabel.BackgroundTransparency = 1
+		numLabel.Text = tostring(i)
+		numLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+		numLabel.TextStrokeTransparency = 0
+		numLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+		numLabel.Font = Enum.Font.GothamBold
+		numLabel.TextScaled = true
+		numLabel.ZIndex = 4
+		numLabel.Parent = hotbar
+	end
+
+	ui.hotbar = hotbar
+
+	-- =====================
+	-- HEALTH BAR (Hearts)
+	-- =====================
+	local healthBar = Instance.new("Frame")
+	healthBar.Size = UDim2.new(0, hotbarWidth / 2 - 4, 0, 14)
+	healthBar.Position = UDim2.new(0.5, -hotbarWidth/2, 1, -82)
+	healthBar.BackgroundTransparency = 1
+	healthBar.ZIndex = 10
+	healthBar.Name = "HealthBar"
+	healthBar.Parent = ScreenGui
+
+	ui.hearts = {}
+	for i = 1, 10 do
+		local heart = Instance.new("TextLabel")
+		heart.Size = UDim2.new(0, 14, 0, 14)
+		heart.Position = UDim2.new(0, (i-1) * 16, 0, 0)
+		heart.BackgroundTransparency = 1
+		heart.Text = "❤"
+		heart.TextColor3 = CONFIG.UI_COLORS.HEALTH_RED
+		heart.TextStrokeTransparency = 0
+		heart.TextStrokeColor3 = Color3.fromRGB(60, 0, 0)
+		heart.TextScaled = true
+		heart.Font = Enum.Font.GothamBold
+		heart.ZIndex = 10
+		heart.Parent = healthBar
+		ui.hearts[i] = heart
+	end
+
+	ui.healthBar = healthBar
+
+	-- =====================
+	-- HUNGER BAR (Drumsticks)
+	-- =====================
+	local hungerBar = Instance.new("Frame")
+	hungerBar.Size = UDim2.new(0, hotbarWidth / 2 - 4, 0, 14)
+	hungerBar.Position = UDim2.new(0.5, 4, 1, -82)
+	hungerBar.BackgroundTransparency = 1
+	hungerBar.ZIndex = 10
+	hungerBar.Name = "HungerBar"
+	hungerBar.Parent = ScreenGui
+
+	ui.hungerIcons = {}
+	for i = 1, 10 do
+		local drumstick = Instance.new("TextLabel")
+		drumstick.Size = UDim2.new(0, 14, 0, 14)
+		drumstick.Position = UDim2.new(1, -(i) * 16, 0, 0)
+		drumstick.BackgroundTransparency = 1
+		drumstick.Text = "🍗"
+		drumstick.TextColor3 = CONFIG.UI_COLORS.HUNGER_ORANGE
+		drumstick.TextStrokeTransparency = 0
+		drumstick.TextStrokeColor3 = Color3.fromRGB(60, 40, 0)
+		drumstick.TextScaled = true
+		drumstick.Font = Enum.Font.GothamBold
+		drumstick.ZIndex = 10
+		drumstick.Parent = hungerBar
+		ui.hungerIcons[i] = drumstick
+	end
+
+	ui.hungerBar = hungerBar
+
+	-- =====================
+	-- XP BAR
+	-- =====================
+	local xpBar = Instance.new("Frame")
+	xpBar.Size = UDim2.new(0, hotbarWidth, 0, 6)
+	xpBar.Position = UDim2.new(0.5, -hotbarWidth/2, 1, -88)
+	xpBar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+	xpBar.BorderSizePixel = 1
+	xpBar.BorderColor3 = Color3.fromRGB(0, 0, 0)
+	xpBar.ZIndex = 10
+	xpBar.Name = "XPBar"
+	xpBar.Parent = ScreenGui
+
+	local xpFill = Instance.new("Frame")
+	xpFill.Size = UDim2.new(0, 0, 1, 0)
+	xpFill.BackgroundColor3 = CONFIG.UI_COLORS.XP_GREEN
+	xpFill.BorderSizePixel = 0
+	xpFill.ZIndex = 11
+	xpFill.Name = "Fill"
+	xpFill.Parent = xpBar
+
+	local xpLevel = Instance.new("TextLabel")
+	xpLevel.Size = UDim2.new(0, 30, 0, 14)
+	xpLevel.Position = UDim2.new(0.5, -15, 0, -12)
+	xpLevel.BackgroundTransparency = 1
+	xpLevel.Text = "0"
+	xpLevel.TextColor3 = CONFIG.UI_COLORS.XP_GREEN
+	xpLevel.TextStrokeTransparency = 0
+	xpLevel.TextStrokeColor3 = Color3.fromRGB(0, 40, 0)
+	xpLevel.TextScaled = true
+	xpLevel.Font = Enum.Font.GothamBold
+	xpLevel.ZIndex = 11
+	xpLevel.Name = "Level"
+	xpLevel.Parent = xpBar
+
+	ui.xpBar = xpBar
+
+	-- =====================
+	-- MINING PROGRESS BAR
+	-- =====================
+	local mineBar = Instance.new("Frame")
+	mineBar.Size = UDim2.new(0, 200, 0, 8)
+	mineBar.Position = UDim2.new(0.5, -100, 0.5, 25)
+	mineBar.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+	mineBar.BorderSizePixel = 1
+	mineBar.BorderColor3 = Color3.fromRGB(0, 0, 0)
+	mineBar.ZIndex = 15
+	mineBar.Visible = false
+	mineBar.Name = "MineBar"
+	mineBar.Parent = ScreenGui
+
+	local mineFill = Instance.new("Frame")
+	mineFill.Size = UDim2.new(0, 0, 1, 0)
+	mineFill.BackgroundColor3 = Color3.fromRGB(200, 200, 50)
+	mineFill.BorderSizePixel = 0
+	mineFill.ZIndex = 16
+	mineFill.Name = "Fill"
+	mineFill.Parent = mineBar
+
+	ui.mineBar = mineBar
+
+	-- =====================
+	-- INVENTORY SCREEN
+	-- =====================
+	local invBg = Instance.new("Frame")
+	invBg.Size = UDim2.new(1, 0, 1, 0)
+	invBg.Position = UDim2.new(0, 0, 0, 0)
+	invBg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	invBg.BackgroundTransparency = 0.5
+	invBg.ZIndex = 30
+	invBg.Visible = false
+	invBg.Name = "InventoryBG"
+	invBg.Parent = ScreenGui
+
+	local invPanel = Instance.new("Frame")
+	local invWidth = CONFIG.INVENTORY_COLS * 50 + 20
+	local invHeight = (CONFIG.INVENTORY_ROWS + 2) * 50 + 140
+	invPanel.Size = UDim2.new(0, invWidth, 0, invHeight)
+	invPanel.Position = UDim2.new(0.5, -invWidth/2, 0.5, -invHeight/2)
+	invPanel.BackgroundColor3 = Color3.fromRGB(198, 198, 198)
+	invPanel.BorderSizePixel = 0
+	invPanel.ZIndex = 31
+	invPanel.Name = "InventoryPanel"
+	invPanel.Parent = invBg
+
+	-- Inventory title
+	local invTitle = Instance.new("TextLabel")
+	invTitle.Size = UDim2.new(1, 0, 0, 30)
+	invTitle.Position = UDim2.new(0, 0, 0, 5)
+	invTitle.BackgroundTransparency = 1
+	invTitle.Text = "Inventory"
+	invTitle.TextColor3 = Color3.fromRGB(60, 60, 60)
+	invTitle.TextScaled = true
+	invTitle.Font = Enum.Font.GothamBold
+	invTitle.ZIndex = 32
+	invTitle.Parent = invPanel
+
+	-- Crafting section title
+	local craftTitle = Instance.new("TextLabel")
+	craftTitle.Size = UDim2.new(1, 0, 0, 20)
+	craftTitle.Position = UDim2.new(0, 0, 0, 35)
+	craftTitle.BackgroundTransparency = 1
+	craftTitle.Text = "Crafting"
+	craftTitle.TextColor3 = Color3.fromRGB(80, 80, 80)
+	craftTitle.TextScaled = true
+	craftTitle.Font = Enum.Font.Gotham
+	craftTitle.ZIndex = 32
+	craftTitle.Parent = invPanel
+
+	-- 3D borders for inventory panel
+	local invHighT = Instance.new("Frame")
+	invHighT.Size = UDim2.new(1, 6, 0, 3)
+	invHighT.Position = UDim2.new(0, -3, 0, -3)
+	invHighT.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	invHighT.BorderSizePixel = 0
+	invHighT.ZIndex = 31
+	invHighT.Parent = invPanel
+
+	local invHighL = Instance.new("Frame")
+	invHighL.Size = UDim2.new(0, 3, 1, 6)
+	invHighL.Position = UDim2.new(0, -3, 0, -3)
+	invHighL.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+	invHighL.BorderSizePixel = 0
+	invHighL.ZIndex = 31
+	invHighL.Parent = invPanel
+
+	local invShadB = Instance.new("Frame")
+	invShadB.Size = UDim2.new(1, 6, 0, 3)
+	invShadB.Position = UDim2.new(0, -3, 1, 0)
+	invShadB.BackgroundColor3 = Color3.fromRGB(85, 85, 85)
+	invShadB.BorderSizePixel = 0
+	invShadB.ZIndex = 31
+	invShadB.Parent = invPanel
+
+	local invShadR = Instance.new("Frame")
+	invShadR.Size = UDim2.new(0, 3, 1, 3)
+	invShadR.Position = UDim2.new(1, 0, 0, -3)
+	invShadR.BackgroundColor3 = Color3.fromRGB(85, 85, 85)
+	invShadR.BorderSizePixel = 0
+	invShadR.ZIndex = 31
+	invShadR.Parent = invPanel
+
+	-- Crafting recipe buttons
+	ui.craftButtons = {}
+	local craftY = 60
+	local craftX = 10
+	local recipesPerRow = 4
+	for idx, recipe in ipairs(CRAFTING_RECIPES) do
+		local recipeInfo = getItemInfo(recipe.result)
+		local btn = Instance.new("TextButton")
+		local row = math.floor((idx - 1) / recipesPerRow)
+		local col = (idx - 1) % recipesPerRow
+		btn.Size = UDim2.new(0, (invWidth - 20) / recipesPerRow - 4, 0, 36)
+		btn.Position = UDim2.new(0, craftX + col * ((invWidth - 20) / recipesPerRow), 0, craftY + row * 40)
+		btn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+		btn.BorderSizePixel = 0
+		btn.Text = (recipeInfo and recipeInfo.icon or "?") .. " " .. (recipeInfo and recipeInfo.name or recipe.result)
+		btn.TextColor3 = Color3.new(1, 1, 1)
+		btn.TextStrokeTransparency = 0
+		btn.TextScaled = true
+		btn.Font = Enum.Font.GothamBold
+		btn.ZIndex = 33
+		btn.Parent = invPanel
+
+		-- Tooltip on hover
+		btn.MouseEnter:Connect(function()
+			local tooltipText = ""
+			for ingId, ingCount in pairs(recipe.ingredients) do
+				local ingInfo = getItemInfo(ingId)
+				local have = countItem(ingId)
+				local color = have >= ingCount and "✅" or "❌"
+				tooltipText = tooltipText .. color .. " " .. (ingInfo and ingInfo.name or ingId) .. " x" .. ingCount .. " (have: " .. have .. ")\n"
+			end
+			tooltipText = tooltipText .. "→ " .. (recipeInfo and recipeInfo.name or recipe.result) .. " x" .. recipe.resultCount
+
+			-- Show tooltip
+			if ui.tooltip then
+				ui.tooltip.Text = tooltipText
+				ui.tooltip.Visible = true
+			end
+		end)
+
+		btn.MouseLeave:Connect(function()
+			if ui.tooltip then
+				ui.tooltip.Visible = false
+			end
+		end)
+
+		btn.MouseButton1Click:Connect(function()
+			-- Check if we have ingredients
+			local canCraft = true
+			for ingId, ingCount in pairs(recipe.ingredients) do
+				if countItem(ingId) < ingCount then
+					canCraft = false
+					break
+				end
+			end
+
+			if canCraft then
+				-- Remove ingredients
+				for ingId, ingCount in pairs(recipe.ingredients) do
+					removeItemByID(ingId, ingCount)
+				end
+				-- Add result
+				addToInventory(recipe.result, recipe.resultCount)
+
+				-- Flash button green
+				btn.BackgroundColor3 = Color3.fromRGB(80, 200, 80)
+				task.delay(0.3, function()
+					btn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+				end)
+			else
+				-- Flash button red
+				btn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
+				task.delay(0.3, function()
+					btn.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+				end)
+			end
+		end)
+
+		ui.craftButtons[idx] = btn
+	end
+
+	-- Inventory slots in inventory screen
+	local invSlotsStartY = craftY + math.ceil(#CRAFTING_RECIPES / recipesPerRow) * 40 + 20
+	ui.invSlots = {}
+
+	-- Separator line
+	local separator = Instance.new("Frame")
+	separator.Size = UDim2.new(0.9, 0, 0, 2)
+	separator.Position = UDim2.new(0.05, 0, 0, invSlotsStartY - 10)
+	separator.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+	separator.BorderSizePixel = 0
+	separator.ZIndex = 32
+	separator.Parent = invPanel
+
+	local invLabel = Instance.new("TextLabel")
+	invLabel.Size = UDim2.new(1, 0, 0, 18)
+	invLabel.Position = UDim2.new(0, 0, 0, invSlotsStartY - 8)
+	invLabel.BackgroundTransparency = 1
+	invLabel.Text = "Inventory"
+	invLabel.TextColor3 = Color3.fromRGB(60, 60, 60)
+	invLabel.TextScaled = true
+	invLabel.Font = Enum.Font.GothamBold
+	invLabel.ZIndex = 32
+	invLabel.Parent = invPanel
+
+	-- Main inventory grid
+	for row = 0, CONFIG.INVENTORY_ROWS - 1 do
+		for col = 0, CONFIG.INVENTORY_COLS - 1 do
+			local slotIndex = CONFIG.HOTBAR_SLOTS + row * CONFIG.INVENTORY_COLS + col + 1
+			local slotPos = UDim2.new(0, 10 + col * 50, 0, invSlotsStartY + 15 + row * 50)
+			local slot = createMinecraftSlot(invPanel, slotIndex, UDim2.new(0, 44, 0, 44), slotPos, false)
+			slot.ZIndex = 33
+			for _, child in ipairs(slot:GetDescendants()) do
+				if child:IsA("GuiObject") then
+					child.ZIndex = child.ZIndex + 28
+				end
+			end
+			ui.invSlots[slotIndex] = slot
+		end
+	end
+
+	-- Hotbar in inventory screen
+	local hotbarInvY = invSlotsStartY + 15 + CONFIG.INVENTORY_ROWS * 50 + 10
+
+	local hotbarSep = Instance.new("Frame")
+	hotbarSep.Size = UDim2.new(0.9, 0, 0, 2)
+	hotbarSep.Position = UDim2.new(0.05, 0, 0, hotbarInvY - 8)
+	hotbarSep.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+	hotbarSep.BorderSizePixel = 0
+	hotbarSep.ZIndex = 32
+	hotbarSep.Parent = invPanel
+
+	for col = 0, CONFIG.HOTBAR_SLOTS - 1 do
+		local slotIndex = col + 1
+		local slotPos = UDim2.new(0, 10 + col * 50, 0, hotbarInvY)
+		local slot = createMinecraftSlot(invPanel, slotIndex, UDim2.new(0, 44, 0, 44), slotPos, false)
+		slot.ZIndex = 33
+		for _, child in ipairs(slot:GetDescendants()) do
+			if child:IsA("GuiObject") then
+				child.ZIndex = child.ZIndex + 28
+			end
+		end
+		ui.invSlots[slotIndex] = slot
+	end
+
+	-- Tooltip
+	local tooltip = Instance.new("TextLabel")
+	tooltip.Size = UDim2.new(0, 250, 0, 100)
+	tooltip.Position = UDim2.new(1, -260, 0, 10)
+	tooltip.BackgroundColor3 = CONFIG.UI_COLORS.TOOLTIP_BG
+	tooltip.BackgroundTransparency = 0.15
+	tooltip.TextColor3 = Color3.new(1, 1, 1)
+	tooltip.TextWrapped = true
+	tooltip.TextScaled = false
+	tooltip.TextSize = 14
+	tooltip.Font = Enum.Font.Gotham
+	tooltip.TextXAlignment = Enum.TextXAlignment.Left
+	tooltip.TextYAlignment = Enum.TextYAlignment.Top
+	tooltip.ZIndex = 40
+	tooltip.Visible = false
+	tooltip.Name = "Tooltip"
+	tooltip.Parent = invPanel
+
+	local tooltipPadding = Instance.new("UIPadding")
+	tooltipPadding.PaddingLeft = UDim.new(0, 6)
+	tooltipPadding.PaddingTop = UDim.new(0, 6)
+	tooltipPadding.PaddingRight = UDim.new(0, 6)
+	tooltipPadding.Parent = tooltip
+
+	local tooltipCorner = Instance.new("UICorner")
+	tooltipCorner.CornerRadius = UDim.new(0, 4)
+	tooltipCorner.Parent = tooltip
+
+	ui.tooltip = tooltip
+	ui.invBg = invBg
+	ui.invPanel = invPanel
+
+	-- =====================
+	-- SELECTED ITEM NAME
+	-- =====================
+	local selectedName = Instance.new("TextLabel")
+	selectedName.Size = UDim2.new(0, 300, 0, 24)
+	selectedName.Position = UDim2.new(0.5, -150, 1, -98)
+	selectedName.BackgroundTransparency = 1
+	selectedName.Text = ""
+	selectedName.TextColor3 = Color3.new(1, 1, 1)
+	selectedName.TextStrokeTransparency = 0
+	selectedName.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+	selectedName.TextScaled = true
+	selectedName.Font = Enum.Font.GothamBold
+	selectedName.ZIndex = 15
+	selectedName.Parent = ScreenGui
+
+	ui.selectedName = selectedName
+
+	-- =====================
+	-- ITEM PICKUP NOTIFICATION
+	-- =====================
+	local pickupFrame = Instance.new("Frame")
+	pickupFrame.Size = UDim2.new(0, 300, 0, 200)
+	pickupFrame.Position = UDim2.new(0, 10, 0.5, -100)
+	pickupFrame.BackgroundTransparency = 1
+	pickupFrame.ZIndex = 15
+	pickupFrame.Name = "PickupNotifications"
+	pickupFrame.Parent = ScreenGui
+
+	local pickupLayout = Instance.new("UIListLayout")
+	pickupLayout.FillDirection = Enum.FillDirection.Vertical
+	pickupLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+	pickupLayout.Padding = UDim.new(0, 2)
+	pickupLayout.Parent = pickupFrame
+
+	ui.pickupFrame = pickupFrame
+
+	-- =====================
+	-- MOBILE CONTROLS
+	-- =====================
+	if UserInputService.TouchEnabled then
+		State.isMobile = true
+		createMobileControls()
+	end
+
+	-- =====================
+	-- DEBUG / INFO DISPLAY (F3 style)
+	-- =====================
+	local debugLabel = Instance.new("TextLabel")
+	debugLabel.Size = UDim2.new(0, 300, 0, 200)
+	debugLabel.Position = UDim2.new(0, 5, 0, 5)
+	debugLabel.BackgroundTransparency = 0.7
+	debugLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	debugLabel.TextColor3 = Color3.new(1, 1, 1)
+	debugLabel.TextSize = 12
+	debugLabel.Font = Enum.Font.RobotoMono
+	debugLabel.TextXAlignment = Enum.TextXAlignment.Left
+	debugLabel.TextYAlignment = Enum.TextYAlignment.Top
+	debugLabel.TextWrapped = true
+	debugLabel.ZIndex = 50
+	debugLabel.Visible = false
+	debugLabel.Name = "Debug"
+	debugLabel.Parent = ScreenGui
+
+	local debugPadding = Instance.new("UIPadding")
+	debugPadding.PaddingLeft = UDim.new(0, 5)
+	debugPadding.PaddingTop = UDim.new(0, 5)
+	debugPadding.Parent = debugLabel
+
+	ui.debugLabel = debugLabel
+
+	-- =====================
+	-- VIGNETTE EFFECT
+	-- =====================
+	local vignette = Instance.new("ImageLabel")
+	vignette.Size = UDim2.new(1, 0, 1, 0)
+	vignette.Position = UDim2.new(0, 0, 0, 0)
+	vignette.BackgroundTransparency = 1
+	vignette.ImageTransparency = 0.7
+	vignette.ImageColor3 = Color3.new(0, 0, 0)
+	vignette.ZIndex = 1
+	vignette.Parent = ScreenGui
+
+	-- Since we can't use an actual image, create a gradient vignette
+	local vigGradient = Instance.new("UIGradient")
+	vigGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.4, 0.8),
+		NumberSequenceKeypoint.new(0.7, 1),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	vigGradient.Parent = vignette
+
+	-- =====================
+	-- ACTION TEXT (looking at block)
+	-- =====================
+	local actionText = Instance.new("TextLabel")
+	actionText.Size = UDim2.new(0, 300, 0, 20)
+	actionText.Position = UDim2.new(0.5, -150, 0.5, 40)
+	actionText.BackgroundTransparency = 1
+	actionText.Text = ""
+	actionText.TextColor3 = Color3.new(1, 1, 1)
+	actionText.TextStrokeTransparency = 0
+	actionText.TextScaled = true
+	actionText.Font = Enum.Font.Gotham
+	actionText.ZIndex = 15
+	actionText.Parent = ScreenGui
+
+	ui.actionText = actionText
+end
+
+local function createMobileControls()
+	local ui = State.ui
+
+	local mobileFrame = Instance.new("Frame")
+	mobileFrame.Size = UDim2.new(1, 0, 1, 0)
+	mobileFrame.BackgroundTransparency = 1
+	mobileFrame.ZIndex = 25
+	mobileFrame.Name = "MobileControls"
+	mobileFrame.Parent = ScreenGui
+
+	-- Sprint button
+	local sprintBtn = Instance.new("TextButton")
+	sprintBtn.Size = UDim2.new(0, 60, 0, 60)
+	sprintBtn.Position = UDim2.new(1, -80, 0.5, -100)
+	sprintBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 200)
+	sprintBtn.BackgroundTransparency = 0.4
+	sprintBtn.Text = "🏃"
+	sprintBtn.TextScaled = true
+	sprintBtn.ZIndex = 26
+	sprintBtn.Parent = mobileFrame
+
+	local sprintCorner = Instance.new("UICorner")
+	sprintCorner.CornerRadius = UDim.new(0.5, 0)
+	sprintCorner.Parent = sprintBtn
+
+	sprintBtn.MouseButton1Down:Connect(function()
+		State.isSprinting = true
+	end)
+	sprintBtn.MouseButton1Up:Connect(function()
+		State.isSprinting = false
+	end)
+
+	-- Crouch button
+	local crouchBtn = Instance.new("TextButton")
+	crouchBtn.Size = UDim2.new(0, 60, 0, 60)
+	crouchBtn.Position = UDim2.new(1, -80, 0.5, -30)
+	crouchBtn.BackgroundColor3 = Color3.fromRGB(200, 120, 60)
+	crouchBtn.BackgroundTransparency = 0.4
+	crouchBtn.Text = "🧎"
+	crouchBtn.TextScaled = true
+	crouchBtn.ZIndex = 26
+	crouchBtn.Parent = mobileFrame
+
+	local crouchCorner = Instance.new("UICorner")
+	crouchCorner.CornerRadius = UDim.new(0.5, 0)
+	crouchCorner.Parent = crouchBtn
+
+	crouchBtn.MouseButton1Down:Connect(function()
+		State.isCrouching = not State.isCrouching
+		if State.isCrouching then
+			crouchBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 30)
+		else
+			crouchBtn.BackgroundColor3 = Color3.fromRGB(200, 120, 60)
+		end
+	end)
+
+	-- Mine button
+	local mineBtn = Instance.new("TextButton")
+	mineBtn.Size = UDim2.new(0, 70, 0, 70)
+	mineBtn.Position = UDim2.new(1, -85, 0.5, 50)
+	mineBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+	mineBtn.BackgroundTransparency = 0.4
+	mineBtn.Text = "⛏️"
+	mineBtn.TextScaled = true
+	mineBtn.ZIndex = 26
+	mineBtn.Parent = mobileFrame
+
+	local mineCorner = Instance.new("UICorner")
+	mineCorner.CornerRadius = UDim.new(0.5, 0)
+	mineCorner.Parent = mineBtn
+
+	local miningHeld = false
+	mineBtn.MouseButton1Down:Connect(function()
+		miningHeld = true
+		local block = getBlockAtRay()
+		if block then
+			startMining(block)
+		end
+	end)
+	mineBtn.MouseButton1Up:Connect(function()
+		miningHeld = false
+		State.isMining = false
+	end)
+
+	-- Place button
+	local placeBtn = Instance.new("TextButton")
+	placeBtn.Size = UDim2.new(0, 60, 0, 60)
+	placeBtn.Position = UDim2.new(1, -80, 0.5, 130)
+	placeBtn.BackgroundColor3 = Color3.fromRGB(60, 200, 60)
+	placeBtn.BackgroundTransparency = 0.4
+	placeBtn.Text = "🧱"
+	placeBtn.TextScaled = true
+	placeBtn.ZIndex = 26
+	placeBtn.Parent = mobileFrame
+
+	local placeCorner = Instance.new("UICorner")
+	placeCorner.CornerRadius = UDim.new(0.5, 0)
+	placeCorner.Parent = placeBtn
+
+	placeBtn.MouseButton1Click:Connect(function()
+		placeBlock()
+	end)
+
+	-- Attack button
+	local attackBtn = Instance.new("TextButton")
+	attackBtn.Size = UDim2.new(0, 60, 0, 60)
+	attackBtn.Position = UDim2.new(1, -80, 0.5, 200)
+	attackBtn.BackgroundColor3 = Color3.fromRGB(200, 200, 60)
+	attackBtn.BackgroundTransparency = 0.4
+	attackBtn.Text = "⚔️"
+	attackBtn.TextScaled = true
+	attackBtn.ZIndex = 26
+	attackBtn.Parent = mobileFrame
+
+	local attackCorner = Instance.new("UICorner")
+	attackCorner.CornerRadius = UDim.new(0.5, 0)
+	attackCorner.Parent = attackBtn
+
+	attackBtn.MouseButton1Click:Connect(function()
+		attackMobs()
+	end)
+
+	-- Inventory button
+	local invBtn = Instance.new("TextButton")
+	invBtn.Size = UDim2.new(0, 50, 0, 50)
+	invBtn.Position = UDim2.new(1, -65, 0, 10)
+	invBtn.BackgroundColor3 = Color3.fromRGB(140, 140, 140)
+	invBtn.BackgroundTransparency = 0.4
+	invBtn.Text = "📦"
+	invBtn.TextScaled = true
+	invBtn.ZIndex = 26
+	invBtn.Parent = mobileFrame
+
+	local invCorner = Instance.new("UICorner")
+	invCorner.CornerRadius = UDim.new(0.2, 0)
+	invCorner.Parent = invBtn
+
+	invBtn.MouseButton1Click:Connect(function()
+		State.inventoryOpen = not State.inventoryOpen
+	end)
+
+	-- Eat button
+	local eatBtn = Instance.new("TextButton")
+	eatBtn.Size = UDim2.new(0, 50, 0, 50)
+	eatBtn.Position = UDim2.new(1, -65, 0, 70)
+	eatBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 80)
+	eatBtn.BackgroundTransparency = 0.4
+	eatBtn.Text = "🍖"
+	eatBtn.TextScaled = true
+	eatBtn.ZIndex = 26
+	eatBtn.Parent = mobileFrame
+
+	local eatCorner = Instance.new("UICorner")
+	eatCorner.CornerRadius = UDim.new(0.2, 0)
+	eatCorner.Parent = eatBtn
+
+	eatBtn.MouseButton1Click:Connect(function()
+		-- Try to eat selected food
+		local item = getSelectedItem()
+		if item then
+			local info = getItemInfo(item.id)
+			if info and info.type == "food" then
+				State.hunger = math.min(State.maxHunger, State.hunger + (info.hunger or 0))
+				removeFromInventory(State.hotbarSelected, 1)
+			end
+		end
+	end)
+
+	-- Hotbar scroll buttons (left/right)
+	local hotbarLeft = Instance.new("TextButton")
+	hotbarLeft.Size = UDim2.new(0, 35, 0, 35)
+	hotbarLeft.Position = UDim2.new(0.5, -230, 1, -55)
+	hotbarLeft.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+	hotbarLeft.BackgroundTransparency = 0.4
+	hotbarLeft.Text = "◀"
+	hotbarLeft.TextColor3 = Color3.new(1, 1, 1)
+	hotbarLeft.TextScaled = true
+	hotbarLeft.ZIndex = 26
+	hotbarLeft.Parent = mobileFrame
+
+	hotbarLeft.MouseButton1Click:Connect(function()
+		State.hotbarSelected = State.hotbarSelected - 1
+		if State.hotbarSelected < 1 then State.hotbarSelected = CONFIG.HOTBAR_SLOTS end
+	end)
+
+	local hotbarRight = Instance.new("TextButton")
+	hotbarRight.Size = UDim2.new(0, 35, 0, 35)
+	hotbarRight.Position = UDim2.new(0.5, 195, 1, -55)
+	hotbarRight.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+	hotbarRight.BackgroundTransparency = 0.4
+	hotbarRight.Text = "▶"
+	hotbarRight.TextColor3 = Color3.new(1, 1, 1)
+	hotbarRight.TextScaled = true
+	hotbarRight.ZIndex = 26
+	hotbarRight.Parent = mobileFrame
+
+	hotbarRight.MouseButton1Click:Connect(function()
+		State.hotbarSelected = State.hotbarSelected + 1
+		if State.hotbarSelected > CONFIG.HOTBAR_SLOTS then State.hotbarSelected = 1 end
+	end)
+
+	State.mobileButtons.mineHeld = function() return miningHeld end
+end
+
+local function showPickupNotification(itemId, count)
+	local info = getItemInfo(itemId)
+	if not info then return end
+
+	local notif = Instance.new("TextLabel")
+	notif.Size = UDim2.new(1, 0, 0, 20)
+	notif.BackgroundTransparency = 0.5
+	notif.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	notif.TextColor3 = Color3.new(1, 1, 1)
+	notif.TextStrokeTransparency = 0
+	notif.Text = "+ " .. (info.icon or "") .. " " .. info.name .. " x" .. count
+	notif.TextScaled = true
+	notif.Font = Enum.Font.GothamBold
+	notif.ZIndex = 16
+	notif.Parent = State.ui.pickupFrame
+
+	task.delay(3, function()
+		if notif and notif.Parent then
+			local tween = TweenService:Create(notif, TweenInfo.new(0.5), {BackgroundTransparency = 1, TextTransparency = 1, TextStrokeTransparency = 1})
+			tween:Play()
+			tween.Completed:Connect(function()
+				notif:Destroy()
+			end)
+		end
+	end)
+end
+
+local function updateUI()
+	local ui = State.ui
+
+	-- Update hotbar
+	for i = 1, CONFIG.HOTBAR_SLOTS do
+		local slot = ui.hotbarSlots[i]
+		if slot then
+			updateSlotUI(slot, State.inventory[i])
+
+			-- Selection highlight
+			local selection = slot:FindFirstChild("Selection")
+			if selection then
+				local stroke = selection:FindFirstChildWhichIsA("UIStroke")
+				if stroke then
+					stroke.Transparency = (i == State.hotbarSelected) and 0 or 1
+				end
+			end
+		end
+	end
+
+	-- Update selected item name
+	if ui.selectedName then
+		local item = getSelectedItem()
+		if item then
+			ui.selectedName.Text = getItemName(item.id)
+		else
+			ui.selectedName.Text = ""
+		end
+	end
+
+	-- Update health hearts
+	for i = 1, 10 do
+		if ui.hearts and ui.hearts[i] then
+			local heartValue = (i - 1) * 2
+			if State.health > heartValue + 1 then
+				ui.hearts[i].Text = "❤"
+				ui.hearts[i].TextColor3 = CONFIG.UI_COLORS.HEALTH_RED
+			elseif State.health > heartValue then
+				ui.hearts[i].Text = "💔"
+				ui.hearts[i].TextColor3 = CONFIG.UI_COLORS.HEALTH_RED
+			else
+				ui.hearts[i].Text = "🖤"
+				ui.hearts[i].TextColor3 = Color3.fromRGB(60, 60, 60)
+			end
+
+			-- Low health flash
+			if State.health <= 6 then
+				local flash = math.sin(tick() * 8) > 0
+				if flash and State.health > (i-1) * 2 then
+					ui.hearts[i].TextColor3 = Color3.fromRGB(255, 80, 80)
+				end
+			end
+		end
+	end
+
+	-- Update hunger
+	for i = 1, 10 do
+		if ui.hungerIcons and ui.hungerIcons[i] then
+			local hungerValue = (i - 1) * 2
+			if State.hunger > hungerValue + 1 then
+				ui.hungerIcons[i].Text = "🍗"
+				ui.hungerIcons[i].TextTransparency = 0
+			elseif State.hunger > hungerValue then
+				ui.hungerIcons[i].Text = "🍗"
+				ui.hungerIcons[i].TextTransparency = 0.5
+			else
+				ui.hungerIcons[i].Text = "🍗"
+				ui.hungerIcons[i].TextTransparency = 0.8
+			end
+		end
+	end
+
+	-- Update XP bar
+	if ui.xpBar then
+		local xpNeeded = (State.xpLevel + 1) * 10
+		local fill = ui.xpBar:FindFirstChild("Fill")
+		if fill then
+			fill.Size = UDim2.new(State.xp / xpNeeded, 0, 1, 0)
+		end
+		local level = ui.xpBar:FindFirstChild("Level")
+		if level then
+			level.Text = tostring(State.xpLevel)
+		end
+	end
+
+	-- Update mining bar
+	if ui.mineBar then
+		ui.mineBar.Visible = State.isMining
+		if State.isMining then
+			local fill = ui.mineBar:FindFirstChild("Fill")
+			if fill then
+				fill.Size = UDim2.new(math.clamp(State.mineProgress, 0, 1), 0, 1, 0)
+			end
+		end
+	end
+
+	-- Update inventory screen
+	if ui.invBg then
+		ui.invBg.Visible = State.inventoryOpen
+
+		if State.inventoryOpen then
+			-- Update inventory slots
+			for slotIndex, slotUI in pairs(ui.invSlots) do
+				if slotUI then
+					updateSlotUI(slotUI, State.inventory[slotIndex])
+				end
+			end
+		end
+	end
+
+	-- Action text (what you're looking at)
+	if ui.actionText then
+		local block = getBlockAtRay()
+		if block and not State.inventoryOpen then
+			local blockType = block:GetAttribute("BlockType")
+			if blockType then
+				local blockInfo = BLOCK_DATA[blockType]
+				ui.actionText.Text = blockInfo and blockInfo.name or blockType
+			else
+				ui.actionText.Text = ""
+			end
+		else
+			ui.actionText.Text = ""
+		end
+	end
+
+	-- Debug info
+	if ui.debugLabel and ui.debugLabel.Visible then
+		local char = Player.Character
+		local pos = char and char:FindFirstChild("HumanoidRootPart") and char.HumanoidRootPart.Position or Vector3.zero
+		ui.debugLabel.Text = string.format(
+			"Mineblox v1.0\nFPS: %d\nPos: %.1f, %.1f, %.1f\nBlocks: %d\nMobs: %d/%d\nHealth: %d/%d\nHunger: %d/%d\nXP: %d (Lvl %d)\nSprinting: %s\nCrouching: %s",
+			math.floor(1 / RunService.RenderStepped:Wait()),
+			pos.X, pos.Y, pos.Z,
+			#State.worldBlocks,
+			#State.mobs, CONFIG.MAX_MOBS,
+			State.health, State.maxHealth,
+			State.hunger, State.maxHunger,
+			State.xp, State.xpLevel,
+			tostring(State.isSprinting),
+			tostring(State.isCrouching)
+		)
+	end
+end
+
+-- ============================================================
+-- INPUT HANDLING
+-- ============================================================
+local function setupInput()
+	-- Keyboard input
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+
+		-- Number keys for hotbar
+		if input.KeyCode == Enum.KeyCode.One then State.hotbarSelected = 1
+		elseif input.KeyCode == Enum.KeyCode.Two then State.hotbarSelected = 2
+		elseif input.KeyCode == Enum.KeyCode.Three then State.hotbarSelected = 3
+		elseif input.KeyCode == Enum.KeyCode.Four then State.hotbarSelected = 4
+		elseif input.KeyCode == Enum.KeyCode.Five then State.hotbarSelected = 5
+		elseif input.KeyCode == Enum.KeyCode.Six then State.hotbarSelected = 6
+		elseif input.KeyCode == Enum.KeyCode.Seven then State.hotbarSelected = 7
+		elseif input.KeyCode == Enum.KeyCode.Eight then State.hotbarSelected = 8
+		elseif input.KeyCode == Enum.KeyCode.Nine then State.hotbarSelected = 9
+		end
+
+		-- Sprint (LeftControl or double W)
+		if input.KeyCode == Enum.KeyCode.LeftControl then
+			State.isSprinting = true
+		end
+
+		-- Crouch (LeftShift)
+		if input.KeyCode == Enum.KeyCode.LeftShift then
+			State.isCrouching = true
+		end
+
+		-- Inventory (E)
+		if input.KeyCode == Enum.KeyCode.E then
+			State.inventoryOpen = not State.inventoryOpen
+			State.dragItem = nil
+		end
+
+		-- Debug (F3)
+		if input.KeyCode == Enum.KeyCode.F3 then
+			if State.ui.debugLabel then
+				State.ui.debugLabel.Visible = not State.ui.debugLabel.Visible
+			end
+		end
+
+		-- Drop item (Q)
+		if input.KeyCode == Enum.KeyCode.Q then
+			local item = getSelectedItem()
+			if item then
+				removeFromInventory(State.hotbarSelected, 1)
+				-- Create dropped item visual
+				local char = Player.Character
+				if char then
+					local head = char:FindFirstChild("Head")
+					if head then
+						local droppedPart = Instance.new("Part")
+						droppedPart.Size = Vector3.new(1, 1, 1)
+						droppedPart.Position = head.Position + Camera.CFrame.LookVector * 3
+						droppedPart.Anchored = false
+						droppedPart.CanCollide = true
+						droppedPart.Material = Enum.Material.SmoothPlastic
+						local itemInfo = getItemInfo(item.id)
+						droppedPart.Color = itemInfo and itemInfo.color or Color3.new(1, 1, 1)
+
+						local billboard = Instance.new("BillboardGui")
+						billboard.Size = UDim2.new(2, 0, 2, 0)
+						billboard.AlwaysOnTop = true
+						billboard.Adornee = droppedPart
+						billboard.Parent = droppedPart
+
+						local label = Instance.new("TextLabel")
+						label.Size = UDim2.new(1, 0, 1, 0)
+						label.BackgroundTransparency = 1
+						label.Text = itemInfo and itemInfo.icon or "?"
+						label.TextScaled = true
+						label.Parent = billboard
+
+						droppedPart.Parent = WorldFolder
+						droppedPart:ApplyImpulse(Camera.CFrame.LookVector * 30 + Vector3.new(0, 20, 0))
+
+						task.delay(30, function()
+							if droppedPart and droppedPart.Parent then
+								droppedPart:Destroy()
+							end
+						end)
+					end
+				end
+			end
+		end
+
+		-- Eat food (F)
+		if input.KeyCode == Enum.KeyCode.F then
+			local item = getSelectedItem()
+			if item then
+				local info = getItemInfo(item.id)
+				if info and info.type == "food" then
+					State.hunger = math.min(State.maxHunger, State.hunger + (info.hunger or 0))
+					removeFromInventory(State.hotbarSelected, 1)
+					showPickupNotification(item.id, 0) -- Eating notification
+				end
+			end
+		end
+
+		-- Left click - Mine/Attack
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if not State.inventoryOpen then
+				-- Try attack first
+				attackMobs()
+
+				-- Then try mining
+				local block = getBlockAtRay()
+				if block then
+					startMining(block)
+				end
+			end
+		end
+
+		-- Right click - Place block
+		if input.UserInputType == Enum.UserInputType.MouseButton2 then
+			if not State.inventoryOpen then
+				placeBlock()
+			end
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input, gameProcessed)
+		if input.KeyCode == Enum.KeyCode.LeftControl then
+			State.isSprinting = false
+		end
+
+		if input.KeyCode == Enum.KeyCode.LeftShift then
+			State.isCrouching = false
+		end
+
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			State.isMining = false
+			if State.mineTarget and State.mineTarget.Parent then
+				State.mineTarget.Transparency = 0
+			end
+			State.mineTarget = nil
+			State.mineProgress = 0
+		end
+	end)
+
+	-- Mouse scroll for hotbar selection
+	UserInputService.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseWheel then
+			if input.Position.Z > 0 then
+				State.hotbarSelected = State.hotbarSelected - 1
+				if State.hotbarSelected < 1 then State.hotbarSelected = CONFIG.HOTBAR_SLOTS end
+			else
+				State.hotbarSelected = State.hotbarSelected + 1
+				if State.hotbarSelected > CONFIG.HOTBAR_SLOTS then State.hotbarSelected = 1 end
+			end
+		end
+	end)
+end
+
+-- ============================================================
+-- MOVEMENT SYSTEM
+-- ============================================================
+local function updateMovement()
+	local char = Player.Character
+	if not char then return end
+	local humanoid = char:FindFirstChild("Humanoid")
+	if not humanoid then return end
+
+	if State.isSprinting and not State.isCrouching then
+		humanoid.WalkSpeed = CONFIG.SPRINT_SPEED
+		-- Drain hunger while sprinting
+		State.hungerTimer = State.hungerTimer + 0.02
+		if State.hungerTimer >= 1 then
+			State.hungerTimer = 0
+			State.hunger = math.max(0, State.hunger - 0.5)
+		end
+
+		-- FOV effect
+		Camera.FieldOfView = Camera.FieldOfView + (80 - Camera.FieldOfView) * 0.1
+	elseif State.isCrouching then
+		humanoid.WalkSpeed = CONFIG.CROUCH_SPEED
+		Camera.FieldOfView = Camera.FieldOfView + (65 - Camera.FieldOfView) * 0.1
+
+		-- Camera offset for crouching
+		humanoid.CameraOffset = humanoid.CameraOffset:Lerp(CONFIG.CROUCH_CAMERA_OFFSET, 0.15)
+	else
+		humanoid.WalkSpeed = CONFIG.WALK_SPEED
+		Camera.FieldOfView = Camera.FieldOfView + (70 - Camera.FieldOfView) * 0.1
+		humanoid.CameraOffset = humanoid.CameraOffset:Lerp(Vector3.zero, 0.15)
+	end
+
+	-- Stop sprinting if no hunger
+	if State.hunger <= 0 then
+		State.isSprinting = false
+	end
+
+	-- Crouching visual - scale character slightly
+	if State.isCrouching then
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			-- Prevent falling off edges while crouching (Minecraft sneak)
+			-- Simple edge detection
+			local rayParams = RaycastParams.new()
+			rayParams.FilterDescendantsInstances = {char}
+			local edgeRay = Workspace:Raycast(
+				hrp.Position + hrp.CFrame.LookVector * 2,
+				Vector3.new(0, -6, 0),
+				rayParams
+			)
+			if not edgeRay then
+				-- At edge, stop movement
+				humanoid.WalkSpeed = 0
+			end
+		end
+	end
+end
+
+-- ============================================================
+-- GAME LOOP
+-- ============================================================
+local function updateHunger(dt)
+	-- Natural hunger drain
+	State.hungerTimer = State.hungerTimer + dt
+	if State.hungerTimer >= 30 then
+		State.hungerTimer = 0
+		State.hunger = math.max(0, State.hunger - 1)
+	end
+
+	-- Regeneration when full hunger
+	if State.hunger >= 18 and State.health < State.maxHealth then
+		if tick() - State.lastDamageTick > 3 then
+			State.health = math.min(State.maxHealth, State.health + dt * 0.5)
+		end
+	end
+
+	-- Starvation
+	if State.hunger <= 0 then
+		if tick() - State.lastDamageTick > 2 then
+			State.health = math.max(1, State.health - 1)
+			State.lastDamageTick = tick()
+		end
+	end
+end
+
+local function setupLighting()
+	-- Minecraft-like atmosphere
+	Lighting.Ambient = Color3.fromRGB(80, 80, 100)
+	Lighting.OutdoorAmbient = Color3.fromRGB(120, 120, 130)
+	Lighting.ClockTime = 14
+	Lighting.FogEnd = 500
+	Lighting.FogColor = Color3.fromRGB(170, 200, 230)
+
+	-- Bloom effect
+	local bloom = Instance.new("BloomEffect")
+	bloom.Intensity = 0.3
+	bloom.Size = 24
+	bloom.Threshold = 1.5
+	bloom.Parent = Lighting
+
+	-- Color correction
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.Brightness = 0.02
+	cc.Contrast = 0.1
+	cc.Saturation = 0.15
+	cc.Parent = Lighting
+
+	-- Sunrays
+	local sun = Instance.new("SunRaysEffect")
+	sun.Intensity = 0.05
+	sun.Spread = 0.5
+	sun.Parent = Lighting
+
+	-- Sky
+	local sky = Instance.new("Sky")
+	sky.CelestialBodiesShown = true
+	sky.StarCount = 3000
+	sky.Parent = Lighting
+end
+
+local function setupDayNightCycle()
+	task.spawn(function()
+		while true do
+			task.wait(1)
+			Lighting.ClockTime = Lighting.ClockTime + 0.01
+
+			if Lighting.ClockTime >= 24 then
+				Lighting.ClockTime = 0
+			end
+
+			-- Spawn more hostile mobs at night
+			local isNight = Lighting.ClockTime > 19 or Lighting.ClockTime < 6
+			if isNight then
+				-- Darker ambient
+				Lighting.Ambient = Color3.fromRGB(20, 20, 40)
+				Lighting.FogColor = Color3.fromRGB(20, 20, 40)
+				Lighting.FogEnd = 200
+			else
+				Lighting.Ambient = Color3.fromRGB(80, 80, 100)
+				Lighting.FogColor = Color3.fromRGB(170, 200, 230)
+				Lighting.FogEnd = 500
+			end
+		end
+	end)
+end
+
+local function bobCamera(dt)
+	local char = Player.Character
+	if not char then return end
+	local humanoid = char:FindFirstChild("Humanoid")
+	if not humanoid then return end
+
+	if humanoid.MoveDirection.Magnitude > 0.1 then
+		local speed = humanoid.WalkSpeed
+		local bobSpeed = speed * 0.5
+		local bobAmount = State.isSprinting and 0.15 or 0.08
+
+		if State.isCrouching then
+			bobAmount = 0.04
+			bobSpeed = speed * 0.3
+		end
+
+		local t = tick()
+		local bobX = math.sin(t * bobSpeed) * bobAmount * 0.5
+		local bobY = math.abs(math.cos(t * bobSpeed)) * bobAmount
+
+		humanoid.CameraOffset = humanoid.CameraOffset + Vector3.new(bobX * 0.3, bobY * 0.3, 0)
+	end
+end
+
+-- ============================================================
+-- PARTICLE AND EFFECT SYSTEMS
+-- ============================================================
+local function createBlockBreakParticles(position, color)
+	task.spawn(function()
+		for i = 1, 8 do
+			local p = Instance.new("Part")
+			p.Size = Vector3.new(0.4, 0.4, 0.4)
+			p.Color = color
+			p.Material = Enum.Material.SmoothPlastic
+			p.Anchored = false
+			p.CanCollide = false
+			p.Position = position + Vector3.new(
+				(math.random() - 0.5) * 2,
+				(math.random() - 0.5) * 2,
+				(math.random() - 0.5) * 2
+			)
+			p.Parent = WorldFolder
+
+			p:ApplyImpulse(Vector3.new(
+				(math.random() - 0.5) * 20,
+				math.random(10, 30),
+				(math.random() - 0.5) * 20
+			))
+
+			task.delay(1.5, function()
+				if p and p.Parent then
+					local tween = TweenService:Create(p, TweenInfo.new(0.5), {Transparency = 1, Size = Vector3.new(0.1, 0.1, 0.1)})
+					tween:Play()
+					tween.Completed:Connect(function() p:Destroy() end)
+				end
+			end)
+		end
+	end)
+end
+
+-- ============================================================
+-- HAND / TOOL VIEWMODEL
+-- ============================================================
+local function createHandViewModel()
+	-- Create a simple hand/tool indicator in bottom right
+	local handFrame = Instance.new("Frame")
+	handFrame.Size = UDim2.new(0, 80, 0, 120)
+	handFrame.Position = UDim2.new(1, -120, 1, -200)
+	handFrame.BackgroundTransparency = 1
+	handFrame.ZIndex = 2
+	handFrame.Name = "HandView"
+	handFrame.Parent = ScreenGui
+
+	local handIcon = Instance.new("TextLabel")
+	handIcon.Size = UDim2.new(1, 0, 1, 0)
+	handIcon.BackgroundTransparency = 1
+	handIcon.Text = "✊"
+	handIcon.TextScaled = true
+	handIcon.Font = Enum.Font.GothamBold
+	handIcon.ZIndex = 2
+	handIcon.Name = "Icon"
+	handIcon.Parent = handFrame
+
+	State.ui.handFrame = handFrame
+	State.ui.handIcon = handIcon
+end
+
+local function updateHandViewModel()
+	if State.ui.handIcon then
+		local item = getSelectedItem()
+		if item then
+			State.ui.handIcon.Text = getItemIcon(item.id)
+		else
+			State.ui.handIcon.Text = "✊"
+		end
+
+		-- Swing animation when mining/attacking
+		if State.isMining then
+			local t = tick()
+			local swing = math.sin(t * 10) * 15
+			State.ui.handFrame.Rotation = swing
+		else
+			State.ui.handFrame.Rotation = State.ui.handFrame.Rotation * 0.85
+		end
+	end
+end
+
+-- ============================================================
+-- INITIALIZATION
+-- ============================================================
+local function initialize()
+	print("🎮 Mineblox Loading...")
+	print("⛏️ Generating world...")
+
+	-- Setup atmosphere
+	setupLighting()
+
+	-- Generate world
+	local heightMap = generateTerrain()
+	print("🌍 Terrain generated!")
+
+	-- Generate trees
+	generateTrees(heightMap)
+	print("🌲 Trees generated!")
+
+	-- Give starter items
+	giveStarterItems()
+	print("🎒 Starter items given!")
+
+	-- Wait for character
+	local char = Player.Character or Player.CharacterAdded:Wait()
+	local humanoid = char:WaitForChild("Humanoid")
+	local root = char:WaitForChild("HumanoidRootPart")
+
+	-- Teleport player to spawn on top of terrain
+	local spawnHeight = 0
+	if heightMap[0] and heightMap[0][0] then
+		spawnHeight = heightMap[0][0]
+	end
+	root.CFrame = CFrame.new(0, (spawnHeight + 5) * CONFIG.BLOCK_SIZE, 0)
+
+	-- Create UI
+	createUI()
+	createHandViewModel()
+	print("📱 UI created!")
+
+	-- Setup input
+	setupInput()
+	print("🎮 Input setup!")
+
+	-- Start day/night cycle
+	setupDayNightCycle()
+
+	-- Mob spawning timer
+	task.spawn(function()
+		while true do
+			task.wait(CONFIG.MOB_SPAWN_INTERVAL)
+			spawnMob()
+		end
+	end)
+
+	-- Spawn initial mobs
+	task.spawn(function()
+		task.wait(3)
+		for i = 1, 4 do
+			spawnMob()
+			task.wait(0.5)
+		end
+		print("🧟 Mobs spawned!")
+	end)
+
+	-- Handle character respawn
+	Player.CharacterAdded:Connect(function(newChar)
+		local newHumanoid = newChar:WaitForChild("Humanoid")
+		local newRoot = newChar:WaitForChild("HumanoidRootPart")
+
+		local spawnH = 0
+		if heightMap[0] and heightMap[0][0] then
+			spawnH = heightMap[0][0]
+		end
+		task.wait(0.5)
+		newRoot.CFrame = CFrame.new(0, (spawnH + 5) * CONFIG.BLOCK_SIZE, 0)
+
+		State.health = State.maxHealth
+		State.hunger = State.maxHunger
+	end)
+
+	-- Main game loop
+	RunService.RenderStepped:Connect(function(dt)
+		updateMovement()
+		updateMining(dt)
+		updateMobs(dt)
+		updateHunger(dt)
+		updateUI()
+		updateHandViewModel()
+		bobCamera(dt)
+
+		-- Continuous mining on hold (for mobile)
+		if State.isMobile and State.mobileButtons.mineHeld and State.mobileButtons.mineHeld() then
+			if not State.isMining then
+				local block = getBlockAtRay()
+				if block then
+					startMining(block)
+				end
+			end
+		end
+	end)
+
+	print("✅ Mineblox fully loaded! Enjoy your Minecraft x Roblox experience!")
+	print("📋 Controls:")
+	print("   1-9: Select hotbar slot")
+	print("   Left Click: Mine/Attack")
+	print("   Right Click: Place block")
+	print("   E: Open/Close Inventory & Crafting")
+	print("   Left Shift: Crouch/Sneak")
+	print("   Left Ctrl: Sprint")
+	print("   Q: Drop item")
+	print("   F: Eat food")
+	print("   F3: Debug info")
+	print("   Scroll: Change hotbar slot")
+
+	-- Welcome message
+	task.spawn(function()
+		task.wait(2)
+		local welcomeLabel = Instance.new("TextLabel")
+		welcomeLabel.Size = UDim2.new(0.6, 0, 0, 50)
+		welcomeLabel.Position = UDim2.new(0.2, 0, 0.15, 0)
+		welcomeLabel.BackgroundTransparency = 0.4
+		welcomeLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		welcomeLabel.TextColor3 = Color3.fromRGB(255, 255, 85)
+		welcomeLabel.TextStrokeTransparency = 0
+		welcomeLabel.Text = "⛏️ Welcome to MINEBLOX! ⛏️"
+		welcomeLabel.TextScaled = true
+		welcomeLabel.Font = Enum.Font.GothamBold
+		welcomeLabel.ZIndex = 50
+		welcomeLabel.Parent = ScreenGui
+
+		local uiCorner = Instance.new("UICorner")
+		uiCorner.CornerRadius = UDim.new(0, 8)
+		uiCorner.Parent = welcomeLabel
+
+		task.wait(4)
+		local tween = TweenService:Create(welcomeLabel, TweenInfo.new(1), {
+			TextTransparency = 1,
+			TextStrokeTransparency = 1,
+			BackgroundTransparency = 1
+		})
+		tween:Play()
+		tween.Completed:Connect(function()
+			welcomeLabel:Destroy()
+		end)
+	end)
+end
+
+-- Run!
+initialize()
