@@ -1,0 +1,3489 @@
+-- UFO Escape Route V2 - ULTIMATE EDITION
+-- Place in StarterPlayerScripts as a LocalScript
+-- Complete standalone system - fully immersive
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local Debris = game:GetService("Debris")
+local ChatService = game:GetService("Chat")
+
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local function waitForCharacter()
+	return player.Character or player.CharacterAdded:Wait()
+end
+
+-- ============================================================
+-- CONFIGURATION
+-- ============================================================
+local CONFIG = {
+	UFO_DESCENT_TIME = 6,
+	BEAM_DURATION = 4,
+	ASCENT_SPEED = 50,
+	BEAM_COLOR = Color3.fromRGB(0, 255, 150),
+	UFO_COLOR = Color3.fromRGB(60, 60, 85),
+	ALIEN_COLOR = Color3.fromRGB(90, 210, 90),
+	INTERIOR_POS = Vector3.new(0, 8000, 0),
+	ESCAPE_POD_CRASH_HEIGHT = 800,
+}
+
+-- ============================================================
+-- ALIEN DIALOGUE - 40 LINES
+-- ============================================================
+local ALIEN_DIALOGUE = {
+	"Greetings, Earth creature! You look... stressed. Have a space smoothie!",
+	"I was just passing by Jupiter when I got your distress signal. Wild, right?",
+	"Don't worry, my driving record in this sector is almost clean... almost.",
+	"You humans really need to stop getting into trouble. This is my 47th rescue today!",
+	"Welcome aboard the SS Definitely-Not-Stolen! Make yourself at home!",
+	"Fun fact: In my culture, panic is considered a competitive sport!",
+	"The escape pods are over there. Only way off this ship, by the way!",
+	"I've been flying for 300 years and I STILL don't have my license. Don't tell anyone.",
+	"Want a drink? I've got Cosmic Cola, Nebula Nectar, and... whatever that green thing is.",
+	"My therapist says I need to stop picking up hitchhikers, but here we are!",
+	"Earth TV is WILD. I've been binge-watching your 'reality shows'. None of it is real, right?",
+	"If you see a red button, do NOT press it. Last guy who did that... well, nevermind.",
+	"My name is Zorblex, but my friends call me Zorb. You can call me Your Majesty.",
+	"I traded three moons for this UFO. Got scammed, honestly. The AC doesn't even work.",
+	"You're taking this remarkably well. The last human I rescued just screamed for 4 hours.",
+	"These drinks are on the house! Mainly because I don't understand Earth currency.",
+	"The panic room is soundproof, so feel free to have your existential crisis in there!",
+	"I once accidentally abducted a cow. We're best friends now. Her name is Deborah.",
+	"My GPS says we're 'somewhere.' Very helpful, right?",
+	"Don't mind the weird noises. That's just the engine... probably.",
+	"I collect rescue stories! Yours is going in my memoir: 'Zorb's Guide to Saving Humans.'",
+	"Would you believe this UFO runs on positive vibes? No? Good, because it runs on plutonium.",
+	"The view from up here is amazing! Unless you have a fear of infinite void. Then... sorry.",
+	"I have 47 siblings. All of them think rescuing humans is weird. I think THEY'RE weird.",
+	"Earth food is bizarre. You guys eat things that were ALIVE? Metal.",
+	"My mom wanted me to be a doctor. Instead, I became an intergalactic uber driver.",
+	"Feel free to use the escape pods! They have heated seats. Very luxurious falling.",
+	"I've been to 200 planets and Earth is easily in my top... 200.",
+	"That panic room has been rated 5 stars on Galactic Yelp. Great for crying!",
+	"If we get pulled over by space police, you're my cousin from Andromeda. Got it?",
+	"I put on some calming space music. If you hear screaming, that IS the music.",
+	"Your planet's gravity is SO clingy. Like, let things float, am I right?",
+	"I rescued a cat once. It now rules a small planet. Cats are terrifying.",
+	"The fridge has snacks! Ignore the ones that glow. Or don't. I'm not your parent.",
+	"My hobbies include rescuing panicked humans and competitive asteroid dodging!",
+	"You're welcome to stay as long as you want! Or until we run out of fuel. Whichever first.",
+	"I just want you to know... you're valid. Even in the cold vacuum of space.",
+	"Last week I outran a black hole. This week I'm a taxi. Life comes at you fast.",
+	"If you need to call someone, we have intergalactic WiFi. Password is 'aliensarereal123'.",
+	"Buckle up! Just kidding, we don't have seatbelts. We live dangerously up here!",
+}
+
+-- ============================================================
+-- STATE
+-- ============================================================
+local state = {
+	ufoActive = false,
+	insideUFO = false,
+	ufoModel = nil,
+	interiorModel = nil,
+	alienNPC = nil,
+	guiActive = false,
+	ascending = false,
+	originalSkybox = nil,
+	originalAmbient = nil,
+	originalBrightness = nil,
+	originalClockTime = nil,
+	originalFog = nil,
+	connections = {},
+	drinkEffectActive = false,
+	sittingOnStool = false,
+	lyingInBed = false,
+	altitude = 8000,
+	speed = 50,
+	easterEggTriggered = false,
+	escapePodActive = false,
+	dialogueCooldown = false,
+	lastDialogueIndex = 0,
+	interiorParts = {},
+}
+
+-- ============================================================
+-- UTILITY FUNCTIONS
+-- ============================================================
+local function createCorner(parent, radius)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius or 8)
+	c.Parent = parent
+	return c
+end
+
+local function createStroke(parent, color, thickness, transparency)
+	local s = Instance.new("UIStroke")
+	s.Color = color or Color3.new(1, 1, 1)
+	s.Thickness = thickness or 2
+	s.Transparency = transparency or 0
+	s.Parent = parent
+	return s
+end
+
+local function lerp(a, b, t)
+	return a + (b - a) * t
+end
+
+local function smoothStep(t)
+	return t * t * (3 - 2 * t)
+end
+
+local function easeOutBack(t)
+	local c1 = 1.70158
+	local c3 = c1 + 1
+	return 1 + c3 * math.pow(t - 1, 3) + c1 * math.pow(t - 1, 2)
+end
+
+local function easeInOutCubic(t)
+	if t < 0.5 then
+		return 4 * t * t * t
+	else
+		return 1 - math.pow(-2 * t + 2, 3) / 2
+	end
+end
+
+local function flashScreen(color, duration, gui)
+	local flash = Instance.new("Frame")
+	flash.Name = "ScreenFlash"
+	flash.Size = UDim2.new(1, 0, 1, 0)
+	flash.BackgroundColor3 = color
+	flash.BackgroundTransparency = 0
+	flash.ZIndex = 100
+	flash.Parent = gui
+	TweenService:Create(flash, TweenInfo.new(duration or 0.5), {BackgroundTransparency = 1}):Play()
+	Debris:AddItem(flash, duration or 0.5)
+end
+
+local function cameraShake(intensity, duration)
+	spawn(function()
+		local startTime = tick()
+		local origType = camera.CameraType
+		while tick() - startTime < duration do
+			local remaining = 1 - ((tick() - startTime) / duration)
+			local offset = CFrame.new(
+				(math.random() - 0.5) * 2 * intensity * remaining,
+				(math.random() - 0.5) * 2 * intensity * remaining,
+				(math.random() - 0.5) * 2 * intensity * remaining
+			) * CFrame.Angles(
+				(math.random() - 0.5) * 0.02 * intensity * remaining,
+				(math.random() - 0.5) * 0.02 * intensity * remaining,
+				(math.random() - 0.5) * 0.02 * intensity * remaining
+			)
+			camera.CFrame = camera.CFrame * offset
+			task.wait()
+		end
+	end)
+end
+
+-- ============================================================
+-- PARTICLE SYSTEMS
+-- ============================================================
+local function createStarParticles(parent, rate)
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Name = "StarParticles"
+	emitter.Texture = "rbxassetid://6490035152"
+	emitter.Rate = rate or 30
+	emitter.Lifetime = NumberRange.new(2, 5)
+	emitter.Speed = NumberRange.new(1, 3)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.1),
+		NumberSequenceKeypoint.new(0.5, 0.3),
+		NumberSequenceKeypoint.new(1, 0)
+	})
+	emitter.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+		ColorSequenceKeypoint.new(0.5, Color3.fromRGB(200, 220, 255)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 180, 255))
+	})
+	emitter.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.2, 0),
+		NumberSequenceKeypoint.new(0.8, 0),
+		NumberSequenceKeypoint.new(1, 1)
+	})
+	emitter.LightEmission = 1
+	emitter.Parent = parent
+	return emitter
+end
+
+local function createGlowEffect(part, color, brightness, range)
+	local light = Instance.new("PointLight")
+	light.Color = color or Color3.fromRGB(0, 255, 150)
+	light.Brightness = brightness or 2
+	light.Range = range or 20
+	light.Parent = part
+	return light
+end
+
+local function createNeonStrip(parent, size, position, color, transparency)
+	local strip = Instance.new("Part")
+	strip.Size = size
+	strip.Position = position
+	strip.Color = color or Color3.fromRGB(0, 150, 255)
+	strip.Material = Enum.Material.Neon
+	strip.Transparency = transparency or 0.3
+	strip.Anchored = true
+	strip.CanCollide = false
+	strip.Parent = parent
+	return strip
+end
+
+local function createSmokeTrail(parent)
+	local smoke = Instance.new("ParticleEmitter")
+	smoke.Name = "SmokeTrail"
+	smoke.Texture = "rbxassetid://6490035152"
+	smoke.Rate = 200
+	smoke.Lifetime = NumberRange.new(1, 3)
+	smoke.Speed = NumberRange.new(5, 15)
+	smoke.SpreadAngle = Vector2.new(30, 30)
+	smoke.EmissionDirection = Enum.NormalId.Bottom
+	smoke.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.5),
+		NumberSequenceKeypoint.new(0.5, 2),
+		NumberSequenceKeypoint.new(1, 4)
+	})
+	smoke.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 200, 50)),
+		ColorSequenceKeypoint.new(0.3, Color3.fromRGB(255, 100, 0)),
+		ColorSequenceKeypoint.new(0.7, Color3.fromRGB(100, 100, 100)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(50, 50, 50))
+	})
+	smoke.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.5, 0.3),
+		NumberSequenceKeypoint.new(1, 1)
+	})
+	smoke.LightEmission = 0.5
+	smoke.RotSpeed = NumberRange.new(50, 200)
+	smoke.Rotation = NumberRange.new(0, 360)
+	smoke.Parent = parent
+	return smoke
+end
+
+local function createFireTrail(parent)
+	local fire = Instance.new("ParticleEmitter")
+	fire.Name = "FireTrail"
+	fire.Texture = "rbxassetid://6490035152"
+	fire.Rate = 300
+	fire.Lifetime = NumberRange.new(0.3, 0.8)
+	fire.Speed = NumberRange.new(10, 30)
+	fire.SpreadAngle = Vector2.new(15, 15)
+	fire.EmissionDirection = Enum.NormalId.Top
+	fire.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.5, 2),
+		NumberSequenceKeypoint.new(1, 0)
+	})
+	fire.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 200)),
+		ColorSequenceKeypoint.new(0.3, Color3.fromRGB(255, 150, 0)),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 50, 0))
+	})
+	fire.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(1, 1)
+	})
+	fire.LightEmission = 1
+	fire.RotSpeed = NumberRange.new(100, 500)
+	fire.Parent = parent
+	return fire
+end
+
+-- ============================================================
+-- GUI SETUP
+-- ============================================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "UFOEscapeRouteGUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- SOS Button
+local sosButton = Instance.new("ImageButton")
+sosButton.Name = "SOSButton"
+sosButton.Size = UDim2.new(0, 70, 0, 70)
+sosButton.Position = UDim2.new(1, -90, 1, -90)
+sosButton.AnchorPoint = Vector2.new(0.5, 0.5)
+sosButton.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+sosButton.AutoButtonColor = false
+sosButton.Parent = screenGui
+createCorner(sosButton, 35)
+createStroke(sosButton, Color3.fromRGB(255, 80, 80), 3)
+
+local sosGradient = Instance.new("UIGradient")
+sosGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 60, 60)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(150, 20, 20))
+})
+sosGradient.Rotation = 90
+sosGradient.Parent = sosButton
+
+local sosLabel = Instance.new("TextLabel")
+sosLabel.Size = UDim2.new(1, 0, 0.7, 0)
+sosLabel.Position = UDim2.new(0, 0, 0, 2)
+sosLabel.BackgroundTransparency = 1
+sosLabel.Text = "SOS"
+sosLabel.TextColor3 = Color3.new(1, 1, 1)
+sosLabel.TextScaled = true
+sosLabel.Font = Enum.Font.GothamBlack
+sosLabel.Parent = sosButton
+
+local sosSubLabel = Instance.new("TextLabel")
+sosSubLabel.Size = UDim2.new(1, 0, 0.3, 0)
+sosSubLabel.Position = UDim2.new(0, 0, 0.65, 0)
+sosSubLabel.BackgroundTransparency = 1
+sosSubLabel.Text = "UFO"
+sosSubLabel.TextColor3 = Color3.fromRGB(255, 200, 200)
+sosSubLabel.TextScaled = true
+sosSubLabel.Font = Enum.Font.GothamBold
+sosSubLabel.Parent = sosButton
+
+-- Pulse animation
+spawn(function()
+	while sosButton and sosButton.Parent do
+		TweenService:Create(sosButton, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+			Size = UDim2.new(0, 78, 0, 78)
+		}):Play()
+		task.wait(1)
+		TweenService:Create(sosButton, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+			Size = UDim2.new(0, 70, 0, 70)
+		}):Play()
+		task.wait(1)
+	end
+end)
+
+-- Expanding ring effect
+spawn(function()
+	while sosButton and sosButton.Parent do
+		local ring = Instance.new("Frame")
+		ring.Size = UDim2.new(0, 70, 0, 70)
+		ring.Position = UDim2.new(0.5, 0, 0.5, 0)
+		ring.AnchorPoint = Vector2.new(0.5, 0.5)
+		ring.BackgroundTransparency = 1
+		ring.Parent = sosButton
+		createCorner(ring, 50)
+		local rs = createStroke(ring, Color3.fromRGB(255, 50, 50), 2, 0.3)
+
+		TweenService:Create(ring, TweenInfo.new(2), {Size = UDim2.new(0, 140, 0, 140)}):Play()
+		TweenService:Create(rs, TweenInfo.new(2), {Transparency = 1}):Play()
+		Debris:AddItem(ring, 2)
+		task.wait(1.5)
+	end
+end)
+
+-- Notification system
+local notifFrame = Instance.new("Frame")
+notifFrame.Name = "NotifFrame"
+notifFrame.Size = UDim2.new(0, 450, 0, 65)
+notifFrame.Position = UDim2.new(0.5, 0, 0, -80)
+notifFrame.AnchorPoint = Vector2.new(0.5, 0)
+notifFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 25)
+notifFrame.BackgroundTransparency = 0.15
+notifFrame.Parent = screenGui
+createCorner(notifFrame, 14)
+createStroke(notifFrame, CONFIG.BEAM_COLOR, 2, 0.2)
+
+local notifGrad = Instance.new("UIGradient")
+notifGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(15, 15, 35)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 5, 15))
+})
+notifGrad.Rotation = 90
+notifGrad.Parent = notifFrame
+
+local notifLabel = Instance.new("TextLabel")
+notifLabel.Size = UDim2.new(1, -20, 1, 0)
+notifLabel.Position = UDim2.new(0, 10, 0, 0)
+notifLabel.BackgroundTransparency = 1
+notifLabel.Text = ""
+notifLabel.TextColor3 = Color3.fromRGB(200, 255, 200)
+notifLabel.TextScaled = true
+notifLabel.Font = Enum.Font.GothamBold
+notifLabel.Parent = notifFrame
+
+local function showNotification(text, duration, color)
+	notifLabel.Text = text
+	notifLabel.TextColor3 = color or Color3.fromRGB(200, 255, 200)
+	TweenService:Create(notifFrame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Position = UDim2.new(0.5, 0, 0, 20)
+	}):Play()
+	task.delay(duration or 3, function()
+		TweenService:Create(notifFrame, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+			Position = UDim2.new(0.5, 0, 0, -80)
+		}):Play()
+	end)
+end
+
+-- ============================================================
+-- INTERIOR HUD
+-- ============================================================
+local interiorGui = Instance.new("Frame")
+interiorGui.Name = "InteriorHUD"
+interiorGui.Size = UDim2.new(1, 0, 1, 0)
+interiorGui.BackgroundTransparency = 1
+interiorGui.Visible = false
+interiorGui.Parent = screenGui
+
+-- Top bar
+local topBar = Instance.new("Frame")
+topBar.Size = UDim2.new(0, 500, 0, 55)
+topBar.Position = UDim2.new(0.5, 0, 0, 10)
+topBar.AnchorPoint = Vector2.new(0.5, 0)
+topBar.BackgroundColor3 = Color3.fromRGB(8, 8, 20)
+topBar.BackgroundTransparency = 0.2
+topBar.Parent = interiorGui
+createCorner(topBar, 12)
+createStroke(topBar, Color3.fromRGB(0, 200, 255), 1, 0.3)
+
+-- Ship name
+local shipName = Instance.new("TextLabel")
+shipName.Size = UDim2.new(0.5, 0, 1, 0)
+shipName.Position = UDim2.new(0, 15, 0, 0)
+shipName.BackgroundTransparency = 1
+shipName.Text = "🛸 SS DEFINITELY-NOT-STOLEN"
+shipName.TextColor3 = Color3.fromRGB(0, 220, 255)
+shipName.TextScaled = true
+shipName.Font = Enum.Font.GothamBlack
+shipName.TextXAlignment = Enum.TextXAlignment.Left
+shipName.Parent = topBar
+
+-- Status indicator
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.new(0, 12, 0, 12)
+statusDot.Position = UDim2.new(1, -120, 0.5, 0)
+statusDot.AnchorPoint = Vector2.new(0, 0.5)
+statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+statusDot.Parent = topBar
+createCorner(statusDot, 6)
+
+local statusText = Instance.new("TextLabel")
+statusText.Size = UDim2.new(0, 90, 0, 20)
+statusText.Position = UDim2.new(1, -105, 0.5, 0)
+statusText.AnchorPoint = Vector2.new(0, 0.5)
+statusText.BackgroundTransparency = 1
+statusText.Text = "ASCENDING"
+statusText.TextColor3 = Color3.fromRGB(0, 255, 100)
+statusText.TextScaled = true
+statusText.Font = Enum.Font.GothamBold
+statusText.Parent = topBar
+
+-- Pulse status dot
+spawn(function()
+	while true do
+		TweenService:Create(statusDot, TweenInfo.new(0.5), {BackgroundTransparency = 0.5}):Play()
+		task.wait(0.5)
+		TweenService:Create(statusDot, TweenInfo.new(0.5), {BackgroundTransparency = 0}):Play()
+		task.wait(0.5)
+	end
+end)
+
+-- Left panel - Stats
+local statsPanel = Instance.new("Frame")
+statsPanel.Size = UDim2.new(0, 220, 0, 130)
+statsPanel.Position = UDim2.new(0, 15, 0, 75)
+statsPanel.BackgroundColor3 = Color3.fromRGB(8, 8, 20)
+statsPanel.BackgroundTransparency = 0.2
+statsPanel.Parent = interiorGui
+createCorner(statsPanel, 12)
+createStroke(statsPanel, Color3.fromRGB(0, 100, 200), 1, 0.4)
+
+local function createStatRow(name, unit, yPos, color)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0.45, 0, 0, 22)
+	label.Position = UDim2.new(0, 12, 0, yPos)
+	label.BackgroundTransparency = 1
+	label.Text = name
+	label.TextColor3 = color
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBold
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = statsPanel
+
+	local value = Instance.new("TextLabel")
+	value.Name = name .. "Value"
+	value.Size = UDim2.new(0.5, 0, 0, 22)
+	value.Position = UDim2.new(0.48, 0, 0, yPos)
+	value.BackgroundTransparency = 1
+	value.Text = "0 " .. unit
+	value.TextColor3 = Color3.new(1, 1, 1)
+	value.TextScaled = true
+	value.Font = Enum.Font.GothamBlack
+	value.TextXAlignment = Enum.TextXAlignment.Left
+	value.Parent = statsPanel
+
+	return value
+end
+
+local altValue = createStatRow("ALTITUDE", "km", 10, Color3.fromRGB(0, 200, 255))
+local spdValue = createStatRow("SPEED", "km/s", 38, Color3.fromRGB(255, 180, 0))
+local fuelValue = createStatRow("FUEL", "%", 66, Color3.fromRGB(0, 255, 100))
+local tempValue = createStatRow("HULL TEMP", "°C", 94, Color3.fromRGB(255, 100, 100))
+
+-- Dialogue Frame
+local dialogueFrame = Instance.new("Frame")
+dialogueFrame.Name = "DialogueFrame"
+dialogueFrame.Size = UDim2.new(0, 550, 0, 130)
+dialogueFrame.Position = UDim2.new(0.5, 0, 1, -150)
+dialogueFrame.AnchorPoint = Vector2.new(0.5, 0)
+dialogueFrame.BackgroundColor3 = Color3.fromRGB(5, 25, 15)
+dialogueFrame.BackgroundTransparency = 0.1
+dialogueFrame.Visible = false
+dialogueFrame.Parent = interiorGui
+createCorner(dialogueFrame, 16)
+createStroke(dialogueFrame, Color3.fromRGB(0, 255, 100), 2)
+
+local diaGrad = Instance.new("UIGradient")
+diaGrad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(10, 40, 20)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(5, 15, 10))
+})
+diaGrad.Rotation = 90
+diaGrad.Parent = dialogueFrame
+
+local alienNameLabel = Instance.new("TextLabel")
+alienNameLabel.Size = UDim2.new(0, 160, 0, 28)
+alienNameLabel.Position = UDim2.new(0, 12, 0, 8)
+alienNameLabel.BackgroundColor3 = Color3.fromRGB(0, 160, 70)
+alienNameLabel.Text = " 👽 ZORBLEX"
+alienNameLabel.TextColor3 = Color3.new(1, 1, 1)
+alienNameLabel.TextScaled = true
+alienNameLabel.Font = Enum.Font.GothamBlack
+alienNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+alienNameLabel.Parent = dialogueFrame
+createCorner(alienNameLabel, 6)
+
+local dialogueText = Instance.new("TextLabel")
+dialogueText.Name = "DialogueText"
+dialogueText.Size = UDim2.new(1, -30, 1, -55)
+dialogueText.Position = UDim2.new(0, 15, 0, 42)
+dialogueText.BackgroundTransparency = 1
+dialogueText.Text = ""
+dialogueText.TextColor3 = Color3.fromRGB(180, 255, 180)
+dialogueText.TextScaled = true
+dialogueText.Font = Enum.Font.Gotham
+dialogueText.TextWrapped = true
+dialogueText.TextXAlignment = Enum.TextXAlignment.Left
+dialogueText.TextYAlignment = Enum.TextYAlignment.Top
+dialogueText.Parent = dialogueFrame
+
+local dismissBtn = Instance.new("TextButton")
+dismissBtn.Size = UDim2.new(0, 90, 0, 28)
+dismissBtn.Position = UDim2.new(1, -100, 1, -36)
+dismissBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 70)
+dismissBtn.Text = "OK ✓"
+dismissBtn.TextColor3 = Color3.new(1, 1, 1)
+dismissBtn.TextScaled = true
+dismissBtn.Font = Enum.Font.GothamBold
+dismissBtn.Parent = dialogueFrame
+createCorner(dismissBtn, 6)
+
+dismissBtn.MouseButton1Click:Connect(function()
+	TweenService:Create(dialogueFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+		Position = UDim2.new(0.5, 0, 1, 50)
+	}):Play()
+	task.wait(0.4)
+	dialogueFrame.Visible = false
+	dialogueFrame.Position = UDim2.new(0.5, 0, 1, -150)
+end)
+
+-- Crosshair / interaction prompt
+local interactPrompt = Instance.new("TextLabel")
+interactPrompt.Name = "InteractPrompt"
+interactPrompt.Size = UDim2.new(0, 250, 0, 35)
+interactPrompt.Position = UDim2.new(0.5, 0, 0.6, 0)
+interactPrompt.AnchorPoint = Vector2.new(0.5, 0.5)
+interactPrompt.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+interactPrompt.BackgroundTransparency = 0.5
+interactPrompt.Text = ""
+interactPrompt.TextColor3 = Color3.new(1, 1, 1)
+interactPrompt.TextScaled = true
+interactPrompt.Font = Enum.Font.GothamBold
+interactPrompt.Visible = false
+interactPrompt.Parent = interiorGui
+createCorner(interactPrompt, 8)
+
+-- ============================================================
+-- BUILD UFO EXTERIOR (IMPROVED)
+-- ============================================================
+local function buildUFOExterior(position)
+	local ufo = Instance.new("Model")
+	ufo.Name = "UFO_Exterior"
+
+	-- Main disc body
+	local mainDisc = Instance.new("Part")
+	mainDisc.Name = "MainDisc"
+	mainDisc.Shape = Enum.PartType.Cylinder
+	mainDisc.Size = Vector3.new(7, 50, 50)
+	mainDisc.CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90))
+	mainDisc.Color = CONFIG.UFO_COLOR
+	mainDisc.Material = Enum.Material.SmoothPlastic
+	mainDisc.Anchored = true
+	mainDisc.CanCollide = false
+	mainDisc.Reflectance = 0.2
+	mainDisc.Parent = ufo
+
+	-- Top dome (cockpit)
+	local topDome = Instance.new("Part")
+	topDome.Name = "TopDome"
+	topDome.Shape = Enum.PartType.Ball
+	topDome.Size = Vector3.new(20, 14, 20)
+	topDome.Position = position + Vector3.new(0, 5, 0)
+	topDome.Color = Color3.fromRGB(80, 120, 180)
+	topDome.Material = Enum.Material.Glass
+	topDome.Transparency = 0.4
+	topDome.Anchored = true
+	topDome.CanCollide = false
+	topDome.Reflectance = 0.3
+	topDome.Parent = ufo
+
+	createGlowEffect(topDome, Color3.fromRGB(100, 180, 255), 3, 40)
+
+	-- Secondary inner dome
+	local innerDome = Instance.new("Part")
+	innerDome.Name = "InnerDome"
+	innerDome.Shape = Enum.PartType.Ball
+	innerDome.Size = Vector3.new(12, 10, 12)
+	innerDome.Position = position + Vector3.new(0, 6, 0)
+	innerDome.Color = Color3.fromRGB(150, 200, 255)
+	innerDome.Material = Enum.Material.Neon
+	innerDome.Transparency = 0.7
+	innerDome.Anchored = true
+	innerDome.CanCollide = false
+	innerDome.Parent = ufo
+
+	-- Bottom plate
+	local bottomPlate = Instance.new("Part")
+	bottomPlate.Name = "BottomPlate"
+	bottomPlate.Shape = Enum.PartType.Cylinder
+	bottomPlate.Size = Vector3.new(3, 35, 35)
+	bottomPlate.CFrame = CFrame.new(position + Vector3.new(0, -3, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	bottomPlate.Color = Color3.fromRGB(40, 40, 60)
+	bottomPlate.Material = Enum.Material.Metal
+	bottomPlate.Anchored = true
+	bottomPlate.CanCollide = false
+	bottomPlate.Parent = ufo
+
+	-- Outer ring (decorative)
+	local outerRing = Instance.new("Part")
+	outerRing.Name = "OuterRing"
+	outerRing.Shape = Enum.PartType.Cylinder
+	outerRing.Size = Vector3.new(2, 55, 55)
+	outerRing.CFrame = CFrame.new(position + Vector3.new(0, -1, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	outerRing.Color = Color3.fromRGB(100, 100, 130)
+	outerRing.Material = Enum.Material.Metal
+	outerRing.Anchored = true
+	outerRing.CanCollide = false
+	outerRing.Reflectance = 0.3
+	outerRing.Parent = ufo
+
+	-- 16 ring lights with better spacing
+	for i = 0, 15 do
+		local angle = (i / 16) * math.pi * 2
+		local radius = 25
+		local lightPart = Instance.new("Part")
+		lightPart.Name = "RingLight_" .. i
+		lightPart.Shape = Enum.PartType.Ball
+		lightPart.Size = Vector3.new(2.5, 2.5, 2.5)
+		lightPart.Position = position + Vector3.new(math.cos(angle) * radius, -1, math.sin(angle) * radius)
+		lightPart.Material = Enum.Material.Neon
+		lightPart.Anchored = true
+		lightPart.CanCollide = false
+		lightPart.Parent = ufo
+
+		local colors = {
+			Color3.fromRGB(0, 255, 150),
+			Color3.fromRGB(0, 150, 255),
+			Color3.fromRGB(200, 0, 255),
+			Color3.fromRGB(255, 100, 0),
+		}
+		lightPart.Color = colors[(i % #colors) + 1]
+
+		local pl = Instance.new("PointLight")
+		pl.Color = lightPart.Color
+		pl.Brightness = 2.5
+		pl.Range = 10
+		pl.Parent = lightPart
+	end
+
+	-- Engine pods (3 on bottom)
+	for i = 0, 2 do
+		local angle = (i / 3) * math.pi * 2
+		local enginePod = Instance.new("Part")
+		enginePod.Name = "EnginePod_" .. i
+		enginePod.Shape = Enum.PartType.Ball
+		enginePod.Size = Vector3.new(6, 4, 6)
+		enginePod.Position = position + Vector3.new(math.cos(angle) * 12, -5, math.sin(angle) * 12)
+		enginePod.Color = Color3.fromRGB(50, 50, 70)
+		enginePod.Material = Enum.Material.Metal
+		enginePod.Anchored = true
+		enginePod.CanCollide = false
+		enginePod.Parent = ufo
+
+		-- Engine glow
+		local engineGlow = Instance.new("Part")
+		engineGlow.Name = "EngineGlow"
+		engineGlow.Shape = Enum.PartType.Ball
+		engineGlow.Size = Vector3.new(4, 2, 4)
+		engineGlow.Position = enginePod.Position + Vector3.new(0, -2, 0)
+		engineGlow.Color = Color3.fromRGB(0, 200, 255)
+		engineGlow.Material = Enum.Material.Neon
+		engineGlow.Transparency = 0.3
+		engineGlow.Anchored = true
+		engineGlow.CanCollide = false
+		engineGlow.Parent = ufo
+
+		createGlowEffect(engineGlow, Color3.fromRGB(0, 200, 255), 3, 15)
+
+		-- Engine particles
+		local engineEmitter = Instance.new("ParticleEmitter")
+		engineEmitter.Texture = "rbxassetid://6490035152"
+		engineEmitter.Rate = 50
+		engineEmitter.Lifetime = NumberRange.new(0.3, 0.8)
+		engineEmitter.Speed = NumberRange.new(5, 15)
+		engineEmitter.EmissionDirection = Enum.NormalId.Bottom
+		engineEmitter.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1),
+			NumberSequenceKeypoint.new(1, 0)
+		})
+		engineEmitter.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 255, 255)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 100, 255))
+		})
+		engineEmitter.LightEmission = 1
+		engineEmitter.Parent = engineGlow
+	end
+
+	-- Bottom beam zone
+	local beamZone = Instance.new("Part")
+	beamZone.Name = "BeamZone"
+	beamZone.Size = Vector3.new(12, 1, 12)
+	beamZone.Position = position + Vector3.new(0, -5, 0)
+	beamZone.Transparency = 0.7
+	beamZone.Color = CONFIG.BEAM_COLOR
+	beamZone.Material = Enum.Material.Neon
+	beamZone.Anchored = true
+	beamZone.CanCollide = false
+	beamZone.Parent = ufo
+
+	createStarParticles(topDome, 20)
+
+	ufo.PrimaryPart = mainDisc
+	ufo.Parent = workspace
+	return ufo
+end
+
+-- ============================================================
+-- BUILD ESCAPE POD MODEL (for crash sequence)
+-- ============================================================
+local function buildEscapePod(position)
+	local pod = Instance.new("Model")
+	pod.Name = "EscapePodVehicle"
+
+	-- Main capsule
+	local capsule = Instance.new("Part")
+	capsule.Name = "Capsule"
+	capsule.Shape = Enum.PartType.Ball
+	capsule.Size = Vector3.new(10, 10, 10)
+	capsule.Position = position
+	capsule.Color = Color3.fromRGB(200, 200, 220)
+	capsule.Material = Enum.Material.SmoothPlastic
+	capsule.Transparency = 0.2
+	capsule.Anchored = true
+	capsule.CanCollide = false
+	capsule.Reflectance = 0.2
+	capsule.Parent = pod
+
+	-- Inner shell
+	local inner = Instance.new("Part")
+	inner.Name = "InnerShell"
+	inner.Shape = Enum.PartType.Ball
+	inner.Size = Vector3.new(8, 8, 8)
+	inner.Position = position
+	inner.Color = Color3.fromRGB(30, 30, 50)
+	inner.Material = Enum.Material.SmoothPlastic
+	inner.Anchored = true
+	inner.CanCollide = false
+	inner.Parent = pod
+
+	-- Window
+	local window = Instance.new("Part")
+	window.Name = "Window"
+	window.Shape = Enum.PartType.Ball
+	window.Size = Vector3.new(5, 5, 2)
+	window.Position = position + Vector3.new(0, 2, 4)
+	window.Color = Color3.fromRGB(100, 200, 255)
+	window.Material = Enum.Material.Glass
+	window.Transparency = 0.5
+	window.Anchored = true
+	window.CanCollide = false
+	window.Parent = pod
+
+	-- Thruster nozzle
+	local nozzle = Instance.new("Part")
+	nozzle.Name = "Nozzle"
+	nozzle.Shape = Enum.PartType.Cylinder
+	nozzle.Size = Vector3.new(3, 5, 5)
+	nozzle.CFrame = CFrame.new(position + Vector3.new(0, -6, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	nozzle.Color = Color3.fromRGB(60, 60, 80)
+	nozzle.Material = Enum.Material.Metal
+	nozzle.Anchored = true
+	nozzle.CanCollide = false
+	nozzle.Parent = pod
+
+	-- Interior light
+	createGlowEffect(inner, Color3.fromRGB(255, 200, 100), 2, 12)
+
+	-- Status lights
+	for i = 0, 5 do
+		local angle = (i / 6) * math.pi * 2
+		local sl = Instance.new("Part")
+		sl.Size = Vector3.new(0.5, 0.5, 0.5)
+		sl.Position = position + Vector3.new(math.cos(angle) * 4.5, 0, math.sin(angle) * 4.5)
+		sl.Color = i % 2 == 0 and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(0, 255, 0)
+		sl.Material = Enum.Material.Neon
+		sl.Anchored = true
+		sl.CanCollide = false
+		sl.Parent = pod
+	end
+
+	pod.PrimaryPart = capsule
+	pod.Parent = workspace
+	return pod
+end
+
+-- ============================================================
+-- BUILD UPGRADED UFO INTERIOR
+-- ============================================================
+local function buildUFOInterior(position)
+	local interior = Instance.new("Model")
+	interior.Name = "UFO_Interior"
+
+	local p = position -- shorthand
+
+	-- ========== FLOOR ==========
+	-- Main floor with pattern
+	local floor = Instance.new("Part")
+	floor.Name = "Floor"
+	floor.Size = Vector3.new(70, 2, 70)
+	floor.Position = p
+	floor.Color = Color3.fromRGB(18, 18, 35)
+	floor.Material = Enum.Material.SmoothPlastic
+	floor.Anchored = true
+	floor.CanCollide = true
+	floor.Parent = interior
+
+	-- Floor grid lines (glowing)
+	for i = -30, 30, 5 do
+		createNeonStrip(interior, Vector3.new(0.15, 0.05, 70), p + Vector3.new(i, 1.05, 0), Color3.fromRGB(0, 80, 180), 0.6)
+		createNeonStrip(interior, Vector3.new(70, 0.05, 0.15), p + Vector3.new(0, 1.05, i), Color3.fromRGB(0, 80, 180), 0.6)
+	end
+
+	-- Center floor emblem (circular glow)
+	local emblem = Instance.new("Part")
+	emblem.Name = "FloorEmblem"
+	emblem.Shape = Enum.PartType.Cylinder
+	emblem.Size = Vector3.new(0.1, 20, 20)
+	emblem.CFrame = CFrame.new(p + Vector3.new(0, 1.1, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	emblem.Color = Color3.fromRGB(0, 120, 200)
+	emblem.Material = Enum.Material.Neon
+	emblem.Transparency = 0.5
+	emblem.Anchored = true
+	emblem.CanCollide = false
+	emblem.Parent = interior
+
+	-- Pulse emblem
+	spawn(function()
+		while emblem and emblem.Parent do
+			TweenService:Create(emblem, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+				Transparency = 0.3, Color = Color3.fromRGB(0, 200, 255)
+			}):Play()
+			task.wait(2)
+			TweenService:Create(emblem, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+				Transparency = 0.7, Color = Color3.fromRGB(0, 80, 150)
+			}):Play()
+			task.wait(2)
+		end
+	end)
+
+	-- ========== CEILING ==========
+	local ceiling = Instance.new("Part")
+	ceiling.Name = "Ceiling"
+	ceiling.Size = Vector3.new(70, 2, 70)
+	ceiling.Position = p + Vector3.new(0, 25, 0)
+	ceiling.Color = Color3.fromRGB(12, 12, 28)
+	ceiling.Material = Enum.Material.SmoothPlastic
+	ceiling.Anchored = true
+	ceiling.CanCollide = true
+	ceiling.Parent = interior
+
+	-- Ceiling light panels (animated)
+	local ceilingLights = {}
+	for x = -24, 24, 12 do
+		for z = -24, 24, 12 do
+			local cl = Instance.new("Part")
+			cl.Name = "CeilingLight"
+			cl.Size = Vector3.new(6, 0.3, 6)
+			cl.Position = p + Vector3.new(x, 24, z)
+			cl.Color = Color3.fromRGB(180, 210, 255)
+			cl.Material = Enum.Material.Neon
+			cl.Transparency = 0.4
+			cl.Anchored = true
+			cl.CanCollide = false
+			cl.Parent = interior
+
+			local cpl = Instance.new("PointLight")
+			cpl.Color = Color3.fromRGB(180, 220, 255)
+			cpl.Brightness = 1.2
+			cpl.Range = 25
+			cpl.Parent = cl
+
+			-- Decorative frame around light
+			for _, offset in ipairs({{3.2, 0, 0}, {-3.2, 0, 0}, {0, 0, 3.2}, {0, 0, -3.2}}) do
+				local frame = Instance.new("Part")
+				frame.Size = Vector3.new(offset[1] ~= 0 and 0.3 or 6.4, 0.5, offset[3] ~= 0 and 0.3 or 6.4)
+				frame.Position = p + Vector3.new(x + offset[1], 24, z + offset[3])
+				frame.Color = Color3.fromRGB(40, 40, 60)
+				frame.Material = Enum.Material.Metal
+				frame.Anchored = true
+				frame.CanCollide = false
+				frame.Parent = interior
+			end
+
+			table.insert(ceilingLights, cl)
+		end
+	end
+
+	-- Animate ceiling lights
+	spawn(function()
+		local t = 0
+		while interior and interior.Parent do
+			t += task.wait()
+			for idx, cl in ipairs(ceilingLights) do
+				if cl and cl.Parent then
+					cl.Transparency = 0.3 + math.sin(t * 1.5 + idx * 0.5) * 0.15
+				end
+			end
+		end
+	end)
+
+	-- ========== WALLS (Curved panels) ==========
+	-- We create angled wall segments for a more rounded feel
+	local wallSegments = 12
+	local wallRadius = 34
+	local wallHeight = 25
+
+	for i = 0, wallSegments - 1 do
+		local angle = (i / wallSegments) * math.pi * 2
+		local nextAngle = ((i + 1) / wallSegments) * math.pi * 2
+
+		local midAngle = (angle + nextAngle) / 2
+		local segWidth = 2 * wallRadius * math.sin(math.pi / wallSegments)
+
+		local wallSeg = Instance.new("Part")
+		wallSeg.Name = "WallSeg_" .. i
+		wallSeg.Size = Vector3.new(segWidth + 0.5, wallHeight, 2)
+		wallSeg.CFrame = CFrame.new(
+			p + Vector3.new(math.cos(midAngle) * wallRadius, wallHeight / 2 + 1, math.sin(midAngle) * wallRadius)
+		) * CFrame.Angles(0, -midAngle + math.pi / 2, 0)
+		wallSeg.Color = Color3.fromRGB(20, 20, 38)
+		wallSeg.Material = Enum.Material.SmoothPlastic
+		wallSeg.Anchored = true
+		wallSeg.CanCollide = true
+		wallSeg.Parent = interior
+
+		-- Accent strip on each wall panel
+		local accent = Instance.new("Part")
+		accent.Size = Vector3.new(segWidth - 1, 0.3, 0.1)
+		accent.CFrame = wallSeg.CFrame * CFrame.new(0, -wallHeight / 2 + 3, -1.05)
+		accent.Color = Color3.fromRGB(0, 120, 200)
+		accent.Material = Enum.Material.Neon
+		accent.Transparency = 0.3
+		accent.Anchored = true
+		accent.CanCollide = false
+		accent.Parent = interior
+
+		-- Top accent
+		local topAccent = Instance.new("Part")
+		topAccent.Size = Vector3.new(segWidth - 1, 0.3, 0.1)
+		topAccent.CFrame = wallSeg.CFrame * CFrame.new(0, wallHeight / 2 - 2, -1.05)
+		topAccent.Color = Color3.fromRGB(0, 80, 180)
+		topAccent.Material = Enum.Material.Neon
+		topAccent.Transparency = 0.4
+		topAccent.Anchored = true
+		topAccent.CanCollide = false
+		topAccent.Parent = interior
+	end
+
+	-- ========== PANORAMIC WINDOWS (large, immersive) ==========
+	local windowAngles = {0, math.pi / 3, math.pi * 2 / 3, math.pi, math.pi * 4 / 3, math.pi * 5 / 3}
+	for _, wAngle in ipairs(windowAngles) do
+		local window = Instance.new("Part")
+		window.Name = "PanoWindow"
+		window.Size = Vector3.new(12, 10, 0.5)
+		window.CFrame = CFrame.new(
+			p + Vector3.new(math.cos(wAngle) * 33, 14, math.sin(wAngle) * 33)
+		) * CFrame.Angles(0, -wAngle + math.pi / 2, 0)
+		window.Color = Color3.fromRGB(5, 5, 20)
+		window.Material = Enum.Material.Glass
+		window.Transparency = 0.5
+		window.Anchored = true
+		window.CanCollide = false
+		window.Reflectance = 0.1
+		window.Parent = interior
+
+		createStarParticles(window, 15)
+
+		-- Window frame
+		for _, fOffset in ipairs({{6.2, 0}, {-6.2, 0}}) do
+			local vFrame = Instance.new("Part")
+			vFrame.Size = Vector3.new(0.5, 10.5, 0.8)
+			vFrame.CFrame = window.CFrame * CFrame.new(fOffset[1], 0, 0)
+			vFrame.Color = Color3.fromRGB(50, 50, 70)
+			vFrame.Material = Enum.Material.Metal
+			vFrame.Anchored = true
+			vFrame.CanCollide = false
+			vFrame.Parent = interior
+		end
+		for _, fOffset in ipairs({{0, 5.2}, {0, -5.2}}) do
+			local hFrame = Instance.new("Part")
+			hFrame.Size = Vector3.new(12.5, 0.5, 0.8)
+			hFrame.CFrame = window.CFrame * CFrame.new(0, fOffset[2], 0)
+			hFrame.Color = Color3.fromRGB(50, 50, 70)
+			hFrame.Material = Enum.Material.Metal
+			hFrame.Anchored = true
+			hFrame.CanCollide = false
+			hFrame.Parent = interior
+		end
+
+		-- Window ambient light
+		local wLight = Instance.new("SurfaceLight")
+		wLight.Color = Color3.fromRGB(80, 120, 200)
+		wLight.Brightness = 0.3
+		wLight.Range = 15
+		wLight.Face = Enum.NormalId.Back
+		wLight.Parent = window
+	end
+
+	-- ========== CONTROL BRIDGE (center-front) ==========
+	local bridgePos = p + Vector3.new(0, 0, 25)
+
+	-- Main console desk (curved)
+	local consoleParts = {}
+	for i = -2, 2 do
+		local angle = i * 0.3
+		local cp = Instance.new("Part")
+		cp.Name = "ConsolePart"
+		cp.Size = Vector3.new(5, 4, 2.5)
+		cp.CFrame = CFrame.new(bridgePos + Vector3.new(math.sin(angle) * 8, 3, math.cos(angle) * 2 - 3)) * CFrame.Angles(0, angle, 0)
+		cp.Color = Color3.fromRGB(30, 30, 50)
+		cp.Material = Enum.Material.SmoothPlastic
+		cp.Anchored = true
+		cp.CanCollide = true
+		cp.Parent = interior
+		table.insert(consoleParts, cp)
+
+		-- Console top surface
+		local cTop = Instance.new("Part")
+		cTop.Size = Vector3.new(5.2, 0.3, 2.7)
+		cTop.CFrame = cp.CFrame * CFrame.new(0, 2.15, 0)
+		cTop.Color = Color3.fromRGB(25, 25, 45)
+		cTop.Material = Enum.Material.Marble
+		cTop.Anchored = true
+		cTop.CanCollide = true
+		cTop.Parent = interior
+	end
+
+	-- Main screen (holographic display)
+	local mainScreen = Instance.new("Part")
+	mainScreen.Name = "MainScreen"
+	mainScreen.Size = Vector3.new(18, 8, 0.2)
+	mainScreen.Position = bridgePos + Vector3.new(0, 10, 1)
+	mainScreen.Color = Color3.fromRGB(0, 20, 50)
+	mainScreen.Material = Enum.Material.Neon
+	mainScreen.Transparency = 0.3
+	mainScreen.Anchored = true
+	mainScreen.CanCollide = false
+	mainScreen.Parent = interior
+
+	-- Screen content GUI
+	local screenGui2 = Instance.new("SurfaceGui")
+	screenGui2.Face = Enum.NormalId.Back
+	screenGui2.CanvasSize = Vector2.new(800, 400)
+	screenGui2.Parent = mainScreen
+
+	local screenBg = Instance.new("Frame")
+	screenBg.Size = UDim2.new(1, 0, 1, 0)
+	screenBg.BackgroundColor3 = Color3.fromRGB(0, 10, 30)
+	screenBg.BackgroundTransparency = 0.3
+	screenBg.Parent = screenGui2
+
+	local screenTitle = Instance.new("TextLabel")
+	screenTitle.Size = UDim2.new(1, 0, 0.2, 0)
+	screenTitle.BackgroundTransparency = 1
+	screenTitle.Text = "◈ NAVIGATION SYSTEM ◈"
+	screenTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
+	screenTitle.TextScaled = true
+	screenTitle.Font = Enum.Font.GothamBlack
+	screenTitle.Parent = screenBg
+
+	local screenData = Instance.new("TextLabel")
+	screenData.Name = "ScreenData"
+	screenData.Size = UDim2.new(1, -20, 0.7, 0)
+	screenData.Position = UDim2.new(0, 10, 0.25, 0)
+	screenData.BackgroundTransparency = 1
+	screenData.Text = "DESTINATION: UNKNOWN\nSTATUS: ASCENDING\nPASSENGERS: 2\nCOURSE: AWAY FROM DANGER"
+	screenData.TextColor3 = Color3.fromRGB(0, 255, 150)
+	screenData.TextScaled = true
+	screenData.Font = Enum.Font.Code
+	screenData.TextXAlignment = Enum.TextXAlignment.Left
+	screenData.TextYAlignment = Enum.TextYAlignment.Top
+	screenData.Parent = screenBg
+
+	createGlowEffect(mainScreen, Color3.fromRGB(0, 150, 255), 2, 20)
+
+	-- Animated screen data
+	spawn(function()
+		local messages = {
+			"DESTINATION: UNKNOWN\nSTATUS: ASCENDING\nPASSENGERS: 2\nCOURSE: AWAY FROM DANGER",
+			"SCANNING: NO THREATS DETECTED\nSHIELDS: 100%\nOXYGEN: OPTIMAL\nMOOD: VIBING",
+			"FUEL: PLUTONIUM RESERVES OK\nENGINE: PURRING NICELY\nGPS: LOST (AS USUAL)\nWiFi: CONNECTED",
+			"ALERT: COSMIC RAY SHOWER AHEAD\nSUGGESTION: ENJOY THE VIEW\nTEMP: COZY\nSNACKS: AVAILABLE",
+		}
+		local idx = 1
+		while screenData and screenData.Parent do
+			task.wait(5)
+			idx = idx % #messages + 1
+			screenData.Text = messages[idx]
+		end
+	end)
+
+	-- Holographic globe projector
+	local globe = Instance.new("Part")
+	globe.Name = "HoloGlobe"
+	globe.Shape = Enum.PartType.Ball
+	globe.Size = Vector3.new(4, 4, 4)
+	globe.Position = bridgePos + Vector3.new(0, 8, -5)
+	globe.Color = Color3.fromRGB(0, 180, 255)
+	globe.Material = Enum.Material.ForceField
+	globe.Transparency = 0.4
+	globe.Anchored = true
+	globe.CanCollide = false
+	globe.Parent = interior
+
+	-- Hologram ring
+	local holoRing = Instance.new("Part")
+	holoRing.Name = "HoloRing"
+	holoRing.Shape = Enum.PartType.Cylinder
+	holoRing.Size = Vector3.new(0.2, 6, 6)
+	holoRing.CFrame = CFrame.new(globe.Position) * CFrame.Angles(0, 0, math.rad(90))
+	holoRing.Color = Color3.fromRGB(0, 255, 200)
+	holoRing.Material = Enum.Material.Neon
+	holoRing.Transparency = 0.5
+	holoRing.Anchored = true
+	holoRing.CanCollide = false
+	holoRing.Parent = interior
+
+	spawn(function()
+		local t = 0
+		while globe and globe.Parent do
+			t += task.wait()
+			globe.CFrame = CFrame.new(globe.Position) * CFrame.Angles(t * 0.3, t * 0.5, 0)
+			holoRing.CFrame = CFrame.new(globe.Position) * CFrame.Angles(math.sin(t) * 0.5, t, math.cos(t) * 0.3)
+		end
+	end)
+
+	-- Console buttons (interactive looking)
+	local buttonColors = {
+		Color3.fromRGB(255, 50, 50),
+		Color3.fromRGB(50, 255, 50),
+		Color3.fromRGB(50, 100, 255),
+		Color3.fromRGB(255, 255, 50),
+		Color3.fromRGB(255, 50, 200),
+		Color3.fromRGB(0, 255, 200),
+	}
+	for i, cp in ipairs(consoleParts) do
+		for j = 1, 3 do
+			local btn = Instance.new("Part")
+			btn.Name = "ConsoleBtn"
+			btn.Size = Vector3.new(0.8, 0.4, 0.8)
+			btn.CFrame = cp.CFrame * CFrame.new((j - 2) * 1.2, 2.5, 0)
+			btn.Color = buttonColors[((i - 1) * 3 + j - 1) % #buttonColors + 1]
+			btn.Material = Enum.Material.Neon
+			btn.Anchored = true
+			btn.CanCollide = false
+			btn.Parent = interior
+		end
+	end
+
+	-- Captain's chair
+	local captainChair = Instance.new("Part")
+	captainChair.Name = "CaptainChair"
+	captainChair.Size = Vector3.new(4, 1, 4)
+	captainChair.Position = bridgePos + Vector3.new(0, 2, -8)
+	captainChair.Color = Color3.fromRGB(40, 40, 60)
+	captainChair.Material = Enum.Material.SmoothPlastic
+	captainChair.Anchored = true
+	captainChair.CanCollide = true
+	captainChair.Parent = interior
+
+	local chairBack = Instance.new("Part")
+	chairBack.Size = Vector3.new(4, 5, 1)
+	chairBack.Position = bridgePos + Vector3.new(0, 5, -10)
+	chairBack.Color = Color3.fromRGB(35, 35, 55)
+	chairBack.Material = Enum.Material.Fabric
+	chairBack.Anchored = true
+	chairBack.CanCollide = true
+	chairBack.Parent = interior
+
+	-- Chair cushion
+	local cushion = Instance.new("Part")
+	cushion.Size = Vector3.new(3.5, 0.5, 3.5)
+	cushion.Position = bridgePos + Vector3.new(0, 2.8, -8)
+	cushion.Color = Color3.fromRGB(60, 30, 80)
+	cushion.Material = Enum.Material.Fabric
+	cushion.Anchored = true
+	cushion.CanCollide = true
+	cushion.Parent = interior
+
+	-- ========== DRINKS BAR (Left wing) ==========
+	local barPos = p + Vector3.new(-22, 0, -5)
+
+	-- Bar counter (L-shaped)
+	local barMain = Instance.new("Part")
+	barMain.Name = "BarCounter"
+	barMain.Size = Vector3.new(16, 4.5, 3)
+	barMain.Position = barPos + Vector3.new(0, 3.25, 0)
+	barMain.Color = Color3.fromRGB(35, 20, 50)
+	barMain.Material = Enum.Material.SmoothPlastic
+	barMain.Anchored = true
+	barMain.CanCollide = true
+	barMain.Parent = interior
+
+	-- Bar top (glossy)
+	local barTopSurface = Instance.new("Part")
+	barTopSurface.Name = "BarTop"
+	barTopSurface.Size = Vector3.new(16.2, 0.4, 3.2)
+	barTopSurface.Position = barPos + Vector3.new(0, 5.7, 0)
+	barTopSurface.Color = Color3.fromRGB(60, 35, 80)
+	barTopSurface.Material = Enum.Material.Marble
+	barTopSurface.Reflectance = 0.2
+	barTopSurface.Anchored = true
+	barTopSurface.CanCollide = true
+	barTopSurface.Parent = interior
+
+	-- Bar LED strip
+	createNeonStrip(interior, Vector3.new(16, 0.2, 0.2), barPos + Vector3.new(0, 1.1, -1.6), Color3.fromRGB(200, 0, 255), 0)
+	createNeonStrip(interior, Vector3.new(16, 0.2, 0.2), barPos + Vector3.new(0, 1.1, 1.6), Color3.fromRGB(0, 200, 255), 0)
+
+	-- Back bar (shelves)
+	local backBar = Instance.new("Part")
+	backBar.Size = Vector3.new(16, 10, 1)
+	backBar.Position = barPos + Vector3.new(0, 7, -5)
+	backBar.Color = Color3.fromRGB(25, 15, 35)
+	backBar.Material = Enum.Material.SmoothPlastic
+	backBar.Anchored = true
+	backBar.CanCollide = true
+	backBar.Parent = interior
+
+	-- Shelves
+	for sh = 0, 2 do
+		local shelf = Instance.new("Part")
+		shelf.Size = Vector3.new(15, 0.3, 2)
+		shelf.Position = barPos + Vector3.new(0, 4 + sh * 3, -4)
+		shelf.Color = Color3.fromRGB(50, 30, 60)
+		shelf.Material = Enum.Material.SmoothPlastic
+		shelf.Anchored = true
+		shelf.CanCollide = true
+		shelf.Parent = interior
+
+		-- Bottles on shelves
+		for b = -6, 6, 2 do
+			local bottle = Instance.new("Part")
+			bottle.Name = "Bottle"
+			bottle.Size = Vector3.new(0.6, 1.8, 0.6)
+			bottle.Position = barPos + Vector3.new(b, 5.2 + sh * 3, -4)
+			bottle.Color = Color3.fromRGB(
+				math.random(50, 255),
+				math.random(50, 255),
+				math.random(50, 255)
+			)
+			bottle.Material = Enum.Material.Glass
+			bottle.Transparency = 0.3
+			bottle.Anchored = true
+			bottle.CanCollide = false
+			bottle.Parent = interior
+		end
+	end
+
+	-- Bar sign (neon)
+	local barSign = Instance.new("Part")
+	barSign.Name = "BarSign"
+	barSign.Size = Vector3.new(12, 3, 0.3)
+	barSign.Position = barPos + Vector3.new(0, 14, -5.3)
+	barSign.Color = Color3.fromRGB(200, 50, 255)
+	barSign.Material = Enum.Material.Neon
+	barSign.Anchored = true
+	barSign.CanCollide = false
+	barSign.Parent = interior
+
+	local bsGui = Instance.new("SurfaceGui")
+	bsGui.Face = Enum.NormalId.Front
+	bsGui.Parent = barSign
+	local bsText = Instance.new("TextLabel")
+	bsText.Size = UDim2.new(1, 0, 1, 0)
+	bsText.BackgroundTransparency = 1
+	bsText.Text = "🍹 COSMIC CANTINA 🍹"
+	bsText.TextColor3 = Color3.new(1, 1, 1)
+	bsText.TextScaled = true
+	bsText.Font = Enum.Font.GothamBlack
+	bsText.Parent = bsGui
+
+	createGlowEffect(barSign, Color3.fromRGB(200, 50, 255), 1.5, 15)
+
+	-- ===== FUNCTIONAL DRINKS =====
+	local drinkData = {
+		{name = "Cosmic Cola", color = Color3.fromRGB(180, 0, 255), offset = Vector3.new(-5, 0, 0), effect = "speed", icon = "⚡"},
+		{name = "Nebula Nectar", color = Color3.fromRGB(0, 200, 255), offset = Vector3.new(-1.5, 0, 0), effect = "jump", icon = "🚀"},
+		{name = "Alien Ale", color = Color3.fromRGB(0, 255, 100), offset = Vector3.new(1.5, 0, 0), effect = "glow", icon = "✨"},
+		{name = "Void Vodka", color = Color3.fromRGB(255, 50, 100), offset = Vector3.new(5, 0, 0), effect = "spin", icon = "🌀"},
+	}
+
+	for _, drink in ipairs(drinkData) do
+		-- Glass
+		local glass = Instance.new("Part")
+		glass.Name = "Drink_" .. drink.name
+		glass.Size = Vector3.new(1.4, 2.2, 1.4)
+		glass.Position = barPos + Vector3.new(0, 7, 0) + drink.offset
+		glass.Color = drink.color
+		glass.Material = Enum.Material.Glass
+		glass.Transparency = 0.35
+		glass.Anchored = true
+		glass.CanCollide = false
+		glass.Parent = interior
+
+		-- Liquid
+		local liquid = Instance.new("Part")
+		liquid.Name = "Liquid"
+		liquid.Size = Vector3.new(1.1, 1.6, 1.1)
+		liquid.Position = glass.Position + Vector3.new(0, -0.2, 0)
+		liquid.Color = drink.color
+		liquid.Material = Enum.Material.Neon
+		liquid.Transparency = 0.2
+		liquid.Anchored = true
+		liquid.CanCollide = false
+		liquid.Parent = interior
+
+		-- Bubbles
+		local bubbles = Instance.new("ParticleEmitter")
+		bubbles.Texture = "rbxassetid://6490035152"
+		bubbles.Rate = 8
+		bubbles.Lifetime = NumberRange.new(0.4, 1)
+		bubbles.Speed = NumberRange.new(0.3, 1)
+		bubbles.Size = NumberSequence.new(0.08, 0)
+		bubbles.Color = ColorSequence.new(drink.color)
+		bubbles.LightEmission = 1
+		bubbles.EmissionDirection = Enum.NormalId.Top
+		bubbles.Parent = liquid
+
+		-- Drink label billboard
+		local drinkBB = Instance.new("BillboardGui")
+		drinkBB.Size = UDim2.new(0, 120, 0, 45)
+		drinkBB.StudsOffset = Vector3.new(0, 2.5, 0)
+		drinkBB.AlwaysOnTop = true
+		drinkBB.Parent = glass
+
+		local drinkBG = Instance.new("Frame")
+		drinkBG.Size = UDim2.new(1, 0, 1, 0)
+		drinkBG.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		drinkBG.BackgroundTransparency = 0.4
+		drinkBG.Parent = drinkBB
+		createCorner(drinkBG, 6)
+
+		local drinkLbl = Instance.new("TextLabel")
+		drinkLbl.Size = UDim2.new(1, 0, 0.55, 0)
+		drinkLbl.BackgroundTransparency = 1
+		drinkLbl.Text = drink.icon .. " " .. drink.name
+		drinkLbl.TextColor3 = drink.color
+		drinkLbl.TextScaled = true
+		drinkLbl.Font = Enum.Font.GothamBold
+		drinkLbl.Parent = drinkBG
+
+		local drinkSub = Instance.new("TextLabel")
+		drinkSub.Size = UDim2.new(1, 0, 0.4, 0)
+		drinkSub.Position = UDim2.new(0, 0, 0.55, 0)
+		drinkSub.BackgroundTransparency = 1
+		drinkSub.Text = "[CLICK]"
+		drinkSub.TextColor3 = Color3.fromRGB(180, 180, 180)
+		drinkSub.TextScaled = true
+		drinkSub.Font = Enum.Font.Gotham
+		drinkSub.Parent = drinkBG
+
+		-- Click detector
+		local dClick = Instance.new("ClickDetector")
+		dClick.MaxActivationDistance = 15
+		dClick.Parent = glass
+
+		dClick.MouseClick:Connect(function()
+			if state.drinkEffectActive then
+				showNotification("⏳ Wait for your current drink effect to wear off!", 2, Color3.fromRGB(255, 200, 0))
+				return
+			end
+			state.drinkEffectActive = true
+			showNotification(drink.icon .. " You drank " .. drink.name .. "!", 3, drink.color)
+
+			-- Visual: drink disappears and refills
+			glass.Transparency = 0.9
+			liquid.Transparency = 0.9
+			bubbles.Enabled = false
+
+			local character = player.Character
+			if character then
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					if drink.effect == "speed" then
+						humanoid.WalkSpeed = 40
+						showNotification("⚡ SPEED BOOST ACTIVE! ZOOM ZOOM!", 3, drink.color)
+						task.delay(12, function()
+							if humanoid and humanoid.Parent then humanoid.WalkSpeed = 16 end
+							state.drinkEffectActive = false
+						end)
+					elseif drink.effect == "jump" then
+						humanoid.JumpPower = 120
+						showNotification("🚀 SUPER JUMP ACTIVE! TO THE CEILING!", 3, drink.color)
+						task.delay(12, function()
+							if humanoid and humanoid.Parent then humanoid.JumpPower = 50 end
+							state.drinkEffectActive = false
+						end)
+					elseif drink.effect == "glow" then
+						for _, pt in pairs(character:GetDescendants()) do
+							if pt:IsA("BasePart") then
+								local gl = Instance.new("PointLight")
+								gl.Color = Color3.fromRGB(0, 255, 100)
+								gl.Brightness = 3
+								gl.Range = 12
+								gl.Name = "DrinkGlow"
+								gl.Parent = pt
+							end
+						end
+						showNotification("✨ RADIOACTIVE GLOW! You're a walking nightlight!", 3, drink.color)
+						task.delay(15, function()
+							if character then
+								for _, pt in pairs(character:GetDescendants()) do
+									if pt.Name == "DrinkGlow" then pt:Destroy() end
+								end
+							end
+							state.drinkEffectActive = false
+						end)
+					elseif drink.effect == "spin" then
+						showNotification("🌀 VOID VODKA! Everything is spinning!", 3, drink.color)
+						spawn(function()
+							local startTime = tick()
+							while tick() - startTime < 10 do
+								if camera then
+									camera.CFrame = camera.CFrame * CFrame.Angles(0, 0, math.rad(2))
+								end
+								task.wait()
+							end
+							state.drinkEffectActive = false
+						end)
+					end
+				end
+			end
+
+			-- Refill drink
+			task.delay(6, function()
+				glass.Transparency = 0.35
+				liquid.Transparency = 0.2
+				bubbles.Enabled = true
+			end)
+		end)
+	end
+
+	-- ===== BAR STOOLS (SITTABLE) =====
+	for i = -2, 2 do
+		local stoolPos = barPos + Vector3.new(i * 3.5, 0, 4)
+
+		-- Stool base pole
+		local pole = Instance.new("Part")
+		pole.Name = "StoolPole"
+		pole.Size = Vector3.new(0.5, 3, 0.5)
+		pole.Position = stoolPos + Vector3.new(0, 2.5, 0)
+		pole.Color = Color3.fromRGB(120, 120, 140)
+		pole.Material = Enum.Material.Metal
+		pole.Anchored = true
+		pole.CanCollide = false
+		pole.Parent = interior
+
+		-- Stool foot ring
+		local footRing = Instance.new("Part")
+		footRing.Shape = Enum.PartType.Cylinder
+		footRing.Size = Vector3.new(0.3, 2, 2)
+		footRing.CFrame = CFrame.new(stoolPos + Vector3.new(0, 1.5, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		footRing.Color = Color3.fromRGB(100, 100, 120)
+		footRing.Material = Enum.Material.Metal
+		footRing.Anchored = true
+		footRing.CanCollide = true
+		footRing.Parent = interior
+
+		-- Stool seat
+		local seat = Instance.new("Seat")
+		seat.Name = "BarStoolSeat"
+		seat.Size = Vector3.new(2.5, 1, 2.5)
+		seat.Position = stoolPos + Vector3.new(0, 4.2, 0)
+		seat.Color = Color3.fromRGB(50, 30, 70)
+		seat.Material = Enum.Material.Fabric
+		seat.Anchored = true
+		seat.Parent = interior
+
+		-- Stool cushion top
+		local sCushion = Instance.new("Part")
+		sCushion.Shape = Enum.PartType.Cylinder
+		sCushion.Size = Vector3.new(0.6, 2.8, 2.8)
+		sCushion.CFrame = CFrame.new(stoolPos + Vector3.new(0, 4.8, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		sCushion.Color = Color3.fromRGB(70, 40, 100)
+		sCushion.Material = Enum.Material.Fabric
+		sCushion.Anchored = true
+		sCushion.CanCollide = false
+		sCushion.Parent = interior
+
+		-- Stool base
+		local sBase = Instance.new("Part")
+		sBase.Shape = Enum.PartType.Cylinder
+		sBase.Size = Vector3.new(0.5, 3, 3)
+		sBase.CFrame = CFrame.new(stoolPos + Vector3.new(0, 0.75, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		sBase.Color = Color3.fromRGB(80, 80, 100)
+		sBase.Material = Enum.Material.Metal
+		sBase.Anchored = true
+		sBase.CanCollide = true
+		sBase.Parent = interior
+	end
+
+	-- ========== FUNCTIONAL BED (Right side) ==========
+	local bedPos = p + Vector3.new(20, 0, -20)
+
+	-- Bed frame
+	local bedFrame = Instance.new("Part")
+	bedFrame.Name = "BedFrame"
+	bedFrame.Size = Vector3.new(7, 2, 10)
+	bedFrame.Position = bedPos + Vector3.new(0, 2, 0)
+	bedFrame.Color = Color3.fromRGB(40, 30, 55)
+	bedFrame.Material = Enum.Material.SmoothPlastic
+	bedFrame.Anchored = true
+	bedFrame.CanCollide = true
+	bedFrame.Parent = interior
+
+	-- Mattress
+	local mattress = Instance.new("Part")
+	mattress.Name = "Mattress"
+	mattress.Size = Vector3.new(6.5, 1.2, 9.5)
+	mattress.Position = bedPos + Vector3.new(0, 3.6, 0)
+	mattress.Color = Color3.fromRGB(60, 50, 90)
+	mattress.Material = Enum.Material.Fabric
+	mattress.Anchored = true
+	mattress.CanCollide = true
+	mattress.Parent = interior
+
+	-- Pillow
+	local pillow = Instance.new("Part")
+	pillow.Name = "Pillow"
+	pillow.Size = Vector3.new(4, 1, 2)
+	pillow.Position = bedPos + Vector3.new(0, 4.5, -3.5)
+	pillow.Color = Color3.fromRGB(200, 200, 230)
+	pillow.Material = Enum.Material.Fabric
+	pillow.Anchored = true
+	pillow.CanCollide = false
+	pillow.Parent = interior
+
+	-- Blanket
+	local blanket = Instance.new("Part")
+	blanket.Name = "Blanket"
+	blanket.Size = Vector3.new(6, 0.4, 7)
+	blanket.Position = bedPos + Vector3.new(0, 4.5, 1)
+	blanket.Color = Color3.fromRGB(80, 60, 130)
+	blanket.Material = Enum.Material.Fabric
+	blanket.Anchored = true
+	blanket.CanCollide = false
+	blanket.Parent = interior
+
+	-- Headboard
+	local headboard = Instance.new("Part")
+	headboard.Name = "Headboard"
+	headboard.Size = Vector3.new(7, 5, 1)
+	headboard.Position = bedPos + Vector3.new(0, 5.5, -5)
+	headboard.Color = Color3.fromRGB(30, 25, 45)
+	headboard.Material = Enum.Material.Wood
+	headboard.Anchored = true
+	headboard.CanCollide = true
+	headboard.Parent = interior
+
+	-- Bed LED strip
+	createNeonStrip(interior, Vector3.new(7, 0.2, 0.2), bedPos + Vector3.new(0, 1.1, 5.1), Color3.fromRGB(100, 50, 200), 0)
+	createNeonStrip(interior, Vector3.new(7, 0.2, 0.2), bedPos + Vector3.new(0, 1.1, -5.1), Color3.fromRGB(100, 50, 200), 0)
+
+	-- Bed area lamp
+	local bedLamp = Instance.new("Part")
+	bedLamp.Shape = Enum.PartType.Ball
+	bedLamp.Size = Vector3.new(2, 2, 2)
+	bedLamp.Position = bedPos + Vector3.new(-4, 6, -4)
+	bedLamp.Color = Color3.fromRGB(255, 200, 100)
+	bedLamp.Material = Enum.Material.Neon
+	bedLamp.Transparency = 0.3
+	bedLamp.Anchored = true
+	bedLamp.CanCollide = false
+	bedLamp.Parent = interior
+
+	createGlowEffect(bedLamp, Color3.fromRGB(255, 200, 100), 1, 15)
+
+	-- Bed label
+	local bedBB = Instance.new("BillboardGui")
+	bedBB.Size = UDim2.new(0, 140, 0, 45)
+	bedBB.StudsOffset = Vector3.new(0, 5, 0)
+	bedBB.AlwaysOnTop = true
+	bedBB.Parent = mattress
+
+	local bedBBFrame = Instance.new("Frame")
+	bedBBFrame.Size = UDim2.new(1, 0, 1, 0)
+	bedBBFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+	bedBBFrame.BackgroundTransparency = 0.4
+	bedBBFrame.Parent = bedBB
+	createCorner(bedBBFrame, 6)
+
+	local bedLabel = Instance.new("TextLabel")
+	bedLabel.Size = UDim2.new(1, 0, 0.55, 0)
+	bedLabel.BackgroundTransparency = 1
+	bedLabel.Text = "🛏️ REST POD"
+	bedLabel.TextColor3 = Color3.fromRGB(200, 180, 255)
+	bedLabel.TextScaled = true
+	bedLabel.Font = Enum.Font.GothamBold
+	bedLabel.Parent = bedBBFrame
+
+	local bedSubLabel = Instance.new("TextLabel")
+	bedSubLabel.Size = UDim2.new(1, 0, 0.4, 0)
+	bedSubLabel.Position = UDim2.new(0, 0, 0.55, 0)
+	bedSubLabel.BackgroundTransparency = 1
+	bedSubLabel.Text = "[CLICK TO REST]"
+	bedSubLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+	bedSubLabel.TextScaled = true
+	bedSubLabel.Font = Enum.Font.Gotham
+	bedSubLabel.Parent = bedBBFrame
+
+	-- Bed click detector (functional sleeping)
+	local bedClick = Instance.new("ClickDetector")
+	bedClick.MaxActivationDistance = 12
+	bedClick.Parent = mattress
+
+	bedClick.MouseClick:Connect(function()
+		if state.lyingInBed then
+			-- Wake up
+			state.lyingInBed = false
+			showNotification("☀️ Rise and shine, space traveler!", 3, Color3.fromRGB(255, 220, 100))
+
+			local character = player.Character
+			if character then
+				local hrp = character:FindFirstChild("HumanoidRootPart")
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if hrp then
+					hrp.CFrame = CFrame.new(bedPos + Vector3.new(0, 6, 5))
+				end
+				if humanoid then
+					humanoid.WalkSpeed = 16
+					humanoid.JumpPower = 50
+				end
+			end
+
+			camera.CameraType = Enum.CameraType.Custom
+
+			-- Remove sleep overlay
+			local overlay = screenGui:FindFirstChild("SleepOverlay")
+			if overlay then
+				TweenService:Create(overlay, TweenInfo.new(1), {BackgroundTransparency = 1}):Play()
+				Debris:AddItem(overlay, 1)
+			end
+		else
+			-- Lie down
+			state.lyingInBed = true
+			showNotification("😴 Lying down... Click bed again to wake up", 3, Color3.fromRGB(200, 180, 255))
+
+			local character = player.Character
+			if character then
+				local hrp = character:FindFirstChild("HumanoidRootPart")
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if hrp then
+					hrp.CFrame = CFrame.new(bedPos + Vector3.new(0, 4.5, 0)) * CFrame.Angles(0, 0, math.rad(90))
+				end
+				if humanoid then
+					humanoid.WalkSpeed = 0
+					humanoid.JumpPower = 0
+				end
+			end
+
+			-- Sleep camera
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = CFrame.new(bedPos + Vector3.new(0, 12, 0), bedPos + Vector3.new(0, 4, 0))
+
+			-- Sleep overlay (dim screen)
+			local sleepOverlay = Instance.new("Frame")
+			sleepOverlay.Name = "SleepOverlay"
+			sleepOverlay.Size = UDim2.new(1, 0, 1, 0)
+			sleepOverlay.BackgroundColor3 = Color3.fromRGB(10, 5, 20)
+			sleepOverlay.BackgroundTransparency = 0.5
+			sleepOverlay.ZIndex = 90
+			sleepOverlay.Parent = screenGui
+
+			-- Zzz text
+			spawn(function()
+				while state.lyingInBed do
+					local zzz = Instance.new("TextLabel")
+					zzz.Size = UDim2.new(0, 60, 0, 40)
+					zzz.Position = UDim2.new(math.random(30, 70) / 100, 0, math.random(30, 70) / 100, 0)
+					zzz.BackgroundTransparency = 1
+					zzz.Text = "💤"
+					zzz.TextScaled = true
+					zzz.TextTransparency = 0
+					zzz.ZIndex = 91
+					zzz.Parent = sleepOverlay
+
+					TweenService:Create(zzz, TweenInfo.new(3), {
+						Position = zzz.Position + UDim2.new(0, 0, -0.1, 0),
+						TextTransparency = 1
+					}):Play()
+					Debris:AddItem(zzz, 3)
+					task.wait(1.5)
+				end
+			end)
+		end
+	end)
+
+	-- ========== PANIC ROOM (Rear section) ==========
+	local prPos = p + Vector3.new(0, 0, -25)
+
+	-- Panic room structure
+	local prFloor = Instance.new("Part")
+	prFloor.Name = "PanicFloor"
+	prFloor.Size = Vector3.new(14, 1, 14)
+	prFloor.Position = prPos + Vector3.new(0, 1.5, 0)
+	prFloor.Color = Color3.fromRGB(40, 15, 15)
+	prFloor.Material = Enum.Material.DiamondPlate
+	prFloor.Anchored = true
+	prFloor.CanCollide = true
+	prFloor.Parent = interior
+
+	-- Walls
+	local prWallData = {
+		{size = Vector3.new(14, 14, 1), offset = Vector3.new(0, 9, -7)},
+		{size = Vector3.new(14, 14, 1), offset = Vector3.new(0, 9, 7)},
+		{size = Vector3.new(1, 14, 14), offset = Vector3.new(-7, 9, 0)},
+		{size = Vector3.new(1, 14, 14), offset = Vector3.new(7, 9, 0)},
+	}
+
+	for _, w in ipairs(prWallData) do
+		local wall = Instance.new("Part")
+		wall.Name = "PanicWall"
+		wall.Size = w.size
+		wall.Position = prPos + w.offset
+		wall.Color = Color3.fromRGB(50, 18, 18)
+		wall.Material = Enum.Material.DiamondPlate
+		wall.Anchored = true
+		wall.CanCollide = true
+		wall.Parent = interior
+	end
+
+	-- Panic ceiling
+	local prCeil = Instance.new("Part")
+	prCeil.Size = Vector3.new(14, 1, 14)
+	prCeil.Position = prPos + Vector3.new(0, 16, 0)
+	prCeil.Color = Color3.fromRGB(50, 18, 18)
+	prCeil.Material = Enum.Material.DiamondPlate
+	prCeil.Anchored = true
+	prCeil.CanCollide = true
+	prCeil.Parent = interior
+
+	-- Red emergency lights
+	for _, lpos in ipairs({Vector3.new(-5, 14, -5), Vector3.new(5, 14, -5), Vector3.new(0, 14, 5)}) do
+		local rLight = Instance.new("Part")
+		rLight.Size = Vector3.new(1.5, 0.5, 1.5)
+		rLight.Position = prPos + lpos
+		rLight.Color = Color3.fromRGB(255, 0, 0)
+		rLight.Material = Enum.Material.Neon
+		rLight.Anchored = true
+		rLight.CanCollide = false
+		rLight.Parent = interior
+
+		local rpl = Instance.new("PointLight")
+		rpl.Color = Color3.fromRGB(255, 30, 30)
+		rpl.Brightness = 2
+		rpl.Range = 12
+		rpl.Parent = rLight
+
+		-- Flashing red light
+		spawn(function()
+			while rLight and rLight.Parent do
+				rLight.Transparency = 0
+				rpl.Enabled = true
+				task.wait(0.8)
+				rLight.Transparency = 0.8
+				rpl.Enabled = false
+				task.wait(0.8)
+			end
+		end)
+	end
+
+	-- Panic room sign
+	local prSignPart = Instance.new("Part")
+	prSignPart.Size = Vector3.new(8, 2.5, 0.3)
+	prSignPart.Position = prPos + Vector3.new(0, 14, 7.3)
+	prSignPart.Color = Color3.fromRGB(255, 30, 30)
+	prSignPart.Material = Enum.Material.Neon
+	prSignPart.Anchored = true
+	prSignPart.CanCollide = false
+	prSignPart.Parent = interior
+
+	local prSGui = Instance.new("SurfaceGui")
+	prSGui.Face = Enum.NormalId.Front
+	prSGui.Parent = prSignPart
+	local prSText = Instance.new("TextLabel")
+	prSText.Size = UDim2.new(1, 0, 1, 0)
+	prSText.BackgroundTransparency = 1
+	prSText.Text = "⚠️ PANIC ROOM ⚠️"
+	prSText.TextColor3 = Color3.new(1, 1, 1)
+	prSText.TextScaled = true
+	prSText.Font = Enum.Font.GothamBlack
+	prSText.Parent = prSGui
+
+	-- DOOR (functional sliding door)
+	local prDoor = Instance.new("Part")
+	prDoor.Name = "PanicDoor"
+	prDoor.Size = Vector3.new(5, 9, 1)
+	prDoor.Position = prPos + Vector3.new(0, 6.5, 7)
+	prDoor.Color = Color3.fromRGB(80, 25, 25)
+	prDoor.Material = Enum.Material.Metal
+	prDoor.Anchored = true
+	prDoor.CanCollide = true
+	prDoor.Parent = interior
+
+	local doorClosedPos = prDoor.Position
+	local doorOpenPos = doorClosedPos + Vector3.new(5.5, 0, 0)
+
+	-- Door GUI label
+	local doorSGui = Instance.new("SurfaceGui")
+	doorSGui.Face = Enum.NormalId.Front
+	doorSGui.CanvasSize = Vector2.new(200, 400)
+	doorSGui.Parent = prDoor
+
+	local doorBtnFrame = Instance.new("Frame")
+	doorBtnFrame.Size = UDim2.new(1, 0, 1, 0)
+	doorBtnFrame.BackgroundTransparency = 1
+	doorBtnFrame.Parent = doorSGui
+
+	local doorBtnText = Instance.new("TextLabel")
+	doorBtnText.Size = UDim2.new(0.8, 0, 0.15, 0)
+	doorBtnText.Position = UDim2.new(0.1, 0, 0.4, 0)
+	doorBtnText.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+	doorBtnText.Text = "🚪 CLICK DOOR"
+	doorBtnText.TextColor3 = Color3.new(1, 1, 1)
+	doorBtnText.TextScaled = true
+	doorBtnText.Font = Enum.Font.GothamBold
+	doorBtnText.Parent = doorBtnFrame
+	createCorner(doorBtnText, 8)
+
+	-- Door click detector
+	local doorClick = Instance.new("ClickDetector")
+	doorClick.MaxActivationDistance = 14
+	doorClick.Parent = prDoor
+
+	local doorOpen = false
+	local doorTweening = false
+
+	doorClick.MouseClick:Connect(function()
+		if doorTweening then return end
+		doorTweening = true
+		doorOpen = not doorOpen
+
+		if doorOpen then
+			-- Slide door open
+			TweenService:Create(prDoor, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Position = doorOpenPos
+			}):Play()
+			prDoor.CanCollide = false
+			showNotification("🚪 Panic Room OPEN - Enter your sanctuary!", 3, Color3.fromRGB(255, 100, 100))
+		else
+			TweenService:Create(prDoor, TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				Position = doorClosedPos
+			}):Play()
+			task.wait(0.8)
+			prDoor.CanCollide = true
+			showNotification("🔒 Panic Room SEALED - Safe and sound!", 3, Color3.fromRGB(255, 100, 100))
+		end
+
+		task.wait(0.3)
+		doorTweening = false
+	end)
+
+	-- Panic room interior: couch, calming orb, punching bag
+	local prCouch = Instance.new("Seat")
+	prCouch.Name = "PanicCouch"
+	prCouch.Size = Vector3.new(8, 2, 4)
+	prCouch.Position = prPos + Vector3.new(0, 3, -4)
+	prCouch.Color = Color3.fromRGB(70, 30, 30)
+	prCouch.Material = Enum.Material.Fabric
+	prCouch.Anchored = true
+	prCouch.Parent = interior
+
+	-- Calming orb
+	local calmOrb = Instance.new("Part")
+	calmOrb.Name = "CalmOrb"
+	calmOrb.Shape = Enum.PartType.Ball
+	calmOrb.Size = Vector3.new(3, 3, 3)
+	calmOrb.Position = prPos + Vector3.new(-4, 6, 3)
+	calmOrb.Color = Color3.fromRGB(100, 130, 255)
+	calmOrb.Material = Enum.Material.ForceField
+	calmOrb.Transparency = 0.2
+	calmOrb.Anchored = true
+	calmOrb.CanCollide = false
+	calmOrb.Parent = interior
+
+	createGlowEffect(calmOrb, Color3.fromRGB(100, 130, 255), 1.5, 15)
+
+	spawn(function()
+		local t = 0
+		local baseY = calmOrb.Position.Y
+		while calmOrb and calmOrb.Parent do
+			t += task.wait()
+			calmOrb.Position = Vector3.new(calmOrb.Position.X, baseY + math.sin(t * 1.5) * 1, calmOrb.Position.Z)
+			calmOrb.Color = Color3.fromRGB(
+				100 + math.sin(t * 0.7) * 60,
+				130 + math.sin(t * 0.9) * 60,
+				255
+			)
+		end
+	end)
+
+	-- ========== ESCAPE PODS (3 pods) - ONLY WAY OUT ==========
+	local podAreaPos = p + Vector3.new(-22, 0, 20)
+
+	-- Escape pod area sign
+	local epSign = Instance.new("Part")
+	epSign.Size = Vector3.new(14, 3, 0.3)
+	epSign.Position = podAreaPos + Vector3.new(0, 14, -3)
+	epSign.Color = Color3.fromRGB(255, 180, 0)
+	epSign.Material = Enum.Material.Neon
+	epSign.Anchored = true
+	epSign.CanCollide = false
+	epSign.Parent = interior
+
+	local epSGui = Instance.new("SurfaceGui")
+	epSGui.Face = Enum.NormalId.Front
+	epSGui.Parent = epSign
+	local epSText = Instance.new("TextLabel")
+	epSText.Size = UDim2.new(1, 0, 1, 0)
+	epSText.BackgroundTransparency = 1
+	epSText.Text = "🚀 ESCAPE PODS 🚀"
+	epSText.TextColor3 = Color3.new(1, 1, 1)
+	epSText.TextScaled = true
+	epSText.Font = Enum.Font.GothamBlack
+	epSText.Parent = epSGui
+
+	-- Sub sign
+	local epSubSign = Instance.new("Part")
+	epSubSign.Size = Vector3.new(10, 1.5, 0.3)
+	epSubSign.Position = podAreaPos + Vector3.new(0, 11, -3)
+	epSubSign.Color = Color3.fromRGB(200, 150, 0)
+	epSubSign.Material = Enum.Material.Neon
+	epSubSign.Transparency = 0.3
+	epSubSign.Anchored = true
+	epSubSign.CanCollide = false
+	epSubSign.Parent = interior
+
+	local ep2Gui = Instance.new("SurfaceGui")
+	ep2Gui.Face = Enum.NormalId.Front
+	ep2Gui.Parent = epSubSign
+	local ep2Text = Instance.new("TextLabel")
+	ep2Text.Size = UDim2.new(1, 0, 1, 0)
+	ep2Text.BackgroundTransparency = 1
+	ep2Text.Text = "⚠ ONLY EXIT - CLICK TO LAUNCH ⚠"
+	ep2Text.TextColor3 = Color3.fromRGB(255, 200, 100)
+	ep2Text.TextScaled = true
+	ep2Text.Font = Enum.Font.GothamBold
+	ep2Text.Parent = ep2Gui
+
+	createGlowEffect(epSign, Color3.fromRGB(255, 180, 0), 1.5, 12)
+
+	-- Build 3 escape pods
+	local podOffsets = {
+		Vector3.new(-8, 0, 3),
+		Vector3.new(0, 0, 5),
+		Vector3.new(8, 0, 3),
+	}
+
+	for i, offset in ipairs(podOffsets) do
+		local podPos = podAreaPos + offset
+
+		-- Pod bay (docking area)
+		local bay = Instance.new("Part")
+		bay.Name = "PodBay_" .. i
+		bay.Shape = Enum.PartType.Cylinder
+		bay.Size = Vector3.new(1, 8, 8)
+		bay.CFrame = CFrame.new(podPos + Vector3.new(0, 1.5, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		bay.Color = Color3.fromRGB(30, 30, 50)
+		bay.Material = Enum.Material.Metal
+		bay.Anchored = true
+		bay.CanCollide = true
+		bay.Parent = interior
+
+		-- Pod capsule
+		local podCapsule = Instance.new("Part")
+		podCapsule.Name = "EscapePod_" .. i
+		podCapsule.Shape = Enum.PartType.Ball
+		podCapsule.Size = Vector3.new(7, 7, 7)
+		podCapsule.Position = podPos + Vector3.new(0, 5.5, 0)
+		podCapsule.Color = Color3.fromRGB(180, 180, 200)
+		podCapsule.Material = Enum.Material.SmoothPlastic
+		podCapsule.Transparency = 0.25
+		podCapsule.Reflectance = 0.15
+		podCapsule.Anchored = true
+		podCapsule.CanCollide = true
+		podCapsule.Parent = interior
+
+		-- Pod window
+		local podWindow = Instance.new("Part")
+		podWindow.Shape = Enum.PartType.Ball
+		podWindow.Size = Vector3.new(3.5, 3.5, 1.5)
+		podWindow.Position = podPos + Vector3.new(0, 7, 3)
+		podWindow.Color = Color3.fromRGB(100, 200, 255)
+		podWindow.Material = Enum.Material.Glass
+		podWindow.Transparency = 0.5
+		podWindow.Anchored = true
+		podWindow.CanCollide = false
+		podWindow.Parent = interior
+
+		-- Pod status ring
+		local statusRing = Instance.new("Part")
+		statusRing.Shape = Enum.PartType.Cylinder
+		statusRing.Size = Vector3.new(0.3, 7.5, 7.5)
+		statusRing.CFrame = CFrame.new(podPos + Vector3.new(0, 5.5, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		statusRing.Color = Color3.fromRGB(0, 255, 100)
+		statusRing.Material = Enum.Material.Neon
+		statusRing.Transparency = 0.5
+		statusRing.Anchored = true
+		statusRing.CanCollide = false
+		statusRing.Parent = interior
+
+		-- Pod inner light
+		createGlowEffect(podCapsule, Color3.fromRGB(200, 255, 200), 1, 8)
+
+		-- Pod label
+		local podBB = Instance.new("BillboardGui")
+		podBB.Size = UDim2.new(0, 130, 0, 50)
+		podBB.StudsOffset = Vector3.new(0, 6, 0)
+		podBB.AlwaysOnTop = true
+		podBB.Parent = podCapsule
+
+		local podBBFrame = Instance.new("Frame")
+		podBBFrame.Size = UDim2.new(1, 0, 1, 0)
+		podBBFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		podBBFrame.BackgroundTransparency = 0.3
+		podBBFrame.Parent = podBB
+		createCorner(podBBFrame, 8)
+
+		local podNameLbl = Instance.new("TextLabel")
+		podNameLbl.Size = UDim2.new(1, 0, 0.5, 0)
+		podNameLbl.BackgroundTransparency = 1
+		podNameLbl.Text = "🛸 POD " .. i
+		podNameLbl.TextColor3 = Color3.fromRGB(0, 255, 150)
+		podNameLbl.TextScaled = true
+		podNameLbl.Font = Enum.Font.GothamBlack
+		podNameLbl.Parent = podBBFrame
+
+		local podStatusLbl = Instance.new("TextLabel")
+		podStatusLbl.Size = UDim2.new(1, 0, 0.45, 0)
+		podStatusLbl.Position = UDim2.new(0, 0, 0.5, 0)
+		podStatusLbl.BackgroundTransparency = 1
+		podStatusLbl.Text = "✅ READY [CLICK]"
+		podStatusLbl.TextColor3 = Color3.fromRGB(150, 255, 150)
+		podStatusLbl.TextScaled = true
+		podStatusLbl.Font = Enum.Font.GothamBold
+		podStatusLbl.Parent = podBBFrame
+
+		-- Idle pulse on status ring
+		spawn(function()
+			while statusRing and statusRing.Parent do
+				TweenService:Create(statusRing, TweenInfo.new(1), {Transparency = 0.3}):Play()
+				task.wait(1)
+				TweenService:Create(statusRing, TweenInfo.new(1), {Transparency = 0.7}):Play()
+				task.wait(1)
+			end
+		end)
+
+		-- POD CLICK - ESCAPE SEQUENCE
+		local podClick = Instance.new("ClickDetector")
+		podClick.MaxActivationDistance = 14
+		podClick.Parent = podCapsule
+
+		podClick.MouseClick:Connect(function()
+			if state.escapePodActive then return end
+			state.escapePodActive = true
+
+			-- Stop ascending
+			state.ascending = false
+
+			-- ====== ESCAPE POD LAUNCH SEQUENCE ======
+			showNotification("🚀 ESCAPE POD " .. i .. " LAUNCHING! BRACE YOURSELF!", 3, Color3.fromRGB(255, 100, 0))
+
+			-- Lock controls
+			local character = player.Character
+			local hrp = character and character:FindFirstChild("HumanoidRootPart")
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+			if not hrp or not humanoid then
+				state.escapePodActive = false
+				return
+			end
+
+			humanoid.WalkSpeed = 0
+			humanoid.JumpPower = 0
+
+			-- Camera goes cinematic
+			camera.CameraType = Enum.CameraType.Scriptable
+
+			-- Countdown
+			for countdown = 3, 1, -1 do
+				showNotification("⏱️ LAUNCH IN " .. countdown .. "...", 0.8, Color3.fromRGB(255, 255, 0))
+				cameraShake(0.2 * (4 - countdown), 0.8)
+				flashScreen(Color3.fromRGB(255, 255, 0), 0.3, screenGui)
+				task.wait(1)
+			end
+
+			showNotification("🔥 LAUNCH!!!", 2, Color3.fromRGB(255, 50, 0))
+			flashScreen(Color3.new(1, 1, 1), 1.5, screenGui)
+			cameraShake(1, 2)
+
+			task.wait(1)
+
+			-- Hide interior GUI
+			interiorGui.Visible = false
+
+			-- Cleanup interior
+			if state.interiorModel and state.interiorModel.Parent then
+				state.interiorModel:Destroy()
+				state.interiorModel = nil
+			end
+
+			state.insideUFO = false
+
+			-- Restore lighting partially (still in sky)
+			restoreLighting()
+
+			-- ====== SKY PHASE - Player in escape pod above map ======
+			local launchHeight = CONFIG.ESCAPE_POD_CRASH_HEIGHT
+
+			-- Find safe ground position
+			local groundPos = Vector3.new(
+				math.random(-100, 100),
+				500,
+				math.random(-100, 100)
+			)
+
+			-- Raycast to find ground
+			local rayResult = workspace:Raycast(
+				Vector3.new(groundPos.X, 2000, groundPos.Z),
+				Vector3.new(0, -3000, 0),
+				RaycastParams.new()
+			)
+			local groundY = 10
+			if rayResult then
+				groundY = rayResult.Position.Y
+			end
+
+			local skyPos = Vector3.new(groundPos.X, groundY + launchHeight, groundPos.Z)
+
+			-- Build escape pod in sky
+			local escapePod = buildEscapePod(skyPos)
+			hrp.CFrame = CFrame.new(skyPos)
+
+			-- Camera shows epic wide shot of pod in sky
+			camera.CFrame = CFrame.new(skyPos + Vector3.new(30, 15, 30), skyPos)
+
+			showNotification("🌍 EJECTED INTO ATMOSPHERE!", 3, Color3.fromRGB(0, 200, 255))
+
+			task.wait(1.5)
+
+			-- Brief pause at the top - player sees the world below
+			camera.CFrame = CFrame.new(skyPos + Vector3.new(20, 5, 20), skyPos)
+			task.wait(1)
+
+			showNotification("⬇️ INITIATING RE-ENTRY... HOLD ON!", 2, Color3.fromRGB(255, 150, 0))
+
+			-- Add fire/smoke trails to pod
+			local capsulePart = escapePod.PrimaryPart
+			local fireTrail = createFireTrail(capsulePart)
+			local smokeTrail = createSmokeTrail(capsulePart)
+
+			-- Re-entry screen effects
+			local reentryOverlay = Instance.new("Frame")
+			reentryOverlay.Name = "ReentryOverlay"
+			reentryOverlay.Size = UDim2.new(1, 0, 1, 0)
+			reentryOverlay.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+			reentryOverlay.BackgroundTransparency = 0.7
+			reentryOverlay.ZIndex = 80
+			reentryOverlay.Parent = screenGui
+
+			-- ====== THE CRASH DESCENT ======
+			local fallDuration = 5
+			local startY = skyPos.Y
+			local endY = groundY + 5
+			local startTime = tick()
+
+			-- Speed lines effect
+			spawn(function()
+				while state.escapePodActive do
+					local line = Instance.new("Frame")
+					line.Size = UDim2.new(0, 2, 0, math.random(50, 200))
+					line.Position = UDim2.new(math.random() * 0.8 + 0.1, 0, -0.1, 0)
+					line.BackgroundColor3 = Color3.fromRGB(255, 200, 100)
+					line.BackgroundTransparency = math.random(30, 70) / 100
+					line.ZIndex = 81
+					line.Rotation = math.random(-5, 5)
+					line.Parent = reentryOverlay
+
+					TweenService:Create(line, TweenInfo.new(0.3), {
+						Position = line.Position + UDim2.new(0, 0, 1.2, 0),
+						BackgroundTransparency = 1
+					}):Play()
+					Debris:AddItem(line, 0.3)
+					task.wait(0.02)
+				end
+			end)
+
+			-- Camera shake during descent
+			spawn(function()
+				while state.escapePodActive do
+					cameraShake(0.5, 0.2)
+					task.wait(0.15)
+				end
+			end)
+
+			-- Main descent animation
+			while tick() - startTime < fallDuration do
+				local elapsed = tick() - startTime
+				local alpha = elapsed / fallDuration
+
+				-- Accelerating fall (ease in)
+				local fallAlpha = alpha * alpha * alpha
+
+				local currentY = lerp(startY, endY, fallAlpha)
+				local currentPos = Vector3.new(skyPos.X, currentY, skyPos.Z)
+
+				-- Move pod
+				if capsulePart and capsulePart.Parent then
+					-- Pod tumbles during fall
+					capsulePart.CFrame = CFrame.new(currentPos) * CFrame.Angles(
+						alpha * math.pi * 3,
+						alpha * math.pi * 2,
+						math.sin(alpha * 20) * 0.5
+					)
+
+					-- Move all pod parts relative
+					for _, part in pairs(escapePod:GetDescendants()) do
+						if part:IsA("BasePart") and part ~= capsulePart then
+							-- Keep relative position
+							part.CFrame = capsulePart.CFrame * (capsulePart.CFrame:Inverse() * part.CFrame)
+						end
+					end
+				end
+
+				-- Move player with pod
+				hrp.CFrame = CFrame.new(currentPos)
+				hrp.Velocity = Vector3.new(0, 0, 0) -- prevent physics from interfering
+
+				-- Camera tracks from behind/above
+				local camDist = 25 - alpha * 10
+				local camHeight = 10 + (1 - alpha) * 20
+				camera.CFrame = CFrame.new(
+					currentPos + Vector3.new(
+						math.sin(elapsed * 0.5) * camDist,
+						camHeight,
+						math.cos(elapsed * 0.5) * camDist
+					),
+					currentPos
+				)
+
+				-- Increase intensity of overlay as we get closer to ground
+				reentryOverlay.BackgroundTransparency = 0.7 - alpha * 0.3
+
+				-- Warning at low altitude
+				if alpha > 0.7 and alpha < 0.72 then
+					showNotification("⚠️ IMPACT IMMINENT!", 1, Color3.fromRGB(255, 0, 0))
+				end
+
+				task.wait()
+			end
+
+			-- ====== IMPACT! ======
+			-- Massive flash
+			flashScreen(Color3.new(1, 1, 1), 2, screenGui)
+			flashScreen(Color3.fromRGB(255, 150, 0), 1, screenGui)
+			cameraShake(3, 2)
+
+			showNotification("💥 IMPACT! YOU SURVIVED!", 4, Color3.fromRGB(255, 100, 0))
+
+			-- Remove overlay
+			if reentryOverlay and reentryOverlay.Parent then
+				TweenService:Create(reentryOverlay, TweenInfo.new(1), {BackgroundTransparency = 1}):Play()
+				Debris:AddItem(reentryOverlay, 1)
+			end
+
+			-- Create impact crater
+			local craterPos = Vector3.new(skyPos.X, groundY, skyPos.Z)
+			local crater = Instance.new("Part")
+			crater.Name = "ImpactCrater"
+			crater.Shape = Enum.PartType.Cylinder
+			crater.Size = Vector3.new(2, 20, 20)
+			crater.CFrame = CFrame.new(craterPos) * CFrame.Angles(0, 0, math.rad(90))
+			crater.Color = Color3.fromRGB(40, 30, 20)
+			crater.Material = Enum.Material.Slate
+			crater.Anchored = true
+			crater.CanCollide = true
+			crater.Parent = workspace
+			Debris:AddItem(crater, 30)
+
+			-- Smoke from crash site
+			local crashSmoke = Instance.new("Part")
+			crashSmoke.Size = Vector3.new(1, 1, 1)
+			crashSmoke.Position = craterPos + Vector3.new(0, 2, 0)
+			crashSmoke.Transparency = 1
+			crashSmoke.Anchored = true
+			crashSmoke.CanCollide = false
+			crashSmoke.Parent = workspace
+
+			local smokeEmitter = Instance.new("ParticleEmitter")
+			smokeEmitter.Texture = "rbxassetid://6490035152"
+			smokeEmitter.Rate = 30
+			smokeEmitter.Lifetime = NumberRange.new(3, 6)
+			smokeEmitter.Speed = NumberRange.new(2, 5)
+			smokeEmitter.SpreadAngle = Vector2.new(60, 60)
+			smokeEmitter.EmissionDirection = Enum.NormalId.Top
+			smokeEmitter.Size = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 2),
+				NumberSequenceKeypoint.new(1, 8)
+			})
+			smokeEmitter.Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(80, 80, 80)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(30, 30, 30))
+			})
+			smokeEmitter.Transparency = NumberSequence.new({
+				NumberSequenceKeypoint.new(0, 0.3),
+				NumberSequenceKeypoint.new(1, 1)
+			})
+			smokeEmitter.Parent = crashSmoke
+			Debris:AddItem(crashSmoke, 20)
+
+			-- Debris particles
+			for _ = 1, 8 do
+				local debris = Instance.new("Part")
+				debris.Size = Vector3.new(
+					math.random(5, 15) / 10,
+					math.random(5, 15) / 10,
+					math.random(5, 15) / 10
+				)
+				debris.Position = craterPos + Vector3.new(
+					math.random(-5, 5),
+					math.random(2, 8),
+					math.random(-5, 5)
+				)
+				debris.Color = Color3.fromRGB(60, 60, 70)
+				debris.Material = Enum.Material.Metal
+				debris.Anchored = false
+				debris.Parent = workspace
+				Debris:AddItem(debris, 15)
+			end
+
+			-- Destroy escape pod (crashed)
+			task.wait(0.5)
+			if escapePod and escapePod.Parent then
+				-- Make pod look crashed
+				for _, part in pairs(escapePod:GetDescendants()) do
+					if part:IsA("BasePart") then
+						part.Color = Color3.fromRGB(
+							math.random(30, 80),
+							math.random(30, 60),
+							math.random(30, 60)
+						)
+						part.Material = Enum.Material.CorrodedMetal
+					end
+				end
+				Debris:AddItem(escapePod, 20)
+			end
+
+			-- Place player at crash site
+			hrp.CFrame = CFrame.new(craterPos + Vector3.new(5, 5, 0))
+			humanoid.WalkSpeed = 16
+			humanoid.JumpPower = 50
+
+			-- Reset camera
+			camera.CameraType = Enum.CameraType.Custom
+
+			task.wait(2)
+			showNotification("✅ You made it! SOS button ready for next time!", 5, Color3.fromRGB(0, 255, 100))
+
+			-- Cleanup and reset state
+			state.ufoActive = false
+			state.escapePodActive = false
+			state.lyingInBed = false
+			state.drinkEffectActive = false
+			sosButton.Visible = true
+
+			-- Remove drink effects
+			if character then
+				for _, pt in pairs(character:GetDescendants()) do
+					if pt.Name == "DrinkGlow" then pt:Destroy() end
+				end
+			end
+		end)
+	end
+
+	-- ========== ALIEN NPC ==========
+	local alienPos = p + Vector3.new(8, 0, 10)
+	local alienNPC = Instance.new("Model")
+	alienNPC.Name = "Zorblex"
+
+	-- Torso
+	local aTorso = Instance.new("Part")
+	aTorso.Name = "HumanoidRootPart"
+	aTorso.Size = Vector3.new(2.8, 3.5, 1.8)
+	aTorso.Position = alienPos + Vector3.new(0, 3.75, 0)
+	aTorso.Color = CONFIG.ALIEN_COLOR
+	aTorso.Material = Enum.Material.SmoothPlastic
+	aTorso.Anchored = true
+	aTorso.CanCollide = true
+	aTorso.Parent = alienNPC
+
+	-- Belly detail
+	local belly = Instance.new("Part")
+	belly.Shape = Enum.PartType.Ball
+	belly.Size = Vector3.new(2.2, 2, 1.5)
+	belly.Position = alienPos + Vector3.new(0, 3.2, -0.1)
+	belly.Color = Color3.fromRGB(110, 230, 110)
+	belly.Material = Enum.Material.SmoothPlastic
+	belly.Anchored = true
+	belly.CanCollide = false
+	belly.Parent = alienNPC
+
+	-- Head
+	local aHead = Instance.new("Part")
+	aHead.Name = "Head"
+	aHead.Shape = Enum.PartType.Ball
+	aHead.Size = Vector3.new(4, 4.5, 3.5)
+	aHead.Position = alienPos + Vector3.new(0, 7.5, 0)
+	aHead.Color = CONFIG.ALIEN_COLOR
+	aHead.Material = Enum.Material.SmoothPlastic
+	aHead.Anchored = true
+	aHead.CanCollide = false
+	aHead.Parent = alienNPC
+
+	-- Big alien eyes
+	for _, side in ipairs({-0.9, 0.9}) do
+		local eyeOuter = Instance.new("Part")
+		eyeOuter.Name = "EyeOuter"
+		eyeOuter.Shape = Enum.PartType.Ball
+		eyeOuter.Size = Vector3.new(1.6, 2, 1)
+		eyeOuter.Position = alienPos + Vector3.new(side, 8, -1.3)
+		eyeOuter.Color = Color3.fromRGB(5, 5, 5)
+		eyeOuter.Material = Enum.Material.Glass
+		eyeOuter.Reflectance = 0.3
+		eyeOuter.Anchored = true
+		eyeOuter.CanCollide = false
+		eyeOuter.Parent = alienNPC
+
+		-- Eye glint
+		local glint = Instance.new("Part")
+		glint.Shape = Enum.PartType.Ball
+		glint.Size = Vector3.new(0.3, 0.3, 0.2)
+		glint.Position = eyeOuter.Position + Vector3.new(0.3, 0.4, -0.3)
+		glint.Color = Color3.new(1, 1, 1)
+		glint.Material = Enum.Material.Neon
+		glint.Anchored = true
+		glint.CanCollide = false
+		glint.Parent = alienNPC
+
+		local eyeGlow = Instance.new("PointLight")
+		eyeGlow.Color = Color3.fromRGB(0, 200, 100)
+		eyeGlow.Brightness = 0.3
+		eyeGlow.Range = 4
+		eyeGlow.Parent = eyeOuter
+	end
+
+	-- Mouth
+	local aMouth = Instance.new("Part")
+	aMouth.Name = "Mouth"
+	aMouth.Size = Vector3.new(1.2, 0.3, 0.3)
+	aMouth.Position = alienPos + Vector3.new(0, 6.2, -1.5)
+	aMouth.Color = Color3.fromRGB(40, 140, 40)
+	aMouth.Material = Enum.Material.Neon
+	aMouth.Anchored = true
+	aMouth.CanCollide = false
+	aMouth.Parent = alienNPC
+
+	-- Arms
+	local armData = {
+		{side = -1, name = "LeftArm"},
+		{side = 1, name = "RightArm"},
+	}
+
+	for _, arm in ipairs(armData) do
+		local upperArm = Instance.new("Part")
+		upperArm.Name = arm.name
+		upperArm.Size = Vector3.new(0.9, 2.5, 0.9)
+		upperArm.Position = alienPos + Vector3.new(arm.side * 2, 4.5, 0)
+		upperArm.Color = CONFIG.ALIEN_COLOR
+		upperArm.Material = Enum.Material.SmoothPlastic
+		upperArm.Anchored = true
+		upperArm.CanCollide = false
+		upperArm.Parent = alienNPC
+
+		local foreArm = Instance.new("Part")
+		foreArm.Name = arm.name .. "Lower"
+		foreArm.Size = Vector3.new(0.7, 2, 0.7)
+		foreArm.Position = alienPos + Vector3.new(arm.side * 2.2, 2.2, 0)
+		foreArm.Color = CONFIG.ALIEN_COLOR
+		foreArm.Material = Enum.Material.SmoothPlastic
+		foreArm.Anchored = true
+		foreArm.CanCollide = false
+		foreArm.Parent = alienNPC
+
+		-- 3-fingered hand
+		local hand = Instance.new("Part")
+		hand.Name = arm.name .. "Hand"
+		hand.Shape = Enum.PartType.Ball
+		hand.Size = Vector3.new(1.2, 0.8, 0.8)
+		hand.Position = alienPos + Vector3.new(arm.side * 2.3, 1, 0)
+		hand.Color = Color3.fromRGB(80, 200, 80)
+		hand.Material = Enum.Material.SmoothPlastic
+		hand.Anchored = true
+		hand.CanCollide = false
+		hand.Parent = alienNPC
+	end
+
+	-- Legs
+	for _, side in ipairs({-0.7, 0.7}) do
+		local leg = Instance.new("Part")
+		leg.Name = "Leg"
+		leg.Size = Vector3.new(1, 2.5, 1)
+		leg.Position = alienPos + Vector3.new(side, 1.25, 0)
+		leg.Color = CONFIG.ALIEN_COLOR
+		leg.Material = Enum.Material.SmoothPlastic
+		leg.Anchored = true
+		leg.CanCollide = false
+		leg.Parent = alienNPC
+
+		-- Feet
+		local foot = Instance.new("Part")
+		foot.Size = Vector3.new(1.2, 0.4, 1.5)
+		foot.Position = alienPos + Vector3.new(side, 0.2, -0.2)
+		foot.Color = Color3.fromRGB(70, 180, 70)
+		foot.Material = Enum.Material.SmoothPlastic
+		foot.Anchored = true
+		foot.CanCollide = false
+		foot.Parent = alienNPC
+	end
+
+	-- Antennae
+	for _, side in ipairs({-0.6, 0.6}) do
+		local antenna = Instance.new("Part")
+		antenna.Name = "Antenna"
+		antenna.Size = Vector3.new(0.2, 2, 0.2)
+		antenna.Position = alienPos + Vector3.new(side, 10.5, 0)
+		antenna.Color = CONFIG.ALIEN_COLOR
+		antenna.Material = Enum.Material.SmoothPlastic
+		antenna.Anchored = true
+		antenna.CanCollide = false
+		antenna.Parent = alienNPC
+
+		local tip = Instance.new("Part")
+		tip.Name = "AntennaTip"
+		tip.Shape = Enum.PartType.Ball
+		tip.Size = Vector3.new(0.7, 0.7, 0.7)
+		tip.Position = alienPos + Vector3.new(side, 11.7, 0)
+		tip.Color = Color3.fromRGB(255, 255, 0)
+		tip.Material = Enum.Material.Neon
+		tip.Anchored = true
+		tip.CanCollide = false
+		tip.Parent = alienNPC
+
+		createGlowEffect(tip, Color3.fromRGB(255, 255, 0), 1, 5)
+	end
+
+	-- Name billboard
+	local nameBB = Instance.new("BillboardGui")
+	nameBB.Size = UDim2.new(0, 170, 0, 45)
+	nameBB.StudsOffset = Vector3.new(0, 7, 0)
+	nameBB.AlwaysOnTop = true
+	nameBB.Parent = aHead
+
+	local nameBG = Instance.new("Frame")
+	nameBG.Size = UDim2.new(1, 0, 1, 0)
+	nameBG.BackgroundColor3 = Color3.fromRGB(0, 40, 20)
+	nameBG.BackgroundTransparency = 0.3
+	nameBG.Parent = nameBB
+	createCorner(nameBG, 8)
+	createStroke(nameBG, Color3.fromRGB(0, 200, 100), 1, 0.3)
+
+	local nameText = Instance.new("TextLabel")
+	nameText.Size = UDim2.new(1, 0, 1, 0)
+	nameText.BackgroundTransparency = 1
+	nameText.Text = "👽 ZORBLEX"
+	nameText.TextColor3 = Color3.fromRGB(0, 255, 100)
+	nameText.TextScaled = true
+	nameText.Font = Enum.Font.GothamBlack
+	nameText.Parent = nameBG
+
+	-- "Talk" prompt
+	local talkBB = Instance.new("BillboardGui")
+	talkBB.Size = UDim2.new(0, 130, 0, 30)
+	talkBB.StudsOffset = Vector3.new(0, 5.5, 0)
+	talkBB.AlwaysOnTop = true
+	talkBB.Parent = aHead
+
+	local talkLbl = Instance.new("TextLabel")
+	talkLbl.Size = UDim2.new(1, 0, 1, 0)
+	talkLbl.BackgroundTransparency = 1
+	talkLbl.Text = "💬 Click to Talk!"
+	talkLbl.TextColor3 = Color3.fromRGB(200, 255, 200)
+	talkLbl.TextScaled = true
+	talkLbl.Font = Enum.Font.GothamBold
+	talkLbl.Parent = talkBB
+
+	-- Pulse talk prompt
+	spawn(function()
+		while talkLbl and talkLbl.Parent do
+			TweenService:Create(talkLbl, TweenInfo.new(0.6), {TextTransparency = 0.4}):Play()
+			task.wait(0.6)
+			TweenService:Create(talkLbl, TweenInfo.new(0.6), {TextTransparency = 0}):Play()
+			task.wait(0.6)
+		end
+	end)
+
+	-- Click detectors for alien
+	local function addAlienClick(parent)
+		local click = Instance.new("ClickDetector")
+		click.MaxActivationDistance = 18
+		click.Parent = parent
+
+		click.MouseClick:Connect(function()
+			if state.dialogueCooldown then return end
+			state.dialogueCooldown = true
+
+			local index
+			repeat
+				index = math.random(1, #ALIEN_DIALOGUE)
+			until index ~= state.lastDialogueIndex or #ALIEN_DIALOGUE <= 1
+			state.lastDialogueIndex = index
+
+			-- Show dialogue
+			dialogueFrame.Visible = true
+			dialogueFrame.Position = UDim2.new(0.5, 0, 1, -150)
+			dialogueText.Text = ""
+
+			local fullText = ALIEN_DIALOGUE[index]
+
+			-- Typewriter effect
+			spawn(function()
+				for ci = 1, #fullText do
+					if not dialogueFrame.Visible then break end
+					dialogueText.Text = string.sub(fullText, 1, ci)
+					task.wait(0.025)
+				end
+			end)
+
+			-- Mouth animation
+			spawn(function()
+				for _ = 1, math.ceil(#fullText / 3) do
+					if aMouth and aMouth.Parent then
+						aMouth.Size = Vector3.new(1.5, 0.6, 0.3)
+						task.wait(0.07)
+						aMouth.Size = Vector3.new(1.2, 0.3, 0.3)
+						task.wait(0.07)
+					else
+						break
+					end
+				end
+			end)
+
+			-- Antenna glow when talking
+			spawn(function()
+				for _, desc in pairs(alienNPC:GetDescendants()) do
+					if desc.Name == "AntennaTip" then
+						spawn(function()
+							for _ = 1, 8 do
+								desc.Color = Color3.fromRGB(0, 255, 100)
+								task.wait(0.12)
+								desc.Color = Color3.fromRGB(255, 255, 0)
+								task.wait(0.12)
+							end
+						end)
+					end
+				end
+			end)
+
+			-- Arm gesture
+			spawn(function()
+				for _, desc in pairs(alienNPC:GetDescendants()) do
+					if desc.Name == "RightArm" then
+						local origPos = desc.Position
+						for _ = 1, 3 do
+							TweenService:Create(desc, TweenInfo.new(0.3), {
+								Position = origPos + Vector3.new(0.5, 1, -0.5)
+							}):Play()
+							task.wait(0.3)
+							TweenService:Create(desc, TweenInfo.new(0.3), {
+								Position = origPos
+							}):Play()
+							task.wait(0.3)
+						end
+					end
+				end
+			end)
+
+			task.delay(1.5, function()
+				state.dialogueCooldown = false
+			end)
+		end)
+	end
+
+	addAlienClick(aTorso)
+	addAlienClick(aHead)
+
+	-- Alien idle animation
+	spawn(function()
+		local t = 0
+		local headBasePos = aHead.Position
+		while alienNPC and alienNPC.Parent do
+			t += task.wait()
+			if aHead and aHead.Parent then
+				aHead.Position = Vector3.new(
+					headBasePos.X + math.sin(t * 0.8) * 0.2,
+					headBasePos.Y + math.sin(t * 1.2) * 0.4,
+					headBasePos.Z
+				)
+			end
+		end
+	end)
+
+	-- Random idle dialogue
+	spawn(function()
+		while alienNPC and alienNPC.Parent do
+			task.wait(math.random(25, 45))
+			if state.insideUFO and not state.dialogueCooldown and not state.lyingInBed then
+				state.dialogueCooldown = true
+				local index = math.random(1, #ALIEN_DIALOGUE)
+				dialogueFrame.Visible = true
+				dialogueText.Text = ""
+				local fullText = ALIEN_DIALOGUE[index]
+				spawn(function()
+					for ci = 1, #fullText do
+						if not dialogueFrame.Visible then break end
+						dialogueText.Text = string.sub(fullText, 1, ci)
+						task.wait(0.025)
+					end
+				end)
+				task.delay(1.5, function()
+					state.dialogueCooldown = false
+				end)
+			end
+		end
+	end)
+
+	alienNPC.PrimaryPart = aTorso
+	alienNPC.Parent = interior
+
+	-- ========== DECORATIVE ELEMENTS ==========
+
+	-- Alien plants
+	local plantPositions = {
+		p + Vector3.new(-28, 0, -20),
+		p + Vector3.new(28, 0, -20),
+		p + Vector3.new(-28, 0, 15),
+		p + Vector3.new(28, 0, 15),
+		p + Vector3.new(15, 0, 0),
+	}
+
+	for _, plantPos in ipairs(plantPositions) do
+		local pot = Instance.new("Part")
+		pot.Shape = Enum.PartType.Cylinder
+		pot.Size = Vector3.new(2.5, 3, 3)
+		pot.CFrame = CFrame.new(plantPos + Vector3.new(0, 2.3, 0)) * CFrame.Angles(0, 0, math.rad(90))
+		pot.Color = Color3.fromRGB(60, 40, 30)
+		pot.Material = Enum.Material.SmoothPlastic
+		pot.Anchored = true
+		pot.CanCollide = true
+		pot.Parent = interior
+
+		local plant = Instance.new("Part")
+		plant.Shape = Enum.PartType.Ball
+		plant.Size = Vector3.new(2.5, 4, 2.5)
+		plant.Position = plantPos + Vector3.new(0, 5.5, 0)
+		plant.Color = Color3.fromRGB(0, 200 + math.random(0, 55), 80)
+		plant.Material = Enum.Material.Neon
+		plant.Transparency = 0.3
+		plant.Anchored = true
+		plant.CanCollide = false
+		plant.Parent = interior
+
+		createGlowEffect(plant, plant.Color, 0.5, 8)
+
+		local pEmitter = Instance.new("ParticleEmitter")
+		pEmitter.Texture = "rbxassetid://6490035152"
+		pEmitter.Rate = 3
+		pEmitter.Lifetime = NumberRange.new(1, 3)
+		pEmitter.Speed = NumberRange.new(0.1, 0.4)
+		pEmitter.SpreadAngle = Vector2.new(180, 180)
+		pEmitter.Size = NumberSequence.new(0.15, 0)
+		pEmitter.Color = ColorSequence.new(plant.Color)
+		pEmitter.LightEmission = 1
+		pEmitter.Parent = plant
+	end
+
+	-- Floating data crystals
+	for i = 1, 8 do
+		local crystal = Instance.new("Part")
+		crystal.Name = "Crystal"
+		crystal.Size = Vector3.new(0.4, 1.2 + math.random() * 0.8, 0.4)
+		crystal.Position = p + Vector3.new(math.random(-25, 25), math.random(8, 18), math.random(-25, 25))
+		crystal.Color = Color3.fromRGB(math.random(100, 255), math.random(100, 255), math.random(200, 255))
+		crystal.Material = Enum.Material.Neon
+		crystal.Transparency = 0.2
+		crystal.Anchored = true
+		crystal.CanCollide = false
+		crystal.Parent = interior
+
+		local basePos = crystal.Position
+		spawn(function()
+			local ct = math.random() * 10
+			while crystal and crystal.Parent do
+				ct += task.wait()
+				crystal.Position = basePos + Vector3.new(0, math.sin(ct + i) * 0.8, 0)
+				crystal.CFrame = CFrame.new(crystal.Position) * CFrame.Angles(ct * 0.4, ct * 0.6, ct * 0.2)
+			end
+		end)
+	end
+
+	interior.PrimaryPart = floor
+	interior.Parent = workspace
+
+	state.alienNPC = alienNPC
+	return interior
+end
+
+-- ============================================================
+-- SKYBOX / LIGHTING
+-- ============================================================
+local function saveOriginalLighting()
+	state.originalAmbient = Lighting.Ambient
+	state.originalBrightness = Lighting.Brightness
+	state.originalClockTime = Lighting.ClockTime
+
+	local existingSky = Lighting:FindFirstChildOfClass("Sky")
+	if existingSky then
+		state.originalSkybox = existingSky:Clone()
+	end
+end
+
+local function applySpaceSkybox()
+	for _, child in pairs(Lighting:GetChildren()) do
+		if child:IsA("Sky") or child:IsA("Atmosphere") or child.Name:find("Space") then
+			child:Destroy()
+		end
+	end
+
+	local sky = Instance.new("Sky")
+	sky.Name = "SpaceSky"
+	sky.SkyboxBk = "rbxassetid://159454286"
+	sky.SkyboxDn = "rbxassetid://159454286"
+	sky.SkyboxFt = "rbxassetid://159454286"
+	sky.SkyboxLf = "rbxassetid://159454286"
+	sky.SkyboxRt = "rbxassetid://159454286"
+	sky.SkyboxUp = "rbxassetid://159454286"
+	sky.StarCount = 5000
+	sky.CelestialBodiesShown = true
+	sky.Parent = Lighting
+
+	TweenService:Create(Lighting, TweenInfo.new(3), {
+		Ambient = Color3.fromRGB(15, 10, 35),
+		Brightness = 0.2,
+		ClockTime = 0,
+	}):Play()
+
+	local atmo = Instance.new("Atmosphere")
+	atmo.Name = "SpaceAtmo"
+	atmo.Density = 0.05
+	atmo.Color = Color3.fromRGB(5, 2, 20)
+	atmo.Decay = Color3.fromRGB(15, 8, 40)
+	atmo.Glare = 0
+	atmo.Haze = 0
+	atmo.Parent = Lighting
+
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.Name = "SpaceCC"
+	cc.Brightness = -0.05
+	cc.Contrast = 0.15
+	cc.Saturation = -0.05
+	cc.TintColor = Color3.fromRGB(200, 210, 255)
+	cc.Parent = Lighting
+
+	local bloom = Instance.new("BloomEffect")
+	bloom.Name = "SpaceBloom"
+	bloom.Intensity = 0.4
+	bloom.Size = 30
+	bloom.Threshold = 1.5
+	bloom.Parent = Lighting
+end
+
+function restoreLighting()
+	for _, child in pairs(Lighting:GetChildren()) do
+		if child.Name:find("Space") then
+			child:Destroy()
+		end
+	end
+
+	if state.originalSkybox then
+		state.originalSkybox:Clone().Parent = Lighting
+	end
+
+	TweenService:Create(Lighting, TweenInfo.new(1.5), {
+		Ambient = state.originalAmbient or Color3.fromRGB(127, 127, 127),
+		Brightness = state.originalBrightness or 2,
+		ClockTime = state.originalClockTime or 14,
+	}):Play()
+end
+
+-- ============================================================
+-- UFO ARRIVAL CUTSCENE (EPIC VERSION)
+-- ============================================================
+local function activateUFO()
+	if state.ufoActive then return end
+	state.ufoActive = true
+	sosButton.Visible = false
+
+	local character = waitForCharacter()
+	local hrp = character:WaitForChild("HumanoidRootPart")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+	if not humanoid or humanoid.Health <= 0 then
+		state.ufoActive = false
+		sosButton.Visible = true
+		return
+	end
+
+	saveOriginalLighting()
+
+	local playerPos = hrp.Position
+	local ufoSpawnPos = playerPos + Vector3.new(80, 500, 80)
+	local ufoHoverPos = playerPos + Vector3.new(0, 55, 0)
+
+	-- Disable player movement
+	humanoid.WalkSpeed = 0
+	humanoid.JumpPower = 0
+
+	-- ====== PHASE 1: ALERT SEQUENCE ======
+	-- Red flash warning
+	for _ = 1, 3 do
+		flashScreen(Color3.fromRGB(255, 0, 0), 0.3, screenGui)
+		task.wait(0.3)
+	end
+
+	showNotification("⚠️ EMERGENCY SOS TRANSMITTED!", 2, Color3.fromRGB(255, 50, 50))
+	task.wait(1)
+	showNotification("📡 SIGNAL RECEIVED - UFO EN ROUTE!", 2, Color3.fromRGB(0, 255, 150))
+	task.wait(1.5)
+
+	-- ====== PHASE 2: CINEMATIC CAMERA - UFO APPEARS ======
+	camera.CameraType = Enum.CameraType.Scriptable
+
+	-- Camera looks up dramatically
+	local lookUpCF = CFrame.new(hrp.Position + Vector3.new(-8, 3, -8), hrp.Position + Vector3.new(0, 100, 0))
+	TweenService:Create(camera, TweenInfo.new(1.5, Enum.EasingStyle.Sine), {CFrame = lookUpCF}):Play()
+	task.wait(1.5)
+
+	-- Build UFO at spawn position
+	local ufoModel = buildUFOExterior(ufoSpawnPos)
+	state.ufoModel = ufoModel
+
+	showNotification("🛸 VISUAL CONTACT! UFO INCOMING!", 3, Color3.fromRGB(0, 255, 200))
+
+	-- ====== PHASE 3: UFO DESCENT - MULTI-ANGLE CINEMATIC ======
+
+	-- Camera angle 1: Wide shot watching UFO approach
+	local wideShotCF = CFrame.new(playerPos + Vector3.new(40, 20, 40), ufoSpawnPos)
+	TweenService:Create(camera, TweenInfo.new(1), {CFrame = wideShotCF}):Play()
+	task.wait(0.5)
+
+	-- UFO moves in an arc toward player
+	local descendDuration = CONFIG.UFO_DESCENT_TIME
+	local startTime = tick()
+
+	-- Ring light spin tracker
+	local ringLightPhase = 0
+
+	spawn(function()
+		while tick() - startTime < descendDuration and ufoModel and ufoModel.Parent do
+			local elapsed = tick() - startTime
+			local alpha = elapsed / descendDuration
+
+			-- Smooth step easing for position
+			local posAlpha = smoothStep(alpha)
+
+			-- Arc path: UFO comes in at angle, curves to hover position
+			local arcHeight = math.sin(alpha * math.pi) * 50
+			local currentPos = ufoSpawnPos:Lerp(ufoHoverPos, posAlpha) + Vector3.new(0, arcHeight * (1 - alpha), 0)
+
+			-- Spin the ring lights
+			ringLightPhase += task.wait() * 4
+
+			for _, part in pairs(ufoModel:GetDescendants()) do
+				if part:IsA("BasePart") then
+					if part.Name == "MainDisc" then
+						part.CFrame = CFrame.new(currentPos) * CFrame.Angles(0, 0, math.rad(90))
+					elseif part.Name == "TopDome" then
+						part.Position = currentPos + Vector3.new(0, 5, 0)
+					elseif part.Name == "InnerDome" then
+						part.Position = currentPos + Vector3.new(0, 6, 0)
+					elseif part.Name == "BottomPlate" then
+						part.CFrame = CFrame.new(currentPos + Vector3.new(0, -3, 0)) * CFrame.Angles(0, 0, math.rad(90))
+					elseif part.Name == "OuterRing" then
+						part.CFrame = CFrame.new(currentPos + Vector3.new(0, -1, 0)) * CFrame.Angles(0, 0, math.rad(90))
+					elseif part.Name:find("RingLight") then
+						local idx = tonumber(part.Name:match("%d+")) or 0
+						local angle = (idx / 16) * math.pi * 2 + ringLightPhase
+						part.Position = currentPos + Vector3.new(math.cos(angle) * 25, -1, math.sin(angle) * 25)
+					elseif part.Name:find("EnginePod") then
+						local idx = tonumber(part.Name:match("%d+")) or 0
+						local angle = (idx / 3) * math.pi * 2
+						part.Position = currentPos + Vector3.new(math.cos(angle) * 12, -5, math.sin(angle) * 12)
+					elseif part.Name == "EngineGlow" then
+						-- follows engine pod
+					elseif part.Name == "BeamZone" then
+						part.Position = currentPos + Vector3.new(0, -5, 0)
+					end
+				end
+			end
+
+			-- Camera switches during descent
+			if alpha < 0.3 then
+				-- Wide shot from side
+				camera.CFrame = CFrame.new(
+					playerPos + Vector3.new(50, 15, 30),
+					currentPos
+				)
+			elseif alpha < 0.5 then
+				-- Close-up of UFO from below
+				camera.CFrame = CFrame.new(
+					currentPos + Vector3.new(0, -30, 15),
+					currentPos
+				)
+			elseif alpha < 0.7 then
+				-- Dramatic low angle from player's perspective
+				camera.CFrame = CFrame.new(
+					playerPos + Vector3.new(3, 3, 3),
+					currentPos
+				)
+			else
+				-- Pull back to see both UFO and player
+				camera.CFrame = CFrame.new(
+					playerPos + Vector3.new(25, 15, 25),
+					(currentPos + playerPos) / 2
+				)
+			end
+		end
+	end)
+
+	task.wait(descendDuration)
+
+	-- UFO hovers and stabilizes
+	cameraShake(0.3, 1)
+
+	-- ====== PHASE 4: TRACTOR BEAM ======
+	showNotification("✨ TRACTOR BEAM ENGAGING!", 2, Color3.fromRGB(0, 255, 200))
+
+	-- Create beam
+	local beamParts = {}
+	local beamDist = (ufoHoverPos - playerPos).Magnitude
+	local beamMid = (ufoHoverPos + playerPos) / 2
+
+	-- Outer beam
+	local outerBeam = Instance.new("Part")
+	outerBeam.Name = "OuterBeam"
+	outerBeam.Size = Vector3.new(10, beamDist, 10)
+	outerBeam.CFrame = CFrame.new(beamMid, ufoHoverPos) * CFrame.Angles(math.rad(90), 0, 0)
+	outerBeam.Color = CONFIG.BEAM_COLOR
+	outerBeam.Material = Enum.Material.ForceField
+	outerBeam.Transparency = 0.5
+	outerBeam.Anchored = true
+	outerBeam.CanCollide = false
+	outerBeam.Parent = workspace
+	table.insert(beamParts, outerBeam)
+
+	-- Inner beam
+	local innerBeam = Instance.new("Part")
+	innerBeam.Name = "InnerBeam"
+	innerBeam.Size = Vector3.new(5, beamDist, 5)
+	innerBeam.CFrame = outerBeam.CFrame
+	innerBeam.Color = Color3.fromRGB(200, 255, 200)
+	innerBeam.Material = Enum.Material.Neon
+	innerBeam.Transparency = 0.3
+	innerBeam.Anchored = true
+	innerBeam.CanCollide = false
+	innerBeam.Parent = workspace
+	table.insert(beamParts, innerBeam)
+
+	-- Beam base particles
+	local beamBase = Instance.new("Part")
+	beamBase.Size = Vector3.new(1, 1, 1)
+	beamBase.Position = playerPos
+	beamBase.Transparency = 1
+	beamBase.Anchored = true
+	beamBase.CanCollide = false
+	beamBase.Parent = workspace
+	table.insert(beamParts, beamBase)
+
+	local beamEmitter = Instance.new("ParticleEmitter")
+	beamEmitter.Texture = "rbxassetid://6490035152"
+	beamEmitter.Rate = 150
+	beamEmitter.Lifetime = NumberRange.new(1, 2.5)
+	beamEmitter.Speed = NumberRange.new(15, 30)
+	beamEmitter.SpreadAngle = Vector2.new(8, 8)
+	beamEmitter.EmissionDirection = Enum.NormalId.Top
+	beamEmitter.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.5),
+		NumberSequenceKeypoint.new(1, 0)
+	})
+	beamEmitter.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, CONFIG.BEAM_COLOR),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 100, 255))
+	})
+	beamEmitter.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.2),
+		NumberSequenceKeypoint.new(1, 1)
+	})
+	beamEmitter.LightEmission = 1
+	beamEmitter.RotSpeed = NumberRange.new(100, 300)
+	beamEmitter.Parent = beamBase
+
+	-- Ground ring effect
+	local groundRing = Instance.new("Part")
+	groundRing.Shape = Enum.PartType.Cylinder
+	groundRing.Size = Vector3.new(0.3, 12, 12)
+	groundRing.CFrame = CFrame.new(playerPos) * CFrame.Angles(0, 0, math.rad(90))
+	groundRing.Color = CONFIG.BEAM_COLOR
+	groundRing.Material = Enum.Material.Neon
+	groundRing.Transparency = 0.3
+	groundRing.Anchored = true
+	groundRing.CanCollide = false
+	groundRing.Parent = workspace
+	table.insert(beamParts, groundRing)
+
+	-- Beam shimmer
+	spawn(function()
+		local bt = 0
+		while outerBeam and outerBeam.Parent do
+			bt += task.wait()
+			outerBeam.Transparency = 0.4 + math.sin(bt * 6) * 0.2
+			innerBeam.Transparency = 0.2 + math.sin(bt * 10) * 0.15
+			outerBeam.CFrame = outerBeam.CFrame * CFrame.Angles(0, math.rad(3), 0)
+			innerBeam.CFrame = innerBeam.CFrame * CFrame.Angles(0, math.rad(-5), 0)
+
+			-- Pulse ground ring
+			local ringScale = 12 + math.sin(bt * 4) * 2
+			groundRing.Size = Vector3.new(0.3, ringScale, ringScale)
+		end
+	end)
+
+	flashScreen(CONFIG.BEAM_COLOR, 1, screenGui)
+	task.wait(1)
+
+	-- ====== PHASE 5: PLAYER LIFTS UP ======
+	showNotification("🌀 LIFTING OFF! DON'T LOOK DOWN!", 3, Color3.fromRGB(200, 255, 200))
+
+	local liftStart = hrp.Position
+	local liftEnd = ufoHoverPos + Vector3.new(0, -8, 0)
+	local liftDuration = CONFIG.BEAM_DURATION
+	local liftStartTime = tick()
+
+	-- Screen vignette during lift
+	local vignette = Instance.new("ImageLabel")
+	vignette.Name = "Vignette"
+	vignette.Size = UDim2.new(1, 0, 1, 0)
+	vignette.BackgroundColor3 = CONFIG.BEAM_COLOR
+	vignette.BackgroundTransparency = 0.8
+	vignette.ZIndex = 50
+	vignette.ImageTransparency = 1
+	vignette.Parent = screenGui
+
+	spawn(function()
+		while tick() - liftStartTime < liftDuration do
+			local elapsed = tick() - liftStartTime
+			local alpha = elapsed / liftDuration
+
+			local easedAlpha = easeInOutCubic(alpha)
+			local currentPos = liftStart:Lerp(liftEnd, easedAlpha)
+
+			-- Player spins and lifts
+			hrp.CFrame = CFrame.new(currentPos) * CFrame.Angles(0, alpha * math.pi * 6, 0)
+
+			-- Camera: dramatic orbit around player
+			local camOrbit = alpha * math.pi * 2
+			local camDist = 15 - alpha * 5
+			local camH = 3 + alpha * 10
+			camera.CFrame = CFrame.new(
+				currentPos + Vector3.new(math.cos(camOrbit) * camDist, camH, math.sin(camOrbit) * camDist),
+				currentPos
+			)
+
+			-- Increasing vignette
+			vignette.BackgroundTransparency = 0.9 - alpha * 0.4
+
+			task.wait()
+		end
+	end)
+
+	task.wait(liftDuration)
+
+	-- ====== PHASE 6: TRANSITION TO INTERIOR ======
+	-- Epic white flash
+	flashScreen(Color3.new(1, 1, 1), 2, screenGui)
+
+	-- Remove vignette
+	if vignette and vignette.Parent then vignette:Destroy() end
+
+	-- Clean up beam
+	for _, bp in ipairs(beamParts) do
+		if bp and bp.Parent then bp:Destroy() end
+	end
+
+	-- Clean up UFO exterior
+	if ufoModel and ufoModel.Parent then ufoModel:Destroy() end
+
+	task.wait(0.5)
+
+	-- Build interior
+	local interiorModel = buildUFOInterior(CONFIG.INTERIOR_POS)
+	state.interiorModel = interiorModel
+
+	-- Teleport player
+	hrp.CFrame = CFrame.new(CONFIG.INTERIOR_POS + Vector3.new(0, 5, 0))
+
+	-- Re-enable controls
+	humanoid.WalkSpeed = 16
+	humanoid.JumpPower = 50
+
+	-- Reset camera
+	camera.CameraType = Enum.CameraType.Custom
+
+	-- Apply space lighting
+	applySpaceSkybox()
+
+	-- Show interior HUD
+	interiorGui.Visible = true
+	state.insideUFO = true
+
+	showNotification("🛸 Welcome aboard the SS Definitely-Not-Stolen!", 4, Color3.fromRGB(0, 255, 150))
+
+	-- Initial greeting
+	task.delay(2.5, function()
+		dialogueFrame.Visible = true
+		dialogueText.Text = ""
+		local greeting = "Welcome aboard, human! I'm Zorblex! You looked like you needed rescuing. Feel free to explore, grab a drink, or just vibe!"
+		spawn(function()
+			for ci = 1, #greeting do
+				dialogueText.Text = string.sub(greeting, 1, ci)
+				task.wait(0.025)
+			end
+		end)
+	end)
+
+	-- ====== INFINITE ASCENT ======
+	state.ascending = true
+	state.altitude = 8000
+	state.speed = CONFIG.ASCENT_SPEED
+
+	local fuel = 100
+
+	spawn(function()
+		while state.ascending and state.insideUFO do
+			local dt = task.wait()
+			state.altitude += state.speed * dt
+			state.speed = state.speed + dt * 1.5
+
+			fuel = math.max(0, fuel - dt * 0.05)
+			local hullTemp = 200 + math.sin(tick() * 0.5) * 50
+
+			altValue.Text = string.format("%.1f km", state.altitude / 100)
+			spdValue.Text = string.format("%.1f km/s", state.speed / 10)
+			fuelValue.Text = string.format("%.1f%%", fuel)
+			tempValue.Text = string.format("%.0f°C", hullTemp)
+		end
+	end)
+
+	-- Console screen updates
+	spawn(function()
+		while state.insideUFO do
+			for _, desc in pairs(interiorModel:GetDescendants()) do
+				if desc.Name == "MainScreen" and desc:IsA("BasePart") then
+					local pulse = math.sin(tick() * 2) * 0.1
+					desc.Transparency = 0.3 + pulse
+				end
+			end
+			task.wait(0.5)
+		end
+	end)
+end
+
+-- ============================================================
+-- EASTER EGG: "4ate50soyeahlol" - UFO FRONT VIEW
+-- ============================================================
+local function triggerEasterEgg()
+	if state.easterEggTriggered then return end
+	state.easterEggTriggered = true
+
+	showNotification("🥚 SECRET UNLOCKED! ENJOY THE VIEW...", 4, Color3.fromRGB(255, 215, 0))
+
+	-- Build a special exterior UFO for viewing
+	local viewPos = Vector3.new(500, 5000, 500)
+	local viewUFO = buildUFOExterior(viewPos)
+
+	-- Teleport camera to epic front view
+	local prevCamType = camera.CameraType
+	camera.CameraType = Enum.CameraType.Scriptable
+
+	-- Cinematic intro zoom
+	camera.CFrame = CFrame.new(viewPos + Vector3.new(0, 0, -200), viewPos)
+
+	-- Dramatic zoom in
+	TweenService:Create(camera, TweenInfo.new(3, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+		CFrame = CFrame.new(viewPos + Vector3.new(0, 5, -60), viewPos)
+	}):Play()
+
+	task.wait(3)
+
+	-- Orbit around UFO
+	spawn(function()
+		local t = 0
+		local orbitDuration = 20
+		while t < orbitDuration and state.easterEggTriggered do
+			t += task.wait()
+			local angle = (t / orbitDuration) * math.pi * 2
+
+			-- Spin ring lights
+			for _, part in pairs(viewUFO:GetDescendants()) do
+				if part:IsA("BasePart") and part.Name:find("RingLight") then
+					local idx = tonumber(part.Name:match("%d+")) or 0
+					local ringAngle = (idx / 16) * math.pi * 2 + t * 3
+					part.Position = viewPos + Vector3.new(math.cos(ringAngle) * 25, -1 + math.sin(t * 2) * 0.5, math.sin(ringAngle) * 25)
+				end
+			end
+
+			-- Camera orbits
+			local camR = 50 + math.sin(t * 0.5) * 15
+			local camH = 10 + math.sin(t * 0.3) * 20
+			camera.CFrame = CFrame.new(
+				viewPos + Vector3.new(math.cos(angle) * camR, camH, math.sin(angle) * camR),
+				viewPos
+			)
+		end
+
+		-- Return
+		if viewUFO and viewUFO.Parent then viewUFO:Destroy() end
+		camera.CameraType = Enum.CameraType.Custom
+		state.easterEggTriggered = false
+
+		showNotification("🛸 Hope you enjoyed the view!", 3, Color3.fromRGB(0, 255, 200))
+	end)
+
+	-- Press any key to exit early
+	local exitConn
+	exitConn = UserInputService.InputBegan:Connect(function(input, processed)
+		if processed then return end
+		if input.UserInputType == Enum.UserInputType.Keyboard or input.UserInputType == Enum.UserInputType.Touch then
+			if state.easterEggTriggered then
+				state.easterEggTriggered = false
+				if viewUFO and viewUFO.Parent then viewUFO:Destroy() end
+				camera.CameraType = Enum.CameraType.Custom
+				exitConn:Disconnect()
+			end
+		end
+	end)
+end
+
+-- ============================================================
+-- CHAT LISTENER FOR EASTER EGG
+-- ============================================================
+player.Chatted:Connect(function(message)
+	local cleaned = message:lower():gsub("%s+", "")
+	if cleaned == "4ate50soyeahlol" then
+		triggerEasterEgg()
+	end
+end)
+
+-- ============================================================
+-- CONNECTIONS
+-- ============================================================
+sosButton.MouseButton1Click:Connect(function()
+	sosButton.BackgroundColor3 = Color3.fromRGB(255, 255, 0)
+	sosLabel.Text = "..."
+	task.wait(0.3)
+	sosLabel.Text = "SOS"
+	activateUFO()
+end)
+
+-- Keybinds
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+	if input.KeyCode == Enum.KeyCode.P then
+		if not state.ufoActive then
+			activateUFO()
+		end
+	end
+end)
+
+-- Mobile support
+if UserInputService.TouchEnabled then
+	sosButton.Size = UDim2.new(0, 90, 0, 90)
+	sosButton.Position = UDim2.new(1, -70, 1, -130)
+end
+
+-- Character respawn cleanup
+player.CharacterAdded:Connect(function(newChar)
+	if state.insideUFO then
+		state.ascending = false
+		state.insideUFO = false
+		state.lyingInBed = false
+		state.drinkEffectActive = false
+		state.escapePodActive = false
+
+		if state.interiorModel and state.interiorModel.Parent then
+			state.interiorModel:Destroy()
+		end
+
+		restoreLighting()
+		interiorGui.Visible = false
+		dialogueFrame.Visible = false
+		camera.CameraType = Enum.CameraType.Custom
+
+		state.ufoActive = false
+		sosButton.Visible = true
+
+		local overlay = screenGui:FindFirstChild("SleepOverlay")
+		if overlay then overlay:Destroy() end
+	end
+end)
+
+-- ============================================================
+-- STARTUP
+-- ============================================================
+task.wait(3)
+showNotification("🛸 UFO Escape Route V2 LOADED! Press SOS or [P] when in danger!", 5, Color3.fromRGB(0, 200, 255))
