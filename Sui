@@ -1,0 +1,2686 @@
+--[[
+    ╔══════════════════════════════════════════════════════════════╗
+    ║                    MISTRAL LEARN v2.0                        ║
+    ║         Advanced AI Learning System for Roblox               ║
+    ║    Observes, Learns, and Replicates Player Actions           ║
+    ╚══════════════════════════════════════════════════════════════╝
+    
+    Place this in: StarterPlayer > StarterPlayerScripts
+    
+    SETUP:
+    1. Enable HttpService in Game Settings > Security
+    2. Run the game
+    3. Enter your Mistral API key when prompted
+    4. Enter your LibYAGI key when prompted  
+    5. Start recording mode and demonstrate actions
+    6. Give commands via chat and the AI will attempt them
+--]]
+
+-- ============================================================
+-- SERVICES
+-- ============================================================
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local StarterGui = game:GetService("StarterGui")
+local Chat = game:GetService("Chat")
+local PathfindingService = game:GetService("PathfindingService")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ContextActionService = game:GetService("ContextActionService")
+local GuiService = game:GetService("GuiService")
+local SoundService = game:GetService("SoundService")
+local Lighting = game:GetService("Lighting")
+local Teams = game:GetService("Teams")
+local CollectionService = game:GetService("CollectionService")
+
+-- ============================================================
+-- PLAYER REFERENCES
+-- ============================================================
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local Mouse = LocalPlayer:GetMouse()
+
+-- Wait for character
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+
+-- ============================================================
+-- CONFIGURATION
+-- ============================================================
+local CONFIG = {
+    MISTRAL_ENDPOINT = "https://api.mistral.ai/v1/chat/completions",
+    MISTRAL_MODEL = "mistral-large-latest",
+    LIBYAGI_ENDPOINT = "https://api.libyagi.com/v1/process",
+    
+    MAX_MEMORY_ENTRIES = 5000,
+    RECORDING_TICK_RATE = 0.05,        -- 20 samples per second
+    LEARNING_BATCH_SIZE = 50,
+    AI_THINK_INTERVAL = 0.1,
+    PATHFINDING_TIMEOUT = 30,
+    
+    MAX_RETRIES = 3,
+    REQUEST_TIMEOUT = 30,
+    RATE_LIMIT_DELAY = 1,
+    
+    CONTEXT_WINDOW = 100,              -- Last N actions for context
+    SIMILARITY_THRESHOLD = 0.75,
+    CONFIDENCE_THRESHOLD = 0.6,
+    
+    UI_COLORS = {
+        PRIMARY = Color3.fromRGB(88, 101, 242),
+        SECONDARY = Color3.fromRGB(45, 50, 80),
+        BACKGROUND = Color3.fromRGB(15, 15, 25),
+        SURFACE = Color3.fromRGB(25, 28, 45),
+        TEXT = Color3.fromRGB(230, 230, 250),
+        ACCENT = Color3.fromRGB(255, 165, 0),
+        SUCCESS = Color3.fromRGB(80, 220, 100),
+        ERROR = Color3.fromRGB(255, 70, 70),
+        RECORDING = Color3.fromRGB(255, 50, 50),
+        PROCESSING = Color3.fromRGB(255, 200, 50),
+    },
+}
+
+-- ============================================================
+-- STATE MANAGEMENT
+-- ============================================================
+local State = {
+    -- API Keys
+    MistralAPIKey = nil,
+    LibYAGIKey = nil,
+    
+    -- System State
+    IsInitialized = false,
+    IsRecording = false,
+    IsProcessing = false,
+    IsExecuting = false,
+    IsLearning = false,
+    SetupPhase = "AWAITING_MISTRAL_KEY",  -- AWAITING_MISTRAL_KEY, AWAITING_LIBYAGI_KEY, READY
+    
+    -- Learning Data
+    RecordedActions = {},
+    LearnedPatterns = {},
+    ActionMemory = {},
+    EnvironmentMap = {},
+    ObjectKnowledge = {},
+    InteractionHistory = {},
+    SkillLibrary = {},
+    
+    -- Runtime
+    CurrentTask = nil,
+    TaskQueue = {},
+    ExecutionPlan = {},
+    LastAction = nil,
+    LastPosition = nil,
+    LastLookDirection = nil,
+    FrameCount = 0,
+    
+    -- Conversation
+    ConversationHistory = {},
+    SystemPrompt = nil,
+}
+
+-- ============================================================
+-- UTILITY FUNCTIONS
+-- ============================================================
+local Utils = {}
+
+function Utils.DeepCopy(original)
+    if type(original) ~= "table" then return original end
+    local copy = {}
+    for key, value in pairs(original) do
+        copy[Utils.DeepCopy(key)] = Utils.DeepCopy(value)
+    end
+    return setmetatable(copy, getmetatable(original))
+end
+
+function Utils.SerializeVector3(v)
+    if not v then return nil end
+    return {x = math.round(v.X * 100) / 100, y = math.round(v.Y * 100) / 100, z = math.round(v.Z * 100) / 100}
+end
+
+function Utils.DeserializeVector3(t)
+    if not t then return nil end
+    return Vector3.new(t.x or 0, t.y or 0, t.z or 0)
+end
+
+function Utils.GetTimestamp()
+    return tick()
+end
+
+function Utils.Distance(a, b)
+    if not a or not b then return math.huge end
+    return (a - b).Magnitude
+end
+
+function Utils.Lerp(a, b, t)
+    return a + (b - a) * math.clamp(t, 0, 1)
+end
+
+function Utils.TableLength(t)
+    local count = 0
+    for _ in pairs(t) do count = count + 1 end
+    return count
+end
+
+function Utils.StringSimilarity(s1, s2)
+    s1 = string.lower(s1)
+    s2 = string.lower(s2)
+    if s1 == s2 then return 1.0 end
+    
+    local len1, len2 = #s1, #s2
+    if len1 == 0 or len2 == 0 then return 0 end
+    
+    local maxLen = math.max(len1, len2)
+    local matches = 0
+    
+    -- Simple word overlap
+    local words1 = {}
+    for word in s1:gmatch("%S+") do words1[word] = true end
+    for word in s2:gmatch("%S+") do
+        if words1[word] then matches = matches + 1 end
+    end
+    
+    local totalWords = 0
+    for _ in pairs(words1) do totalWords = totalWords + 1 end
+    for word in s2:gmatch("%S+") do
+        if not words1[word] then totalWords = totalWords + 1 end
+    end
+    
+    if totalWords == 0 then return 0 end
+    return matches / totalWords
+end
+
+function Utils.SafeCall(func, ...)
+    local success, result = pcall(func, ...)
+    if not success then
+        warn("[MistralLearn] Error: " .. tostring(result))
+        return nil, result
+    end
+    return result
+end
+
+function Utils.TruncateString(str, maxLen)
+    if #str <= maxLen then return str end
+    return string.sub(str, 1, maxLen - 3) .. "..."
+end
+
+-- ============================================================
+-- UI SYSTEM
+-- ============================================================
+local UI = {}
+
+function UI.Create()
+    -- Remove existing UI
+    local existing = PlayerGui:FindFirstChild("MistralLearnUI")
+    if existing then existing:Destroy() end
+    
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "MistralLearnUI"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ScreenGui.DisplayOrder = 100
+    ScreenGui.Parent = PlayerGui
+    
+    -- ========== MAIN PANEL ==========
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Name = "MainFrame"
+    MainFrame.Size = UDim2.new(0, 480, 0, 620)
+    MainFrame.Position = UDim2.new(0.5, -240, 0.5, -310)
+    MainFrame.BackgroundColor3 = CONFIG.UI_COLORS.BACKGROUND
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Parent = ScreenGui
+    
+    local MainCorner = Instance.new("UICorner")
+    MainCorner.CornerRadius = UDim.new(0, 16)
+    MainCorner.Parent = MainFrame
+    
+    local MainStroke = Instance.new("UIStroke")
+    MainStroke.Color = CONFIG.UI_COLORS.PRIMARY
+    MainStroke.Thickness = 2
+    MainStroke.Transparency = 0.5
+    MainStroke.Parent = MainFrame
+    
+    -- Shadow
+    local Shadow = Instance.new("ImageLabel")
+    Shadow.Name = "Shadow"
+    Shadow.Size = UDim2.new(1, 30, 1, 30)
+    Shadow.Position = UDim2.new(0, -15, 0, -15)
+    Shadow.BackgroundTransparency = 1
+    Shadow.Image = "rbxassetid://5554236805"
+    Shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
+    Shadow.ImageTransparency = 0.4
+    Shadow.ScaleType = Enum.ScaleType.Slice
+    Shadow.SliceCenter = Rect.new(23, 23, 277, 277)
+    Shadow.ZIndex = -1
+    Shadow.Parent = MainFrame
+    
+    -- ========== TITLE BAR ==========
+    local TitleBar = Instance.new("Frame")
+    TitleBar.Name = "TitleBar"
+    TitleBar.Size = UDim2.new(1, 0, 0, 55)
+    TitleBar.BackgroundColor3 = CONFIG.UI_COLORS.SURFACE
+    TitleBar.BorderSizePixel = 0
+    TitleBar.Parent = MainFrame
+    
+    local TitleCorner = Instance.new("UICorner")
+    TitleCorner.CornerRadius = UDim.new(0, 16)
+    TitleCorner.Parent = TitleBar
+    
+    -- Bottom cover for title bar corners
+    local TitleCover = Instance.new("Frame")
+    TitleCover.Size = UDim2.new(1, 0, 0, 16)
+    TitleCover.Position = UDim2.new(0, 0, 1, -16)
+    TitleCover.BackgroundColor3 = CONFIG.UI_COLORS.SURFACE
+    TitleCover.BorderSizePixel = 0
+    TitleCover.Parent = TitleBar
+    
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Name = "Title"
+    TitleLabel.Size = UDim2.new(1, -100, 1, 0)
+    TitleLabel.Position = UDim2.new(0, 20, 0, 0)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Text = "🧠 MISTRAL LEARN"
+    TitleLabel.TextColor3 = CONFIG.UI_COLORS.TEXT
+    TitleLabel.TextSize = 22
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TitleLabel.Parent = TitleBar
+    
+    local StatusIndicator = Instance.new("Frame")
+    StatusIndicator.Name = "StatusDot"
+    StatusIndicator.Size = UDim2.new(0, 12, 0, 12)
+    StatusIndicator.Position = UDim2.new(1, -35, 0.5, -6)
+    StatusIndicator.BackgroundColor3 = CONFIG.UI_COLORS.ACCENT
+    StatusIndicator.Parent = TitleBar
+    
+    local StatusCorner = Instance.new("UICorner")
+    StatusCorner.CornerRadius = UDim.new(1, 0)
+    StatusCorner.Parent = StatusIndicator
+    
+    local MinimizeBtn = Instance.new("TextButton")
+    MinimizeBtn.Name = "MinimizeBtn"
+    MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+    MinimizeBtn.Position = UDim2.new(1, -55, 0.5, -15)
+    MinimizeBtn.BackgroundTransparency = 1
+    MinimizeBtn.Text = "─"
+    MinimizeBtn.TextColor3 = CONFIG.UI_COLORS.TEXT
+    MinimizeBtn.TextSize = 18
+    MinimizeBtn.Font = Enum.Font.GothamBold
+    MinimizeBtn.Parent = TitleBar
+    
+    -- ========== CONTENT AREA ==========
+    local ContentFrame = Instance.new("Frame")
+    ContentFrame.Name = "Content"
+    ContentFrame.Size = UDim2.new(1, -30, 1, -65)
+    ContentFrame.Position = UDim2.new(0, 15, 0, 60)
+    ContentFrame.BackgroundTransparency = 1
+    ContentFrame.Parent = MainFrame
+    
+    local ContentLayout = Instance.new("UIListLayout")
+    ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    ContentLayout.Padding = UDim.new(0, 10)
+    ContentLayout.Parent = ContentFrame
+    
+    -- ========== SETUP PANEL (API Keys) ==========
+    local SetupPanel = Instance.new("Frame")
+    SetupPanel.Name = "SetupPanel"
+    SetupPanel.Size = UDim2.new(1, 0, 0, 200)
+    SetupPanel.BackgroundColor3 = CONFIG.UI_COLORS.SURFACE
+    SetupPanel.BorderSizePixel = 0
+    SetupPanel.LayoutOrder = 1
+    SetupPanel.Parent = ContentFrame
+    
+    local SetupCorner = Instance.new("UICorner")
+    SetupCorner.CornerRadius = UDim.new(0, 12)
+    SetupCorner.Parent = SetupPanel
+    
+    local SetupLabel = Instance.new("TextLabel")
+    SetupLabel.Name = "SetupLabel"
+    SetupLabel.Size = UDim2.new(1, -20, 0, 30)
+    SetupLabel.Position = UDim2.new(0, 10, 0, 10)
+    SetupLabel.BackgroundTransparency = 1
+    SetupLabel.Text = "🔑 Enter your Mistral API Key:"
+    SetupLabel.TextColor3 = CONFIG.UI_COLORS.ACCENT
+    SetupLabel.TextSize = 16
+    SetupLabel.Font = Enum.Font.GothamSemibold
+    SetupLabel.TextXAlignment = Enum.TextXAlignment.Left
+    SetupLabel.Parent = SetupPanel
+    
+    local APIKeyInput = Instance.new("TextBox")
+    APIKeyInput.Name = "APIKeyInput"
+    APIKeyInput.Size = UDim2.new(1, -20, 0, 40)
+    APIKeyInput.Position = UDim2.new(0, 10, 0, 45)
+    APIKeyInput.BackgroundColor3 = CONFIG.UI_COLORS.BACKGROUND
+    APIKeyInput.BorderSizePixel = 0
+    APIKeyInput.Text = ""
+    APIKeyInput.PlaceholderText = "Paste your API key here..."
+    APIKeyInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 130)
+    APIKeyInput.TextColor3 = CONFIG.UI_COLORS.TEXT
+    APIKeyInput.TextSize = 14
+    APIKeyInput.Font = Enum.Font.GothamMedium
+    APIKeyInput.ClearTextOnFocus = false
+    APIKeyInput.Parent = SetupPanel
+    
+    local InputCorner = Instance.new("UICorner")
+    InputCorner.CornerRadius = UDim.new(0, 8)
+    InputCorner.Parent = APIKeyInput
+    
+    local InputStroke = Instance.new("UIStroke")
+    InputStroke.Color = CONFIG.UI_COLORS.PRIMARY
+    InputStroke.Thickness = 1
+    InputStroke.Transparency = 0.7
+    InputStroke.Parent = APIKeyInput
+    
+    local InputPadding = Instance.new("UIPadding")
+    InputPadding.PaddingLeft = UDim.new(0, 12)
+    InputPadding.PaddingRight = UDim.new(0, 12)
+    InputPadding.Parent = APIKeyInput
+    
+    local SubmitKeyBtn = Instance.new("TextButton")
+    SubmitKeyBtn.Name = "SubmitKeyBtn"
+    SubmitKeyBtn.Size = UDim2.new(1, -20, 0, 40)
+    SubmitKeyBtn.Position = UDim2.new(0, 10, 0, 95)
+    SubmitKeyBtn.BackgroundColor3 = CONFIG.UI_COLORS.PRIMARY
+    SubmitKeyBtn.BorderSizePixel = 0
+    SubmitKeyBtn.Text = "✓ Submit Key"
+    SubmitKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SubmitKeyBtn.TextSize = 16
+    SubmitKeyBtn.Font = Enum.Font.GothamBold
+    SubmitKeyBtn.Parent = SetupPanel
+    
+    local SubmitCorner = Instance.new("UICorner")
+    SubmitCorner.CornerRadius = UDim.new(0, 8)
+    SubmitCorner.Parent = SubmitKeyBtn
+    
+    local SetupStatus = Instance.new("TextLabel")
+    SetupStatus.Name = "SetupStatus"
+    SetupStatus.Size = UDim2.new(1, -20, 0, 50)
+    SetupStatus.Position = UDim2.new(0, 10, 0, 142)
+    SetupStatus.BackgroundTransparency = 1
+    SetupStatus.Text = "Step 1/2: Mistral API Key Required"
+    SetupStatus.TextColor3 = Color3.fromRGB(180, 180, 200)
+    SetupStatus.TextSize = 13
+    SetupStatus.Font = Enum.Font.GothamMedium
+    SetupStatus.TextWrapped = true
+    SetupStatus.TextXAlignment = Enum.TextXAlignment.Left
+    SetupStatus.Parent = SetupPanel
+    
+    -- ========== CONTROLS PANEL ==========
+    local ControlsPanel = Instance.new("Frame")
+    ControlsPanel.Name = "ControlsPanel"
+    ControlsPanel.Size = UDim2.new(1, 0, 0, 55)
+    ControlsPanel.BackgroundColor3 = CONFIG.UI_COLORS.SURFACE
+    ControlsPanel.BorderSizePixel = 0
+    ControlsPanel.LayoutOrder = 2
+    ControlsPanel.Visible = false
+    ControlsPanel.Parent = ContentFrame
+    
+    local ControlsCorner = Instance.new("UICorner")
+    ControlsCorner.CornerRadius = UDim.new(0, 12)
+    ControlsCorner.Parent = ControlsPanel
+    
+    local RecordBtn = Instance.new("TextButton")
+    RecordBtn.Name = "RecordBtn"
+    RecordBtn.Size = UDim2.new(0.48, 0, 0, 38)
+    RecordBtn.Position = UDim2.new(0.01, 5, 0.5, -19)
+    RecordBtn.BackgroundColor3 = CONFIG.UI_COLORS.RECORDING
+    RecordBtn.BorderSizePixel = 0
+    RecordBtn.Text = "⏺ START RECORDING"
+    RecordBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RecordBtn.TextSize = 13
+    RecordBtn.Font = Enum.Font.GothamBold
+    RecordBtn.Parent = ControlsPanel
+    
+    local RecordCorner = Instance.new("UICorner")
+    RecordCorner.CornerRadius = UDim.new(0, 8)
+    RecordCorner.Parent = RecordBtn
+    
+    local ProcessBtn = Instance.new("TextButton")
+    ProcessBtn.Name = "ProcessBtn"
+    ProcessBtn.Size = UDim2.new(0.48, 0, 0, 38)
+    ProcessBtn.Position = UDim2.new(0.51, -5, 0.5, -19)
+    ProcessBtn.BackgroundColor3 = CONFIG.UI_COLORS.PROCESSING
+    ProcessBtn.BorderSizePixel = 0
+    ProcessBtn.Text = "🧠 PROCESS & LEARN"
+    ProcessBtn.TextColor3 = Color3.fromRGB(30, 30, 30)
+    ProcessBtn.TextSize = 13
+    ProcessBtn.Font = Enum.Font.GothamBold
+    ProcessBtn.Parent = ControlsPanel
+    
+    local ProcessCorner = Instance.new("UICorner")
+    ProcessCorner.CornerRadius = UDim.new(0, 8)
+    ProcessCorner.Parent = ProcessBtn
+    
+    -- ========== LOG / OUTPUT PANEL ==========
+    local LogPanel = Instance.new("Frame")
+    LogPanel.Name = "LogPanel"
+    LogPanel.Size = UDim2.new(1, 0, 0, 250)
+    LogPanel.BackgroundColor3 = CONFIG.UI_COLORS.SURFACE
+    LogPanel.BorderSizePixel = 0
+    LogPanel.LayoutOrder = 3
+    LogPanel.Visible = false
+    LogPanel.Parent = ContentFrame
+    
+    local LogCorner = Instance.new("UICorner")
+    LogCorner.CornerRadius = UDim.new(0, 12)
+    LogCorner.Parent = LogPanel
+    
+    local LogTitle = Instance.new("TextLabel")
+    LogTitle.Size = UDim2.new(1, -20, 0, 25)
+    LogTitle.Position = UDim2.new(0, 10, 0, 5)
+    LogTitle.BackgroundTransparency = 1
+    LogTitle.Text = "📋 Activity Log"
+    LogTitle.TextColor3 = CONFIG.UI_COLORS.ACCENT
+    LogTitle.TextSize = 14
+    LogTitle.Font = Enum.Font.GothamSemibold
+    LogTitle.TextXAlignment = Enum.TextXAlignment.Left
+    LogTitle.Parent = LogPanel
+    
+    local LogScroll = Instance.new("ScrollingFrame")
+    LogScroll.Name = "LogScroll"
+    LogScroll.Size = UDim2.new(1, -20, 1, -35)
+    LogScroll.Position = UDim2.new(0, 10, 0, 32)
+    LogScroll.BackgroundColor3 = CONFIG.UI_COLORS.BACKGROUND
+    LogScroll.BorderSizePixel = 0
+    LogScroll.ScrollBarThickness = 4
+    LogScroll.ScrollBarImageColor3 = CONFIG.UI_COLORS.PRIMARY
+    LogScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    LogScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    LogScroll.Parent = LogPanel
+    
+    local LogScrollCorner = Instance.new("UICorner")
+    LogScrollCorner.CornerRadius = UDim.new(0, 8)
+    LogScrollCorner.Parent = LogScroll
+    
+    local LogLayout = Instance.new("UIListLayout")
+    LogLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    LogLayout.Padding = UDim.new(0, 2)
+    LogLayout.Parent = LogScroll
+    
+    local LogPadding = Instance.new("UIPadding")
+    LogPadding.PaddingTop = UDim.new(0, 5)
+    LogPadding.PaddingBottom = UDim.new(0, 5)
+    LogPadding.PaddingLeft = UDim.new(0, 8)
+    LogPadding.PaddingRight = UDim.new(0, 8)
+    LogPadding.Parent = LogScroll
+    
+    -- ========== COMMAND INPUT PANEL ==========
+    local CommandPanel = Instance.new("Frame")
+    CommandPanel.Name = "CommandPanel"
+    CommandPanel.Size = UDim2.new(1, 0, 0, 55)
+    CommandPanel.BackgroundColor3 = CONFIG.UI_COLORS.SURFACE
+    CommandPanel.BorderSizePixel = 0
+    CommandPanel.LayoutOrder = 4
+    CommandPanel.Visible = false
+    CommandPanel.Parent = ContentFrame
+    
+    local CommandCorner = Instance.new("UICorner")
+    CommandCorner.CornerRadius = UDim.new(0, 12)
+    CommandCorner.Parent = CommandPanel
+    
+    local CommandInput = Instance.new("TextBox")
+    CommandInput.Name = "CommandInput"
+    CommandInput.Size = UDim2.new(1, -80, 0, 38)
+    CommandInput.Position = UDim2.new(0, 10, 0.5, -19)
+    CommandInput.BackgroundColor3 = CONFIG.UI_COLORS.BACKGROUND
+    CommandInput.BorderSizePixel = 0
+    CommandInput.Text = ""
+    CommandInput.PlaceholderText = "Tell the AI what to do..."
+    CommandInput.PlaceholderColor3 = Color3.fromRGB(100, 100, 130)
+    CommandInput.TextColor3 = CONFIG.UI_COLORS.TEXT
+    CommandInput.TextSize = 14
+    CommandInput.Font = Enum.Font.GothamMedium
+    CommandInput.ClearTextOnFocus = true
+    CommandInput.Parent = CommandPanel
+    
+    local CmdInputCorner = Instance.new("UICorner")
+    CmdInputCorner.CornerRadius = UDim.new(0, 8)
+    CmdInputCorner.Parent = CommandInput
+    
+    local CmdInputPad = Instance.new("UIPadding")
+    CmdInputPad.PaddingLeft = UDim.new(0, 10)
+    CmdInputPad.PaddingRight = UDim.new(0, 10)
+    CmdInputPad.Parent = CommandInput
+    
+    local SendBtn = Instance.new("TextButton")
+    SendBtn.Name = "SendBtn"
+    SendBtn.Size = UDim2.new(0, 55, 0, 38)
+    SendBtn.Position = UDim2.new(1, -65, 0.5, -19)
+    SendBtn.BackgroundColor3 = CONFIG.UI_COLORS.PRIMARY
+    SendBtn.BorderSizePixel = 0
+    SendBtn.Text = "▶"
+    SendBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SendBtn.TextSize = 20
+    SendBtn.Font = Enum.Font.GothamBold
+    SendBtn.Parent = CommandPanel
+    
+    local SendCorner = Instance.new("UICorner")
+    SendCorner.CornerRadius = UDim.new(0, 8)
+    SendCorner.Parent = SendBtn
+    
+    -- ========== STATS PANEL ==========
+    local StatsPanel = Instance.new("Frame")
+    StatsPanel.Name = "StatsPanel"
+    StatsPanel.Size = UDim2.new(1, 0, 0, 70)
+    StatsPanel.BackgroundColor3 = CONFIG.UI_COLORS.SURFACE
+    StatsPanel.BorderSizePixel = 0
+    StatsPanel.LayoutOrder = 5
+    StatsPanel.Visible = false
+    StatsPanel.Parent = ContentFrame
+    
+    local StatsCorner = Instance.new("UICorner")
+    StatsCorner.CornerRadius = UDim.new(0, 12)
+    StatsCorner.Parent = StatsPanel
+    
+    local StatsLabel = Instance.new("TextLabel")
+    StatsLabel.Name = "StatsLabel"
+    StatsLabel.Size = UDim2.new(1, -20, 1, -10)
+    StatsLabel.Position = UDim2.new(0, 10, 0, 5)
+    StatsLabel.BackgroundTransparency = 1
+    StatsLabel.Text = "📊 Actions: 0 | Patterns: 0 | Skills: 0 | Objects: 0"
+    StatsLabel.TextColor3 = Color3.fromRGB(160, 165, 200)
+    StatsLabel.TextSize = 12
+    StatsLabel.Font = Enum.Font.GothamMedium
+    StatsLabel.TextWrapped = true
+    StatsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    StatsLabel.TextYAlignment = Enum.TextYAlignment.Top
+    StatsLabel.Parent = StatsPanel
+    
+    -- ========== MAKE DRAGGABLE ==========
+    local dragging = false
+    local dragInput, dragStart, startPos
+    
+    TitleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = MainFrame.Position
+            
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    
+    TitleBar.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            MainFrame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+    
+    -- Minimize toggle
+    local minimized = false
+    MinimizeBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        ContentFrame.Visible = not minimized
+        if minimized then
+            MainFrame.Size = UDim2.new(0, 480, 0, 55)
+            MinimizeBtn.Text = "□"
+        else
+            MainFrame.Size = UDim2.new(0, 480, 0, 620)
+            MinimizeBtn.Text = "─"
+        end
+    end)
+    
+    -- Store references
+    UI.Elements = {
+        ScreenGui = ScreenGui,
+        MainFrame = MainFrame,
+        TitleBar = TitleBar,
+        StatusDot = StatusIndicator,
+        SetupPanel = SetupPanel,
+        SetupLabel = SetupLabel,
+        APIKeyInput = APIKeyInput,
+        SubmitKeyBtn = SubmitKeyBtn,
+        SetupStatus = SetupStatus,
+        ControlsPanel = ControlsPanel,
+        RecordBtn = RecordBtn,
+        ProcessBtn = ProcessBtn,
+        LogPanel = LogPanel,
+        LogScroll = LogScroll,
+        CommandPanel = CommandPanel,
+        CommandInput = CommandInput,
+        SendBtn = SendBtn,
+        StatsPanel = StatsPanel,
+        StatsLabel = StatsLabel,
+    }
+    
+    return UI.Elements
+end
+
+UI.LogCounter = 0
+
+function UI.AddLog(message, color)
+    if not UI.Elements then return end
+    color = color or CONFIG.UI_COLORS.TEXT
+    
+    UI.LogCounter = UI.LogCounter + 1
+    
+    local logEntry = Instance.new("TextLabel")
+    logEntry.Name = "Log_" .. UI.LogCounter
+    logEntry.Size = UDim2.new(1, 0, 0, 0)
+    logEntry.AutomaticSize = Enum.AutomaticSize.Y
+    logEntry.BackgroundTransparency = 1
+    logEntry.Text = "[" .. os.date("%H:%M:%S") .. "] " .. message
+    logEntry.TextColor3 = color
+    logEntry.TextSize = 11
+    logEntry.Font = Enum.Font.RobotoMono
+    logEntry.TextWrapped = true
+    logEntry.TextXAlignment = Enum.TextXAlignment.Left
+    logEntry.LayoutOrder = UI.LogCounter
+    logEntry.Parent = UI.Elements.LogScroll
+    
+    -- Auto-scroll to bottom
+    task.defer(function()
+        if UI.Elements.LogScroll then
+            UI.Elements.LogScroll.CanvasPosition = Vector2.new(0, 
+                UI.Elements.LogScroll.AbsoluteCanvasSize.Y)
+        end
+    end)
+    
+    -- Limit log entries
+    local children = UI.Elements.LogScroll:GetChildren()
+    local logEntries = {}
+    for _, child in ipairs(children) do
+        if child:IsA("TextLabel") then
+            table.insert(logEntries, child)
+        end
+    end
+    if #logEntries > 200 then
+        for i = 1, #logEntries - 200 do
+            logEntries[i]:Destroy()
+        end
+    end
+end
+
+function UI.UpdateStatus(status, color)
+    if UI.Elements and UI.Elements.StatusDot then
+        UI.Elements.StatusDot.BackgroundColor3 = color or CONFIG.UI_COLORS.ACCENT
+    end
+end
+
+function UI.UpdateStats()
+    if not UI.Elements then return end
+    local stats = string.format(
+        "📊 Actions: %d | Patterns: %d | Skills: %d | Objects: %d\n🎯 Memory: %d | Tasks Completed: %d",
+        #State.RecordedActions,
+        Utils.TableLength(State.LearnedPatterns),
+        Utils.TableLength(State.SkillLibrary),
+        Utils.TableLength(State.ObjectKnowledge),
+        #State.ActionMemory,
+        #State.InteractionHistory
+    )
+    UI.Elements.StatsLabel.Text = stats
+end
+
+function UI.PulseRecording()
+    if not UI.Elements or not State.IsRecording then return end
+    
+    spawn(function()
+        while State.IsRecording and UI.Elements do
+            local btn = UI.Elements.RecordBtn
+            if btn then
+                TweenService:Create(btn, TweenInfo.new(0.5), {
+                    BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+                }):Play()
+                task.wait(0.5)
+                if not State.IsRecording then break end
+                TweenService:Create(btn, TweenInfo.new(0.5), {
+                    BackgroundColor3 = CONFIG.UI_COLORS.RECORDING
+                }):Play()
+                task.wait(0.5)
+            else
+                break
+            end
+        end
+    end)
+end
+
+-- ============================================================
+-- NETWORK / API MODULE
+-- ============================================================
+local Network = {}
+
+function Network.MistralRequest(messages, temperature, maxTokens)
+    if not State.MistralAPIKey then
+        return nil, "No API key set"
+    end
+    
+    temperature = temperature or 0.3
+    maxTokens = maxTokens or 4096
+    
+    local payload = {
+        model = CONFIG.MISTRAL_MODEL,
+        messages = messages,
+        temperature = temperature,
+        max_tokens = maxTokens,
+        top_p = 0.95,
+    }
+    
+    local jsonPayload = HttpService:JSONEncode(payload)
+    
+    for attempt = 1, CONFIG.MAX_RETRIES do
+        local success, response = pcall(function()
+            return HttpService:RequestAsync({
+                Url = CONFIG.MISTRAL_ENDPOINT,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = "Bearer " .. State.MistralAPIKey,
+                },
+                Body = jsonPayload,
+            })
+        end)
+        
+        if success then
+            if response.StatusCode == 200 then
+                local data = HttpService:JSONDecode(response.Body)
+                if data.choices and data.choices[1] then
+                    return data.choices[1].message.content, nil
+                end
+                return nil, "Invalid response structure"
+            elseif response.StatusCode == 429 then
+                UI.AddLog("Rate limited, waiting...", CONFIG.UI_COLORS.PROCESSING)
+                task.wait(CONFIG.RATE_LIMIT_DELAY * attempt)
+            else
+                return nil, "HTTP " .. response.StatusCode .. ": " .. (response.Body or "Unknown error")
+            end
+        else
+            if attempt < CONFIG.MAX_RETRIES then
+                task.wait(1)
+            else
+                return nil, "Request failed: " .. tostring(response)
+            end
+        end
+    end
+    
+    return nil, "Max retries exceeded"
+end
+
+function Network.LibYAGIRequest(data)
+    if not State.LibYAGIKey then
+        -- LibYAGI is optional - use local processing
+        return Network.LocalAGIProcess(data)
+    end
+    
+    local payload = {
+        api_key = State.LibYAGIKey,
+        data = data,
+        mode = "learn",
+    }
+    
+    local success, response = pcall(function()
+        return HttpService:RequestAsync({
+            Url = CONFIG.LIBYAGI_ENDPOINT,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json",
+                ["Authorization"] = "Bearer " .. State.LibYAGIKey,
+            },
+            Body = HttpService:JSONEncode(payload),
+        })
+    end)
+    
+    if success and response.StatusCode == 200 then
+        return HttpService:JSONDecode(response.Body)
+    else
+        -- Fallback to local processing
+        return Network.LocalAGIProcess(data)
+    end
+end
+
+function Network.LocalAGIProcess(data)
+    -- Local pattern recognition when LibYAGI is unavailable
+    local result = {
+        patterns = {},
+        insights = {},
+        confidence = 0.7,
+    }
+    
+    if data.actions then
+        local actionTypes = {}
+        for _, action in ipairs(data.actions) do
+            local aType = action.type or "unknown"
+            actionTypes[aType] = (actionTypes[aType] or 0) + 1
+        end
+        
+        for aType, count in pairs(actionTypes) do
+            if count >= 2 then
+                table.insert(result.patterns, {
+                    type = aType,
+                    frequency = count,
+                    confidence = math.min(count / #data.actions, 1),
+                })
+            end
+        end
+    end
+    
+    return result
+end
+
+function Network.ValidateMistralKey(key)
+    local testMessages = {
+        {role = "user", content = "Respond with only the word 'valid'"}
+    }
+    
+    State.MistralAPIKey = key
+    local response, err = Network.MistralRequest(testMessages, 0.0, 10)
+    
+    if response then
+        return true
+    else
+        State.MistralAPIKey = nil
+        return false, err
+    end
+end
+
+-- ============================================================
+-- ENVIRONMENT SCANNER
+-- ============================================================
+local EnvironmentScanner = {}
+
+function EnvironmentScanner.ScanWorkspace()
+    UI.AddLog("Scanning environment...", CONFIG.UI_COLORS.PROCESSING)
+    
+    local scan = {
+        parts = {},
+        models = {},
+        tools = {},
+        npcs = {},
+        interactables = {},
+        guis = {},
+        spawn_points = {},
+        terrain_info = {},
+        total_objects = 0,
+    }
+    
+    local function scanInstance(instance, depth)
+        if depth > 15 then return end
+        scan.total_objects = scan.total_objects + 1
+        
+        local info = {
+            name = instance.Name,
+            class = instance.ClassName,
+            path = instance:GetFullName(),
+        }
+        
+        if instance:IsA("BasePart") then
+            info.position = Utils.SerializeVector3(instance.Position)
+            info.size = Utils.SerializeVector3(instance.Size)
+            info.anchored = instance.Anchored
+            info.canCollide = instance.CanCollide
+            info.material = instance.Material.Name
+            info.color = tostring(instance.BrickColor)
+            info.transparency = instance.Transparency
+            
+            -- Check for ClickDetectors
+            if instance:FindFirstChildWhichIsA("ClickDetector") then
+                info.clickable = true
+                table.insert(scan.interactables, info)
+            end
+            
+            -- Check for ProximityPrompts
+            if instance:FindFirstChildWhichIsA("ProximityPrompt") then
+                info.hasPrompt = true
+                local prompt = instance:FindFirstChildWhichIsA("ProximityPrompt")
+                info.promptAction = prompt.ActionText
+                info.promptObject = prompt.ObjectText
+                table.insert(scan.interactables, info)
+            end
+            
+            table.insert(scan.parts, info)
+            
+        elseif instance:IsA("Model") then
+            info.primaryPart = instance.PrimaryPart and instance.PrimaryPart.Name or nil
+            if instance.PrimaryPart then
+                info.position = Utils.SerializeVector3(instance.PrimaryPart.Position)
+            end
+            
+            -- Check if it's an NPC
+            local humanoid = instance:FindFirstChildWhichIsA("Humanoid")
+            if humanoid and instance ~= Character then
+                info.isNPC = true
+                info.health = humanoid.Health
+                info.maxHealth = humanoid.MaxHealth
+                info.walkSpeed = humanoid.WalkSpeed
+                table.insert(scan.npcs, info)
+            end
+            
+            table.insert(scan.models, info)
+            
+        elseif instance:IsA("Tool") then
+            info.requiresHandle = instance.RequiresHandle
+            info.canBeDropped = instance.CanBeDropped
+            table.insert(scan.tools, info)
+            
+        elseif instance:IsA("SpawnLocation") then
+            info.position = Utils.SerializeVector3(instance.Position)
+            table.insert(scan.spawn_points, info)
+        end
+        
+        -- Store in knowledge base
+        State.ObjectKnowledge[instance:GetFullName()] = info
+        
+        for _, child in ipairs(instance:GetChildren()) do
+            scanInstance(child, depth + 1)
+        end
+    end
+    
+    -- Scan workspace
+    for _, child in ipairs(Workspace:GetChildren()) do
+        if child ~= Character then
+            scanInstance(child, 0)
+        end
+    end
+    
+    -- Scan player's backpack for tools
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") then
+                table.insert(scan.tools, {
+                    name = tool.Name,
+                    class = "Tool",
+                    location = "Backpack",
+                    requiresHandle = tool.RequiresHandle,
+                })
+            end
+        end
+    end
+    
+    -- Scan GUIs
+    for _, gui in ipairs(PlayerGui:GetChildren()) do
+        if gui.Name ~= "MistralLearnUI" then
+            local guiInfo = {name = gui.Name, class = gui.ClassName, buttons = {}, labels = {}}
+            local function scanGui(element)
+                if element:IsA("TextButton") or element:IsA("ImageButton") then
+                    table.insert(guiInfo.buttons, {
+                        name = element.Name,
+                        text = element:IsA("TextButton") and element.Text or "",
+                        visible = element.Visible,
+                        path = element:GetFullName(),
+                    })
+                elseif element:IsA("TextLabel") then
+                    table.insert(guiInfo.labels, {
+                        name = element.Name,
+                        text = element.Text,
+                        visible = element.Visible,
+                    })
+                end
+                for _, child in ipairs(element:GetChildren()) do
+                    scanGui(child)
+                end
+            end
+            scanGui(gui)
+            table.insert(scan.guis, guiInfo)
+        end
+    end
+    
+    State.EnvironmentMap = scan
+    UI.AddLog(string.format("Scan complete: %d objects, %d interactables, %d NPCs, %d tools", 
+        scan.total_objects, #scan.interactables, #scan.npcs, #scan.tools), CONFIG.UI_COLORS.SUCCESS)
+    
+    return scan
+end
+
+function EnvironmentScanner.GetNearbyObjects(radius)
+    radius = radius or 50
+    local nearby = {}
+    local pos = HumanoidRootPart.Position
+    
+    for _, part in ipairs(Workspace:GetDescendants()) do
+        if part:IsA("BasePart") and part.Parent ~= Character then
+            local dist = Utils.Distance(pos, part.Position)
+            if dist <= radius then
+                table.insert(nearby, {
+                    name = part.Name,
+                    class = part.ClassName,
+                    distance = math.round(dist * 10) / 10,
+                    position = Utils.SerializeVector3(part.Position),
+                    parent = part.Parent and part.Parent.Name or "nil",
+                    clickable = part:FindFirstChildWhichIsA("ClickDetector") ~= nil,
+                    hasPrompt = part:FindFirstChildWhichIsA("ProximityPrompt") ~= nil,
+                })
+            end
+        end
+    end
+    
+    table.sort(nearby, function(a, b) return a.distance < b.distance end)
+    return nearby
+end
+
+function EnvironmentScanner.FindObject(name)
+    name = string.lower(name)
+    local results = {}
+    
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if string.lower(obj.Name):find(name) then
+            local info = {
+                instance = obj,
+                name = obj.Name,
+                class = obj.ClassName,
+                path = obj:GetFullName(),
+            }
+            if obj:IsA("BasePart") then
+                info.position = obj.Position
+            elseif obj:IsA("Model") and obj.PrimaryPart then
+                info.position = obj.PrimaryPart.Position
+            end
+            table.insert(results, info)
+        end
+    end
+    
+    return results
+end
+
+-- ============================================================
+-- ACTION RECORDER
+-- ============================================================
+local Recorder = {}
+
+function Recorder.Start()
+    if State.IsRecording then return end
+    
+    State.IsRecording = true
+    State.RecordedActions = {}
+    State.LastPosition = HumanoidRootPart.Position
+    State.LastLookDirection = HumanoidRootPart.CFrame.LookVector
+    
+    UI.AddLog("🔴 RECORDING STARTED - Demonstrate actions!", CONFIG.UI_COLORS.RECORDING)
+    UI.PulseRecording()
+    
+    if UI.Elements then
+        UI.Elements.RecordBtn.Text = "⏹ STOP RECORDING"
+    end
+    
+    -- Input recording connections
+    Recorder._connections = {}
+    
+    -- Record keyboard inputs
+    table.insert(Recorder._connections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if not State.IsRecording then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            Recorder.RecordAction({
+                type = "KEY_PRESS",
+                key = input.KeyCode.Name,
+                gameProcessed = gameProcessed,
+                timestamp = Utils.GetTimestamp(),
+                position = Utils.SerializeVector3(HumanoidRootPart.Position),
+                lookDir = Utils.SerializeVector3(HumanoidRootPart.CFrame.LookVector),
+            })
+        end
+    end))
+    
+    table.insert(Recorder._connections, UserInputService.InputEnded:Connect(function(input, gameProcessed)
+        if not State.IsRecording then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard then
+            Recorder.RecordAction({
+                type = "KEY_RELEASE",
+                key = input.KeyCode.Name,
+                gameProcessed = gameProcessed,
+                timestamp = Utils.GetTimestamp(),
+            })
+        end
+    end))
+    
+    -- Record mouse clicks
+    table.insert(Recorder._connections, Mouse.Button1Down:Connect(function()
+        if not State.IsRecording then return end
+        local target = Mouse.Target
+        Recorder.RecordAction({
+            type = "MOUSE_CLICK",
+            button = "Left",
+            target = target and target.Name or "nil",
+            targetClass = target and target.ClassName or "nil",
+            targetPath = target and target:GetFullName() or "nil",
+            targetParent = target and target.Parent and target.Parent.Name or "nil",
+            hitPosition = Utils.SerializeVector3(Mouse.Hit.Position),
+            timestamp = Utils.GetTimestamp(),
+            playerPosition = Utils.SerializeVector3(HumanoidRootPart.Position),
+        })
+    end))
+    
+    table.insert(Recorder._connections, Mouse.Button2Down:Connect(function()
+        if not State.IsRecording then return end
+        Recorder.RecordAction({
+            type = "MOUSE_CLICK",
+            button = "Right",
+            target = Mouse.Target and Mouse.Target.Name or "nil",
+            hitPosition = Utils.SerializeVector3(Mouse.Hit.Position),
+            timestamp = Utils.GetTimestamp(),
+        })
+    end))
+    
+    -- Record movement
+    table.insert(Recorder._connections, Humanoid.Running:Connect(function(speed)
+        if not State.IsRecording then return end
+        if speed > 0.5 then
+            Recorder.RecordAction({
+                type = "MOVEMENT",
+                subtype = "RUNNING",
+                speed = speed,
+                position = Utils.SerializeVector3(HumanoidRootPart.Position),
+                direction = Utils.SerializeVector3(Humanoid.MoveDirection),
+                timestamp = Utils.GetTimestamp(),
+            })
+        end
+    end))
+    
+    -- Record jumping
+    table.insert(Recorder._connections, Humanoid.Jumping:Connect(function(active)
+        if not State.IsRecording and not active then return end
+        Recorder.RecordAction({
+            type = "JUMP",
+            position = Utils.SerializeVector3(HumanoidRootPart.Position),
+            velocity = Utils.SerializeVector3(HumanoidRootPart.Velocity),
+            timestamp = Utils.GetTimestamp(),
+        })
+    end))
+    
+    -- Record state changes
+    table.insert(Recorder._connections, Humanoid.StateChanged:Connect(function(oldState, newState)
+        if not State.IsRecording then return end
+        Recorder.RecordAction({
+            type = "STATE_CHANGE",
+            oldState = oldState.Name,
+            newState = newState.Name,
+            position = Utils.SerializeVector3(HumanoidRootPart.Position),
+            timestamp = Utils.GetTimestamp(),
+        })
+    end))
+    
+    -- Record tool usage
+    table.insert(Recorder._connections, Character.ChildAdded:Connect(function(child)
+        if not State.IsRecording then return end
+        if child:IsA("Tool") then
+            Recorder.RecordAction({
+                type = "TOOL_EQUIP",
+                toolName = child.Name,
+                timestamp = Utils.GetTimestamp(),
+            })
+        end
+    end))
+    
+    table.insert(Recorder._connections, Character.ChildRemoved:Connect(function(child)
+        if not State.IsRecording then return end
+        if child:IsA("Tool") then
+            Recorder.RecordAction({
+                type = "TOOL_UNEQUIP",
+                toolName = child.Name,
+                timestamp = Utils.GetTimestamp(),
+            })
+        end
+    end))
+    
+    -- Periodic position/state sampling
+    spawn(function()
+        while State.IsRecording do
+            local currentPos = HumanoidRootPart.Position
+            local moved = Utils.Distance(currentPos, State.LastPosition or currentPos)
+            
+            if moved > 2 then
+                Recorder.RecordAction({
+                    type = "POSITION_SAMPLE",
+                    position = Utils.SerializeVector3(currentPos),
+                    lookDir = Utils.SerializeVector3(HumanoidRootPart.CFrame.LookVector),
+                    velocity = Utils.SerializeVector3(HumanoidRootPart.Velocity),
+                    health = Humanoid.Health,
+                    moveDirection = Utils.SerializeVector3(Humanoid.MoveDirection),
+                    timestamp = Utils.GetTimestamp(),
+                })
+                State.LastPosition = currentPos
+            end
+            
+            task.wait(CONFIG.RECORDING_TICK_RATE)
+        end
+    end)
+end
+
+function Recorder.Stop()
+    if not State.IsRecording then return end
+    
+    State.IsRecording = false
+    
+    -- Disconnect all recording connections
+    if Recorder._connections then
+        for _, conn in ipairs(Recorder._connections) do
+            if conn.Connected then
+                conn:Disconnect()
+            end
+        end
+        Recorder._connections = {}
+    end
+    
+    if UI.Elements then
+        UI.Elements.RecordBtn.Text = "⏺ START RECORDING"
+        UI.Elements.RecordBtn.BackgroundColor3 = CONFIG.UI_COLORS.RECORDING
+    end
+    
+    UI.AddLog(string.format("⏹ RECORDING STOPPED - %d actions captured", #State.RecordedActions), 
+        CONFIG.UI_COLORS.SUCCESS)
+end
+
+function Recorder.RecordAction(action)
+    if #State.RecordedActions < CONFIG.MAX_MEMORY_ENTRIES then
+        action.frameCount = State.FrameCount
+        table.insert(State.RecordedActions, action)
+        
+        -- Also add to persistent memory
+        table.insert(State.ActionMemory, action)
+        if #State.ActionMemory > CONFIG.MAX_MEMORY_ENTRIES then
+            table.remove(State.ActionMemory, 1)
+        end
+    end
+end
+
+-- ============================================================
+-- AI BRAIN - LEARNING ENGINE
+-- ============================================================
+local Brain = {}
+
+function Brain.BuildSystemPrompt()
+    local envSummary = ""
+    if State.EnvironmentMap then
+        envSummary = string.format([[
+ENVIRONMENT:
+- Total objects: %d
+- Interactable objects: %d  
+- NPCs: %d
+- Tools available: %d
+- GUI elements found: %d
+]], 
+            State.EnvironmentMap.total_objects or 0,
+            #(State.EnvironmentMap.interactables or {}),
+            #(State.EnvironmentMap.npcs or {}),
+            #(State.EnvironmentMap.tools or {}),
+            #(State.EnvironmentMap.guis or {})
+        )
+    end
+    
+    local skillsSummary = ""
+    if Utils.TableLength(State.SkillLibrary) > 0 then
+        skillsSummary = "LEARNED SKILLS:\n"
+        for name, skill in pairs(State.SkillLibrary) do
+            skillsSummary = skillsSummary .. string.format("- %s (confidence: %.0f%%): %s\n", 
+                name, (skill.confidence or 0) * 100, skill.description or "")
+        end
+    end
+    
+    State.SystemPrompt = string.format([[
+You are MistralLearn, an advanced AI agent controlling a Roblox character. You observe, learn, and execute actions in a Roblox game environment.
+
+YOUR CAPABILITIES:
+1. MOVEMENT: Walk/run to positions, jump, navigate using pathfinding
+2. INTERACTION: Click objects, use tools, activate ProximityPrompts, press keys
+3. GUI INTERACTION: Click buttons, read text from GUI elements
+4. COMBAT: Attack, dodge, use weapons if available
+5. BUILDING: Place/move parts if the game allows
+6. SOCIAL: Chat, emote, follow players
+7. OBSERVATION: Scan environment, identify objects, track changes
+
+%s
+%s
+
+LEARNED PATTERNS: %d
+RECORDED ACTIONS IN MEMORY: %d
+
+When given a task, respond with a JSON action plan. Each action should have:
+{
+  "plan": "Description of what you'll do",
+  "actions": [
+    {
+      "type": "MOVE_TO" | "CLICK" | "KEY_PRESS" | "EQUIP_TOOL" | "USE_TOOL" | "JUMP" | "INTERACT" | "CHAT" | "WAIT" | "LOOK_AT" | "CLICK_GUI" | "PATHFIND" | "EMOTE" | "CUSTOM",
+      "params": { ... action-specific parameters ... },
+      "description": "What this action does"
+    }
+  ],
+  "confidence": 0.0-1.0,
+  "reasoning": "Why you chose this approach"
+}
+
+Action parameter formats:
+- MOVE_TO: {"x": num, "y": num, "z": num} or {"target": "objectName"}
+- CLICK: {"target": "objectName"} or {"position": {"x","y","z"}}
+- KEY_PRESS: {"key": "KeyName", "duration": seconds}
+- EQUIP_TOOL: {"toolName": "name"}
+- USE_TOOL: {"action": "activate"}
+- JUMP: {}
+- INTERACT: {"target": "objectName", "method": "click|prompt|touch"}
+- CHAT: {"message": "text"}
+- WAIT: {"duration": seconds}
+- LOOK_AT: {"target": "objectName"} or {"position": {"x","y","z"}}
+- CLICK_GUI: {"path": "gui.path.to.button"} or {"buttonName": "name"}
+- PATHFIND: {"target": "objectName"} or {"position": {"x","y","z"}}
+- EMOTE: {"emote": "wave|point|dance|laugh|cheer"}
+- CUSTOM: {"keySequence": ["key1","key2"], "description": "what it does"}
+
+Respond ONLY with valid JSON. Be creative and thorough in your plans.
+]], envSummary, skillsSummary, Utils.TableLength(State.LearnedPatterns), #State.ActionMemory)
+    
+    return State.SystemPrompt
+end
+
+function Brain.ProcessRecordedActions()
+    if #State.RecordedActions == 0 then
+        UI.AddLog("No recorded actions to process!", CONFIG.UI_COLORS.ERROR)
+        return false
+    end
+    
+    State.IsProcessing = true
+    UI.AddLog("🧠 Processing " .. #State.RecordedActions .. " recorded actions...", CONFIG.UI_COLORS.PROCESSING)
+    UI.UpdateStatus("Processing", CONFIG.UI_COLORS.PROCESSING)
+    
+    -- Phase 1: Local Pattern Analysis
+    UI.AddLog("Phase 1: Local pattern analysis...", CONFIG.UI_COLORS.TEXT)
+    local patterns = Brain.AnalyzePatterns(State.RecordedActions)
+    
+    -- Phase 2: Sequence Detection
+    UI.AddLog("Phase 2: Sequence detection...", CONFIG.UI_COLORS.TEXT)
+    local sequences = Brain.DetectSequences(State.RecordedActions)
+    
+    -- Phase 3: Environment Correlation
+    UI.AddLog("Phase 3: Environment correlation...", CONFIG.UI_COLORS.TEXT)
+    EnvironmentScanner.ScanWorkspace()
+    
+    -- Phase 4: Send to Mistral for deep analysis
+    UI.AddLog("Phase 4: Deep analysis via Mistral AI...", CONFIG.UI_COLORS.TEXT)
+    
+    -- Prepare a summary of actions (can't send all raw data due to token limits)
+    local actionSummary = Brain.SummarizeActions(State.RecordedActions)
+    
+    local analysisPrompt = string.format([[
+Analyze these recorded player actions in a Roblox game and identify learnable patterns, skills, and behaviors.
+
+ACTION SUMMARY:
+%s
+
+DETECTED PATTERNS:
+%s
+
+DETECTED SEQUENCES:
+%s
+
+Respond with a JSON object containing:
+{
+  "skills": [
+    {
+      "name": "skill_name",
+      "description": "what this skill does",
+      "trigger": "when to use this skill",
+      "actions": [list of action types involved],
+      "confidence": 0.0-1.0
+    }
+  ],
+  "behaviors": [
+    {
+      "name": "behavior_name", 
+      "description": "behavioral pattern observed",
+      "frequency": "how often it occurs"
+    }
+  ],
+  "environment_interactions": [
+    {
+      "object": "object name",
+      "interaction_type": "how the player interacted with it",
+      "purpose": "inferred purpose"
+    }
+  ],
+  "movement_patterns": {
+    "preferred_speed": "walk|run|sprint",
+    "uses_jumping": true/false,
+    "navigation_style": "direct|exploratory|careful"
+  },
+  "summary": "Overall analysis of what the player was demonstrating"
+}
+]], actionSummary, HttpService:JSONEncode(patterns), HttpService:JSONEncode(sequences))
+    
+    local messages = {
+        {role = "system", content = "You are an AI analyzer for Roblox gameplay. Analyze player actions and identify learnable patterns. Respond only with valid JSON."},
+        {role = "user", content = analysisPrompt},
+    }
+    
+    local response, err = Network.MistralRequest(messages, 0.2, 4096)
+    
+    if response then
+        -- Parse AI analysis
+        local success, analysis = pcall(function()
+            -- Extract JSON from response
+            local jsonStr = response:match("{.*}")
+            if jsonStr then
+                return HttpService:JSONDecode(jsonStr)
+            end
+            return nil
+        end)
+        
+        if success and analysis then
+            -- Store learned skills
+            if analysis.skills then
+                for _, skill in ipairs(analysis.skills) do
+                    State.SkillLibrary[skill.name] = skill
+                    UI.AddLog("✅ Learned skill: " .. skill.name .. " (" .. 
+                        math.floor((skill.confidence or 0) * 100) .. "% confidence)", CONFIG.UI_COLORS.SUCCESS)
+                end
+            end
+            
+            -- Store behaviors
+            if analysis.behaviors then
+                for _, behavior in ipairs(analysis.behaviors) do
+                    State.LearnedPatterns[behavior.name] = behavior
+                end
+            end
+            
+            -- Store interactions
+            if analysis.environment_interactions then
+                for _, interaction in ipairs(analysis.environment_interactions) do
+                    State.InteractionHistory[#State.InteractionHistory + 1] = interaction
+                end
+            end
+            
+            UI.AddLog("🧠 Analysis complete! " .. Utils.TableLength(State.SkillLibrary) .. 
+                " skills, " .. Utils.TableLength(State.LearnedPatterns) .. " patterns", CONFIG.UI_COLORS.SUCCESS)
+            
+            if analysis.summary then
+                UI.AddLog("📝 Summary: " .. Utils.TruncateString(analysis.summary, 200), CONFIG.UI_COLORS.ACCENT)
+            end
+        else
+            UI.AddLog("⚠ Could not parse AI analysis, using local patterns", CONFIG.UI_COLORS.PROCESSING)
+            -- Fall back to local patterns
+            for name, pattern in pairs(patterns) do
+                State.LearnedPatterns[name] = pattern
+            end
+        end
+    else
+        UI.AddLog("⚠ Mistral API error: " .. tostring(err), CONFIG.UI_COLORS.ERROR)
+        UI.AddLog("Using local pattern analysis instead...", CONFIG.UI_COLORS.PROCESSING)
+        for name, pattern in pairs(patterns) do
+            State.LearnedPatterns[name] = pattern
+        end
+    end
+    
+    -- Phase 5: LibYAGI processing (optional enhancement)
+    if State.LibYAGIKey then
+        UI.AddLog("Phase 5: LibYAGI enhancement...", CONFIG.UI_COLORS.TEXT)
+        local yagiResult = Network.LibYAGIRequest({
+            actions = State.RecordedActions,
+            patterns = patterns,
+        })
+        if yagiResult and yagiResult.patterns then
+            for _, p in ipairs(yagiResult.patterns) do
+                State.LearnedPatterns["yagi_" .. (p.type or "unknown")] = p
+            end
+        end
+    end
+    
+    State.IsProcessing = false
+    UI.UpdateStatus("Ready", CONFIG.UI_COLORS.SUCCESS)
+    UI.UpdateStats()
+    
+    return true
+end
+
+function Brain.AnalyzePatterns(actions)
+    local patterns = {}
+    
+    -- Count action types
+    local typeCounts = {}
+    local typeSequences = {}
+    
+    for i, action in ipairs(actions) do
+        local aType = action.type
+        typeCounts[aType] = (typeCounts[aType] or 0) + 1
+        
+        -- Track type sequences (pairs)
+        if i > 1 then
+            local prevType = actions[i-1].type
+            local pair = prevType .. "->" .. aType
+            typeSequences[pair] = (typeSequences[pair] or 0) + 1
+        end
+    end
+    
+    -- Identify frequent action types
+    for aType, count in pairs(typeCounts) do
+        if count >= 3 then
+            patterns["frequent_" .. aType] = {
+                type = aType,
+                count = count,
+                percentage = count / #actions,
+                description = string.format("%s occurred %d times (%.0f%%)", aType, count, (count/#actions)*100),
+            }
+        end
+    end
+    
+    -- Identify frequent sequences
+    for pair, count in pairs(typeSequences) do
+        if count >= 2 then
+            patterns["sequence_" .. pair] = {
+                sequence = pair,
+                count = count,
+                description = string.format("Sequence %s occurred %d times", pair, count),
+            }
+        end
+    end
+    
+    -- Analyze movement patterns
+    local moveActions = {}
+    for _, action in ipairs(actions) do
+        if action.type == "MOVEMENT" or action.type == "POSITION_SAMPLE" then
+            table.insert(moveActions, action)
+        end
+    end
+    
+    if #moveActions > 2 then
+        -- Calculate average speed and direction
+        local totalSpeed = 0
+        local speedCount = 0
+        for _, ma in ipairs(moveActions) do
+            if ma.speed then
+                totalSpeed = totalSpeed + ma.speed
+                speedCount = speedCount + 1
+            end
+        end
+        
+        if speedCount > 0 then
+            patterns["movement_style"] = {
+                averageSpeed = totalSpeed / speedCount,
+                sampleCount = #moveActions,
+                description = string.format("Average movement speed: %.1f", totalSpeed / speedCount),
+            }
+        end
+    end
+    
+    -- Analyze click targets
+    local clickTargets = {}
+    for _, action in ipairs(actions) do
+        if action.type == "MOUSE_CLICK" and action.target and action.target ~= "nil" then
+            clickTargets[action.target] = (clickTargets[action.target] or 0) + 1
+        end
+    end
+    
+    for target, count in pairs(clickTargets) do
+        patterns["click_target_" .. target] = {
+            target = target,
+            clickCount = count,
+            description = string.format("Clicked on '%s' %d times", target, count),
+        }
+    end
+    
+    return patterns
+end
+
+function Brain.DetectSequences(actions)
+    local sequences = {}
+    local windowSize = 5
+    
+    for i = 1, #actions - windowSize + 1 do
+        local seq = {}
+        for j = i, i + windowSize - 1 do
+            table.insert(seq, actions[j].type)
+        end
+        
+        local seqKey = table.concat(seq, "|")
+        sequences[seqKey] = (sequences[seqKey] or 0) + 1
+    end
+    
+    -- Filter to repeated sequences
+    local repeatedSeqs = {}
+    for seqKey, count in pairs(sequences) do
+        if count >= 2 then
+            repeatedSeqs[seqKey] = {
+                sequence = seqKey,
+                count = count,
+                actions = {},
+            }
+            for action in seqKey:gmatch("[^|]+") do
+                table.insert(repeatedSeqs[seqKey].actions, action)
+            end
+        end
+    end
+    
+    return repeatedSeqs
+end
+
+function Brain.SummarizeActions(actions)
+    local summary = {}
+    local maxSummaryActions = 150
+    
+    -- Sample actions if too many
+    local sampled = actions
+    if #actions > maxSummaryActions then
+        sampled = {}
+        local step = math.ceil(#actions / maxSummaryActions)
+        for i = 1, #actions, step do
+            table.insert(sampled, actions[i])
+        end
+    end
+    
+    for i, action in ipairs(sampled) do
+        local line = string.format("%d. [%s]", i, action.type)
+        
+        if action.key then line = line .. " key=" .. action.key end
+        if action.target and action.target ~= "nil" then line = line .. " target=" .. action.target end
+        if action.toolName then line = line .. " tool=" .. action.toolName end
+        if action.speed then line = line .. string.format(" speed=%.1f", action.speed) end
+        if action.position then 
+            line = line .. string.format(" pos=(%.0f,%.0f,%.0f)", 
+                action.position.x or 0, action.position.y or 0, action.position.z or 0) 
+        end
+        if action.hitPosition then
+            line = line .. string.format(" hit=(%.0f,%.0f,%.0f)",
+                action.hitPosition.x or 0, action.hitPosition.y or 0, action.hitPosition.z or 0)
+        end
+        if action.subtype then line = line .. " sub=" .. action.subtype end
+        if action.newState then line = line .. " state=" .. action.newState end
+        
+        table.insert(summary, line)
+    end
+    
+    return table.concat(summary, "\n")
+end
+
+-- ============================================================
+-- ACTION EXECUTOR
+-- ============================================================
+local Executor = {}
+
+function Executor.ExecutePlan(plan)
+    if State.IsExecuting then
+        UI.AddLog("⚠ Already executing a plan!", CONFIG.UI_COLORS.PROCESSING)
+        return
+    end
+    
+    State.IsExecuting = true
+    UI.AddLog("▶ Executing plan: " .. (plan.plan or "Unknown"), CONFIG.UI_COLORS.PRIMARY)
+    
+    spawn(function()
+        local success = true
+        
+        for i, action in ipairs(plan.actions or {}) do
+            if not State.IsExecuting then
+                UI.AddLog("⏹ Execution cancelled", CONFIG.UI_COLORS.ERROR)
+                break
+            end
+            
+            UI.AddLog(string.format("  Step %d/%d: %s - %s", 
+                i, #plan.actions, action.type, action.description or ""), CONFIG.UI_COLORS.TEXT)
+            
+            local actionSuccess = Executor.ExecuteAction(action)
+            
+            if not actionSuccess then
+                UI.AddLog("  ⚠ Step " .. i .. " had issues, continuing...", CONFIG.UI_COLORS.PROCESSING)
+            end
+            
+            task.wait(0.2) -- Brief pause between actions
+        end
+        
+        State.IsExecuting = false
+        UI.AddLog("✅ Plan execution complete!", CONFIG.UI_COLORS.SUCCESS)
+        UI.UpdateStatus("Ready", CONFIG.UI_COLORS.SUCCESS)
+    end)
+end
+
+function Executor.ExecuteAction(action)
+    local actionType = action.type
+    local params = action.params or {}
+    
+    local handlers = {
+        MOVE_TO = Executor.MoveTo,
+        CLICK = Executor.Click,
+        KEY_PRESS = Executor.KeyPress,
+        EQUIP_TOOL = Executor.EquipTool,
+        USE_TOOL = Executor.UseTool,
+        JUMP = Executor.Jump,
+        INTERACT = Executor.Interact,
+        CHAT = Executor.ChatMessage,
+        WAIT = Executor.Wait,
+        LOOK_AT = Executor.LookAt,
+        CLICK_GUI = Executor.ClickGUI,
+        PATHFIND = Executor.Pathfind,
+        EMOTE = Executor.Emote,
+        CUSTOM = Executor.Custom,
+    }
+    
+    local handler = handlers[actionType]
+    if handler then
+        local success, err = pcall(handler, params)
+        if not success then
+            UI.AddLog("  ❌ Action error: " .. tostring(err), CONFIG.UI_COLORS.ERROR)
+            return false
+        end
+        return true
+    else
+        UI.AddLog("  ❓ Unknown action type: " .. tostring(actionType), CONFIG.UI_COLORS.ERROR)
+        return false
+    end
+end
+
+function Executor.MoveTo(params)
+    -- Refresh character references
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    Humanoid = Character:WaitForChild("Humanoid")
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+    
+    local targetPos
+    
+    if params.target then
+        local objects = EnvironmentScanner.FindObject(params.target)
+        if #objects > 0 and objects[1].position then
+            targetPos = objects[1].position
+        else
+            UI.AddLog("  Could not find target: " .. params.target, CONFIG.UI_COLORS.ERROR)
+            return
+        end
+    elseif params.x and params.y and params.z then
+        targetPos = Vector3.new(params.x, params.y, params.z)
+    else
+        return
+    end
+    
+    Humanoid:MoveTo(targetPos)
+    
+    local reached = Humanoid.MoveToFinished:Wait()
+    if not reached then
+        -- Try pathfinding as fallback
+        Executor.Pathfind({position = {x = targetPos.X, y = targetPos.Y, z = targetPos.Z}})
+    end
+end
+
+function Executor.Pathfind(params)
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    Humanoid = Character:WaitForChild("Humanoid")
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+    
+    local targetPos
+    
+    if params.target then
+        local objects = EnvironmentScanner.FindObject(params.target)
+        if #objects > 0 and objects[1].position then
+            targetPos = objects[1].position
+        else
+            UI.AddLog("  Pathfind target not found: " .. params.target, CONFIG.UI_COLORS.ERROR)
+            return
+        end
+    elseif params.position then
+        targetPos = Vector3.new(params.position.x or 0, params.position.y or 0, params.position.z or 0)
+    elseif params.x then
+        targetPos = Vector3.new(params.x, params.y or 0, params.z or 0)
+    else
+        return
+    end
+    
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2,
+        AgentHeight = 5,
+        AgentCanJump = true,
+        AgentCanClimb = true,
+    })
+    
+    local success, err = pcall(function()
+        path:ComputeAsync(HumanoidRootPart.Position, targetPos)
+    end)
+    
+    if not success then
+        UI.AddLog("  Pathfinding error: " .. tostring(err), CONFIG.UI_COLORS.ERROR)
+        -- Fallback to direct movement
+        Humanoid:MoveTo(targetPos)
+        Humanoid.MoveToFinished:Wait()
+        return
+    end
+    
+    if path.Status == Enum.PathStatus.Success then
+        local waypoints = path:GetWaypoints()
+        
+        for _, waypoint in ipairs(waypoints) do
+            if not State.IsExecuting then break end
+            
+            if waypoint.Action == Enum.PathWaypointAction.Jump then
+                Humanoid.Jump = true
+            end
+            
+            Humanoid:MoveTo(waypoint.Position)
+            
+            local timeOut = tick() + CONFIG.PATHFINDING_TIMEOUT
+            local reached = false
+            
+            while not reached and tick() < timeOut and State.IsExecuting do
+                local dist = Utils.Distance(HumanoidRootPart.Position, waypoint.Position)
+                if dist < 4 then
+                    reached = true
+                end
+                task.wait(0.1)
+            end
+        end
+    else
+        UI.AddLog("  Path not found, using direct movement", CONFIG.UI_COLORS.PROCESSING)
+        Humanoid:MoveTo(targetPos)
+        Humanoid.MoveToFinished:Wait()
+    end
+end
+
+function Executor.Click(params)
+    if params.target then
+        local objects = EnvironmentScanner.FindObject(params.target)
+        for _, obj in ipairs(objects) do
+            local instance = obj.instance
+            
+            -- Try ClickDetector
+            local clickDetector = instance:FindFirstChildWhichIsA("ClickDetector", true)
+            if clickDetector then
+                -- Move close enough first
+                if obj.position then
+                    local dist = Utils.Distance(HumanoidRootPart.Position, obj.position)
+                    if dist > clickDetector.MaxActivationDistance then
+                        Executor.Pathfind({position = {
+                            x = obj.position.X, 
+                            y = obj.position.Y, 
+                            z = obj.position.Z
+                        }})
+                    end
+                end
+                
+                fireclickdetector(clickDetector)
+                UI.AddLog("  Clicked: " .. obj.name, CONFIG.UI_COLORS.SUCCESS)
+                return
+            end
+            
+            -- Try ProximityPrompt
+            local prompt = instance:FindFirstChildWhichIsA("ProximityPrompt", true)
+            if prompt then
+                if obj.position then
+                    local dist = Utils.Distance(HumanoidRootPart.Position, obj.position)
+                    if dist > prompt.MaxActivationDistance then
+                        Executor.Pathfind({position = {
+                            x = obj.position.X,
+                            y = obj.position.Y,
+                            z = obj.position.Z
+                        }})
+                    end
+                end
+                
+                fireproximityprompt(prompt)
+                UI.AddLog("  Activated prompt: " .. obj.name, CONFIG.UI_COLORS.SUCCESS)
+                return
+            end
+        end
+    end
+end
+
+function Executor.KeyPress(params)
+    local keyName = params.key
+    local duration = params.duration or 0.1
+    
+    local keyCode = Enum.KeyCode[keyName]
+    if keyCode then
+        -- Simulate key press using VirtualInputManager if available
+        -- Otherwise use humanoid controls
+        local vim = game:GetService("VirtualInputManager")
+        if vim then
+            pcall(function()
+                vim:SendKeyEvent(true, keyCode, false, game)
+                task.wait(duration)
+                vim:SendKeyEvent(false, keyCode, false, game)
+            end)
+        else
+            -- Fallback: interpret common keys
+            if keyName == "Space" then
+                Humanoid.Jump = true
+            elseif keyName == "W" then
+                Humanoid:Move(Vector3.new(0, 0, -1))
+                task.wait(duration)
+                Humanoid:Move(Vector3.new(0, 0, 0))
+            elseif keyName == "S" then
+                Humanoid:Move(Vector3.new(0, 0, 1))
+                task.wait(duration)
+                Humanoid:Move(Vector3.new(0, 0, 0))
+            elseif keyName == "A" then
+                Humanoid:Move(Vector3.new(-1, 0, 0))
+                task.wait(duration)
+                Humanoid:Move(Vector3.new(0, 0, 0))
+            elseif keyName == "D" then
+                Humanoid:Move(Vector3.new(1, 0, 0))
+                task.wait(duration)
+                Humanoid:Move(Vector3.new(0, 0, 0))
+            end
+        end
+        
+        UI.AddLog("  Key pressed: " .. keyName, CONFIG.UI_COLORS.TEXT)
+    end
+end
+
+function Executor.EquipTool(params)
+    local toolName = params.toolName or params.name
+    if not toolName then return end
+    
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        local tool = backpack:FindFirstChild(toolName)
+        if tool and tool:IsA("Tool") then
+            Humanoid:EquipTool(tool)
+            UI.AddLog("  Equipped: " .. toolName, CONFIG.UI_COLORS.SUCCESS)
+            return
+        end
+    end
+    
+    -- Search by partial name
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") and string.lower(item.Name):find(string.lower(toolName)) then
+                Humanoid:EquipTool(item)
+                UI.AddLog("  Equipped: " .. item.Name, CONFIG.UI_COLORS.SUCCESS)
+                return
+            end
+        end
+    end
+    
+    UI.AddLog("  Tool not found: " .. toolName, CONFIG.UI_COLORS.ERROR)
+end
+
+function Executor.UseTool(params)
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    
+    local tool = Character:FindFirstChildWhichIsA("Tool")
+    if tool then
+        tool:Activate()
+        UI.AddLog("  Used tool: " .. tool.Name, CONFIG.UI_COLORS.SUCCESS)
+    else
+        UI.AddLog("  No tool equipped", CONFIG.UI_COLORS.ERROR)
+    end
+end
+
+function Executor.Jump(params)
+    Humanoid = Character:WaitForChild("Humanoid")
+    Humanoid.Jump = true
+    task.wait(0.5)
+    UI.AddLog("  Jumped!", CONFIG.UI_COLORS.TEXT)
+end
+
+function Executor.Interact(params)
+    if params.target then
+        local objects = EnvironmentScanner.FindObject(params.target)
+        if #objects > 0 then
+            local obj = objects[1]
+            
+            -- Move to object first
+            if obj.position then
+                Executor.Pathfind({position = {
+                    x = obj.position.X,
+                    y = obj.position.Y,
+                    z = obj.position.Z
+                }})
+            end
+            
+            local method = params.method or "auto"
+            
+            if method == "auto" or method == "click" then
+                local cd = obj.instance:FindFirstChildWhichIsA("ClickDetector", true)
+                if cd then
+                    fireclickdetector(cd)
+                    UI.AddLog("  Interacted (click): " .. obj.name, CONFIG.UI_COLORS.SUCCESS)
+                    return
+                end
+            end
+            
+            if method == "auto" or method == "prompt" then
+                local pp = obj.instance:FindFirstChildWhichIsA("ProximityPrompt", true)
+                if pp then
+                    fireproximityprompt(pp)
+                    UI.AddLog("  Interacted (prompt): " .. obj.name, CONFIG.UI_COLORS.SUCCESS)
+                    return
+                end
+            end
+            
+            if method == "auto" or method == "touch" then
+                -- Touch by moving to the exact position
+                if obj.position then
+                    Humanoid:MoveTo(obj.position)
+                    Humanoid.MoveToFinished:Wait()
+                    UI.AddLog("  Interacted (touch): " .. obj.name, CONFIG.UI_COLORS.SUCCESS)
+                end
+            end
+        end
+    end
+end
+
+function Executor.ChatMessage(params)
+    local message = params.message or ""
+    if message ~= "" then
+        pcall(function()
+            -- Try multiple chat methods
+            local chatService = game:GetService("Chat")
+            -- Use the default chat system
+            local chatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            if chatEvent then
+                local sayEvent = chatEvent:FindFirstChild("SayMessageRequest")
+                if sayEvent then
+                    sayEvent:FireServer(message, "All")
+                    UI.AddLog("  Sent chat: " .. message, CONFIG.UI_COLORS.SUCCESS)
+                    return
+                end
+            end
+            
+            -- Fallback: use StarterGui SetCore
+            StarterGui:SetCore("ChatMakeSystemMessage", {
+                Text = "[AI] " .. message,
+                Color = CONFIG.UI_COLORS.PRIMARY,
+            })
+        end)
+    end
+end
+
+function Executor.Wait(params)
+    local duration = params.duration or 1
+    UI.AddLog("  Waiting " .. duration .. "s...", CONFIG.UI_COLORS.TEXT)
+    task.wait(duration)
+end
+
+function Executor.LookAt(params)
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+    
+    local targetPos
+    
+    if params.target then
+        local objects = EnvironmentScanner.FindObject(params.target)
+        if #objects > 0 and objects[1].position then
+            targetPos = objects[1].position
+        end
+    elseif params.position then
+        targetPos = Vector3.new(params.position.x or 0, params.position.y or 0, params.position.z or 0)
+    end
+    
+    if targetPos then
+        local lookCF = CFrame.lookAt(HumanoidRootPart.Position, targetPos)
+        HumanoidRootPart.CFrame = lookCF
+        UI.AddLog("  Looking at target", CONFIG.UI_COLORS.TEXT)
+    end
+end
+
+function Executor.ClickGUI(params)
+    local buttonName = params.buttonName
+    local path = params.path
+    
+    local function findButton(parent, name)
+        for _, child in ipairs(parent:GetDescendants()) do
+            if (child:IsA("TextButton") or child:IsA("ImageButton")) then
+                if child.Name == name or (child:IsA("TextButton") and child.Text == name) then
+                    return child
+                end
+            end
+        end
+        return nil
+    end
+    
+    local button
+    
+    if path then
+        -- Navigate path
+        local parts = {}
+        for part in path:gmatch("[^%.]+") do
+            table.insert(parts, part)
+        end
+        
+        local current = PlayerGui
+        for _, partName in ipairs(parts) do
+            current = current:FindFirstChild(partName)
+            if not current then break end
+        end
+        
+        if current and (current:IsA("TextButton") or current:IsA("ImageButton")) then
+            button = current
+        end
+    end
+    
+    if not button and buttonName then
+        button = findButton(PlayerGui, buttonName)
+    end
+    
+    if button then
+        -- Simulate click using virtual input or direct fire
+        pcall(function()
+            -- Try firing the button's events directly
+            for _, conn in ipairs(button:GetConnections()) do
+                -- This is executor-specific
+            end
+        end)
+        
+        -- Use VirtualInputManager
+        pcall(function()
+            local vim = game:GetService("VirtualInputManager")
+            local pos = button.AbsolutePosition + button.AbsoluteSize / 2
+            vim:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
+            task.wait(0.05)
+            vim:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+        end)
+        
+        UI.AddLog("  Clicked GUI: " .. (button.Name or "button"), CONFIG.UI_COLORS.SUCCESS)
+    else
+        UI.AddLog("  GUI button not found", CONFIG.UI_COLORS.ERROR)
+    end
+end
+
+function Executor.Emote(params)
+    local emote = params.emote or "wave"
+    
+    -- Try built-in emote system
+    pcall(function()
+        local animateScript = Character:FindFirstChild("Animate")
+        if animateScript then
+            -- Use chat command for emotes
+            local chatEvent = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+            if chatEvent then
+                local sayEvent = chatEvent:FindFirstChild("SayMessageRequest")
+                if sayEvent then
+                    sayEvent:FireServer("/e " .. emote, "All")
+                end
+            end
+        end
+    end)
+    
+    UI.AddLog("  Emote: " .. emote, CONFIG.UI_COLORS.TEXT)
+end
+
+function Executor.Custom(params)
+    if params.keySequence then
+        for _, key in ipairs(params.keySequence) do
+            Executor.KeyPress({key = key, duration = 0.15})
+            task.wait(0.1)
+        end
+    end
+    
+    UI.AddLog("  Custom action: " .. (params.description or "executed"), CONFIG.UI_COLORS.TEXT)
+end
+
+function Executor.Stop()
+    State.IsExecuting = false
+end
+
+-- ============================================================
+-- COMMAND PROCESSOR
+-- ============================================================
+local CommandProcessor = {}
+
+function CommandProcessor.ProcessCommand(input)
+    if not input or input == "" then return end
+    
+    input = input:gsub("^%s+", ""):gsub("%s+$", "")
+    
+    -- Check for special commands
+    if input:lower() == "stop" or input:lower() == "cancel" then
+        Executor.Stop()
+        UI.AddLog("⏹ Execution stopped!", CONFIG.UI_COLORS.ACCENT)
+        return
+    end
+    
+    if input:lower() == "scan" then
+        EnvironmentScanner.ScanWorkspace()
+        return
+    end
+    
+    if input:lower() == "nearby" then
+        local nearby = EnvironmentScanner.GetNearbyObjects(50)
+        UI.AddLog("📍 Nearby objects:", CONFIG.UI_COLORS.ACCENT)
+        for i, obj in ipairs(nearby) do
+            if i <= 20 then
+                UI.AddLog(string.format("  %.1fm - %s (%s)%s%s", 
+                    obj.distance, obj.name, obj.class,
+                    obj.clickable and " [CLICK]" or "",
+                    obj.hasPrompt and " [PROMPT]" or ""), CONFIG.UI_COLORS.TEXT)
+            end
+        end
+        return
+    end
+    
+    if input:lower() == "skills" then
+        UI.AddLog("📚 Learned Skills:", CONFIG.UI_COLORS.ACCENT)
+        if Utils.TableLength(State.SkillLibrary) == 0 then
+            UI.AddLog("  No skills learned yet. Record and process actions first!", CONFIG.UI_COLORS.PROCESSING)
+        else
+            for name, skill in pairs(State.SkillLibrary) do
+                UI.AddLog(string.format("  • %s (%.0f%%): %s", 
+                    name, (skill.confidence or 0) * 100, skill.description or ""), CONFIG.UI_COLORS.TEXT)
+            end
+        end
+        return
+    end
+    
+    if input:lower() == "help" then
+        UI.AddLog("📖 Commands:", CONFIG.UI_COLORS.ACCENT)
+        UI.AddLog("  'stop' / 'cancel' - Stop current execution", CONFIG.UI_COLORS.TEXT)
+        UI.AddLog("  'scan' - Rescan environment", CONFIG.UI_COLORS.TEXT)
+        UI.AddLog("  'nearby' - List nearby objects", CONFIG.UI_COLORS.TEXT)
+        UI.AddLog("  'skills' - List learned skills", CONFIG.UI_COLORS.TEXT)
+        UI.AddLog("  'help' - Show this help", CONFIG.UI_COLORS.TEXT)
+        UI.AddLog("  Anything else - AI will attempt to do it!", CONFIG.UI_COLORS.SUCCESS)
+        return
+    end
+    
+    -- Process with AI
+    UI.AddLog("🤔 Thinking: \"" .. Utils.TruncateString(input, 100) .. "\"", CONFIG.UI_COLORS.PROCESSING)
+    UI.UpdateStatus("Thinking", CONFIG.UI_COLORS.PROCESSING)
+    
+    spawn(function()
+        local plan = CommandProcessor.GeneratePlan(input)
+        if plan then
+            Executor.ExecutePlan(plan)
+        end
+    end)
+end
+
+function CommandProcessor.GeneratePlan(userCommand)
+    -- Build context
+    Brain.BuildSystemPrompt()
+    
+    -- Get nearby objects for context
+    local nearby = EnvironmentScanner.GetNearbyObjects(80)
+    local nearbyStr = "NEARBY OBJECTS:\n"
+    for i, obj in ipairs(nearby) do
+        if i <= 30 then
+            nearbyStr = nearbyStr .. string.format("- %s (%s) at %.1fm%s%s, parent=%s\n",
+                obj.name, obj.class, obj.distance,
+                obj.clickable and " [clickable]" or "",
+                obj.hasPrompt and " [has prompt]" or "",
+                obj.parent or "?")
+        end
+    end
+    
+    -- Player state
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    Humanoid = Character:WaitForChild("Humanoid")
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+    
+    local playerState = string.format([[
+PLAYER STATE:
+- Position: (%.1f, %.1f, %.1f)
+- Health: %.0f/%.0f
+- WalkSpeed: %.0f
+- Currently equipped tool: %s
+- State: %s
+]], 
+        HumanoidRootPart.Position.X, HumanoidRootPart.Position.Y, HumanoidRootPart.Position.Z,
+        Humanoid.Health, Humanoid.MaxHealth,
+        Humanoid.WalkSpeed,
+        Character:FindFirstChildWhichIsA("Tool") and Character:FindFirstChildWhichIsA("Tool").Name or "None",
+        Humanoid:GetState().Name
+    )
+    
+    -- Build tools list
+    local toolsList = "AVAILABLE TOOLS:\n"
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        for _, tool in ipairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") then
+                toolsList = toolsList .. "- " .. tool.Name .. "\n"
+            end
+        end
+    end
+    local equippedTool = Character:FindFirstChildWhichIsA("Tool")
+    if equippedTool then
+        toolsList = toolsList .. "- " .. equippedTool.Name .. " [EQUIPPED]\n"
+    end
+    
+    -- GUI info
+    local guiInfo = "VISIBLE GUI ELEMENTS:\n"
+    for _, gui in ipairs(PlayerGui:GetChildren()) do
+        if gui.Name ~= "MistralLearnUI" and gui:IsA("ScreenGui") and gui.Enabled then
+            for _, desc in ipairs(gui:GetDescendants()) do
+                if desc.Visible and (desc:IsA("TextButton") or desc:IsA("ImageButton")) then
+                    local text = desc:IsA("TextButton") and desc.Text or desc.Name
+                    if text and text ~= "" then
+                        guiInfo = guiInfo .. string.format("- Button: '%s' at %s\n", text, desc:GetFullName())
+                    end
+                end
+            end
+        end
+    end
+    
+    local messages = {
+        {role = "system", content = State.SystemPrompt},
+        {role = "user", content = string.format([[
+%s
+
+%s
+
+%s
+
+%s
+
+USER COMMAND: %s
+
+Create a detailed action plan to accomplish this task. Consider the environment, nearby objects, available tools, and your learned skills. 
+If the task seems impossible in this environment, explain why in the plan description but still attempt the closest possible actions.
+Respond with valid JSON only.
+]], playerState, nearbyStr, toolsList, guiInfo, userCommand)},
+    }
+    
+    -- Add conversation history for context
+    for _, msg in ipairs(State.ConversationHistory) do
+        table.insert(messages, #messages, msg)
+    end
+    
+    local response, err = Network.MistralRequest(messages, 0.4, 4096)
+    
+    if not response then
+        UI.AddLog("❌ AI Error: " .. tostring(err), CONFIG.UI_COLORS.ERROR)
+        return nil
+    end
+    
+    -- Store in conversation history
+    table.insert(State.ConversationHistory, {role = "user", content = userCommand})
+    table.insert(State.ConversationHistory, {role = "assistant", content = response})
+    
+    -- Keep conversation history manageable
+    while #State.ConversationHistory > 20 do
+        table.remove(State.ConversationHistory, 1)
+    end
+    
+    -- Parse JSON response
+    local success, plan = pcall(function()
+        local jsonStr = response:match("{.*}")
+        if jsonStr then
+            return HttpService:JSONDecode(jsonStr)
+        end
+        return nil
+    end)
+    
+    if success and plan then
+        UI.AddLog("📋 Plan: " .. (plan.plan or "Generated"), CONFIG.UI_COLORS.ACCENT)
+        if plan.reasoning then
+            UI.AddLog("💭 Reasoning: " .. Utils.TruncateString(plan.reasoning, 150), CONFIG.UI_COLORS.TEXT)
+        end
+        if plan.confidence then
+            UI.AddLog(string.format("🎯 Confidence: %.0f%%", (plan.confidence or 0) * 100), CONFIG.UI_COLORS.TEXT)
+        end
+        return plan
+    else
+        -- Try to interpret as natural language plan
+        UI.AddLog("⚠ Could not parse structured plan, attempting interpretation...", CONFIG.UI_COLORS.PROCESSING)
+        
+        -- Create a simple plan based on keywords in the response
+        local simplePlan = CommandProcessor.InterpretNaturalResponse(response, userCommand)
+        return simplePlan
+    end
+end
+
+function CommandProcessor.InterpretNaturalResponse(response, originalCommand)
+    -- Fallback: create basic action plan from keywords
+    local plan = {
+        plan = "Interpreted from AI response",
+        actions = {},
+        confidence = 0.5,
+        reasoning = response,
+    }
+    
+    local cmd = string.lower(originalCommand)
+    
+    -- Movement commands
+    if cmd:find("go to") or cmd:find("walk to") or cmd:find("move to") or cmd:find("run to") then
+        local target = cmd:match("go to (.+)") or cmd:match("walk to (.+)") or 
+                       cmd:match("move to (.+)") or cmd:match("run to (.+)")
+        if target then
+            table.insert(plan.actions, {
+                type = "PATHFIND",
+                params = {target = target:gsub("^%s+", ""):gsub("%s+$", "")},
+                description = "Navigate to " .. target,
+            })
+        end
+    end
+    
+    -- Jump
+    if cmd:find("jump") then
+        table.insert(plan.actions, {
+            type = "JUMP",
+            params = {},
+            description = "Jump",
+        })
+    end
+    
+    -- Click/interact
+    if cmd:find("click") or cmd:find("interact") or cmd:find("use") or cmd:find("activate") then
+        local target = cmd:match("click (.+)") or cmd:match("interact with (.+)") or 
+                       cmd:match("use (.+)") or cmd:match("activate (.+)")
+        if target then
+            table.insert(plan.actions, {
+                type = "INTERACT",
+                params = {target = target:gsub("^%s+", ""):gsub("%s+$", ""), method = "auto"},
+                description = "Interact with " .. target,
+            })
+        end
+    end
+    
+    -- Equip tool
+    if cmd:find("equip") or cmd:find("grab") or cmd:find("pick up") then
+        local tool = cmd:match("equip (.+)") or cmd:match("grab (.+)") or cmd:match("pick up (.+)")
+        if tool then
+            table.insert(plan.actions, {
+                type = "EQUIP_TOOL",
+                params = {toolName = tool:gsub("^%s+", ""):gsub("%s+$", "")},
+                description = "Equip " .. tool,
+            })
+        end
+    end
+    
+    -- Chat
+    if cmd:find("say") or cmd:find("chat") or cmd:find("tell") then
+        local msg = cmd:match("say (.+)") or cmd:match("chat (.+)") or cmd:match("tell (.+)")
+        if msg then
+            table.insert(plan.actions, {
+                type = "CHAT",
+                params = {message = msg},
+                description = "Send message",
+            })
+        end
+    end
+    
+    -- If no actions were interpreted, create a generic scan + attempt
+    if #plan.actions == 0 then
+        table.insert(plan.actions, {
+            type = "WAIT",
+            params = {duration = 0.5},
+            description = "Processing command...",
+        })
+        UI.AddLog("⚠ Could not interpret command. Try being more specific!", CONFIG.UI_COLORS.PROCESSING)
+        UI.AddLog("  Examples: 'go to the red part', 'jump 3 times', 'click the door'", CONFIG.UI_COLORS.TEXT)
+    end
+    
+    return plan
+end
+
+-- ============================================================
+-- MAIN INITIALIZATION
+-- ============================================================
+local function Initialize()
+    -- Create UI
+    UI.Create()
+    
+    UI.AddLog("🚀 Mistral Learn v2.0 initializing...", CONFIG.UI_COLORS.PRIMARY)
+    UI.AddLog("Welcome! Let's set up your AI assistant.", CONFIG.UI_COLORS.TEXT)
+    
+    -- ========== SETUP FLOW ==========
+    local elements = UI.Elements
+    
+    -- Handle API Key submission
+    elements.SubmitKeyBtn.MouseButton1Click:Connect(function()
+        local key = elements.APIKeyInput.Text
+        
+        if key == "" then
+            elements.SetupStatus.Text = "⚠ Please enter a key!"
+            elements.SetupStatus.TextColor3 = CONFIG.UI_COLORS.ERROR
+            return
+        end
+        
+        if State.SetupPhase == "AWAITING_MISTRAL_KEY" then
+            elements.SetupStatus.Text = "🔄 Validating Mistral API key..."
+            elements.SetupStatus.TextColor3 = CONFIG.UI_COLORS.PROCESSING
+            elements.SubmitKeyBtn.Text = "⏳ Validating..."
+            
+            spawn(function()
+                local valid, err = Network.ValidateMistralKey(key)
+                
+                if valid then
+                    State.MistralAPIKey = key
+                    State.SetupPhase = "AWAITING_LIBYAGI_KEY"
+                    
+                    UI.AddLog("✅ Mistral API key validated!", CONFIG.UI_COLORS.SUCCESS)
+                    
+                    elements.SetupLabel.Text = "🔑 Enter your LibYAGI Key (optional):"
+                    elements.APIKeyInput.Text = ""
+                    elements.APIKeyInput.PlaceholderText = "LibYAGI key (press Skip if none)..."
+                    elements.SubmitKeyBtn.Text = "✓ Submit Key"
+                    elements.SetupStatus.Text = "Step 2/2: LibYAGI Key (optional - enhances learning)"
+                    elements.SetupStatus.TextColor3 = CONFIG.UI_COLORS.ACCENT
+                    
+                    -- Add skip button
+                    local SkipBtn = Instance.new("TextButton")
+                    SkipBtn.Name = "SkipBtn"
+                    SkipBtn.Size = UDim2.new(0.48, 0, 0, 35)
+                    SkipBtn.Position = UDim2.new(0.51, 0, 0, 95)
+                    SkipBtn.BackgroundColor3 = CONFIG.UI_COLORS.SECONDARY
+                    SkipBtn.BorderSizePixel = 0
+                    SkipBtn.Text = "⏭ Skip"
+                    SkipBtn.TextColor3 = CONFIG.UI_COLORS.TEXT
+                    SkipBtn.TextSize = 14
+                    SkipBtn.Font = Enum.Font.GothamBold
+                    SkipBtn.Parent = elements.SetupPanel
+                    
+                    local SkipCorner = Instance.new("UICorner")
+                    SkipCorner.CornerRadius = UDim.new(0, 8)
+                    SkipCorner.Parent = SkipBtn
+                    
+                    elements.SubmitKeyBtn.Size = UDim2.new(0.48, 0, 0, 35)
+                    
+                    SkipBtn.MouseButton1Click:Connect(function()
+                        CompleteSetup()
+                    end)
+                else
+                    elements.SetupStatus.Text = "❌ Invalid key: " .. tostring(err)
+                    elements.SetupStatus.TextColor3 = CONFIG.UI_COLORS.ERROR
+                    elements.SubmitKeyBtn.Text = "✓ Submit Key"
+                    UI.AddLog("❌ Mistral key validation failed: " .. tostring(err), CONFIG.UI_COLORS.ERROR)
+                end
+            end)
+            
+        elseif State.SetupPhase == "AWAITING_LIBYAGI_KEY" then
+            State.LibYAGIKey = key
+            UI.AddLog("✅ LibYAGI key saved!", CONFIG.UI_COLORS.SUCCESS)
+            CompleteSetup()
+        end
+    end)
+    
+    -- Character respawn handling
+    LocalPlayer.CharacterAdded:Connect(function(char)
+        Character = char
+        Humanoid = char:WaitForChild("Humanoid")
+        HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
+        UI.AddLog("🔄 Character respawned, references updated", CONFIG.UI_COLORS.TEXT)
+    end)
+    
+    -- Frame counter
+    RunService.Heartbeat:Connect(function()
+        State.FrameCount = State.FrameCount + 1
+    end)
+end
+
+function CompleteSetup()
+    State.SetupPhase = "READY"
+    State.IsInitialized = true
+    
+    local elements = UI.Elements
+    
+    -- Hide setup, show controls
+    elements.SetupPanel.Visible = false
+    elements.ControlsPanel.Visible = true
+    elements.LogPanel.Visible = true
+    elements.CommandPanel.Visible = true
+    elements.StatsPanel.Visible = true
+    
+    UI.UpdateStatus("Ready", CONFIG.UI_COLORS.SUCCESS)
+    UI.AddLog("✅ Setup complete! System ready.", CONFIG.UI_COLORS.SUCCESS)
+    UI.AddLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", CONFIG.UI_COLORS.TEXT)
+    UI.AddLog("HOW TO USE:", CONFIG.UI_COLORS.ACCENT)
+    UI.AddLog("1. Click 'START RECORDING' and demonstrate actions", CONFIG.UI_COLORS.TEXT)
+    UI.AddLog("2. Click 'STOP RECORDING' when done", CONFIG.UI_COLORS.TEXT)
+    UI.AddLog("3. Click 'PROCESS & LEARN' to analyze", CONFIG.UI_COLORS.TEXT)
+    UI.AddLog("4. Type commands and the AI will execute them!", CONFIG.UI_COLORS.TEXT)
+    UI.AddLog("5. Type 'help' for available commands", CONFIG.UI_COLORS.TEXT)
+    UI.AddLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", CONFIG.UI_COLORS.TEXT)
+    
+    -- Initial environment scan
+    spawn(function()
+        task.wait(1)
+        EnvironmentScanner.ScanWorkspace()
+        Brain.BuildSystemPrompt()
+    end)
+    
+    -- ========== CONNECT CONTROLS ==========
+    
+    -- Record button
+    elements.RecordBtn.MouseButton1Click:Connect(function()
+        if State.IsRecording then
+            Recorder.Stop()
+        else
+            Recorder.Start()
+        end
+    end)
+    
+    -- Process button
+    elements.ProcessBtn.MouseButton1Click:Connect(function()
+        if State.IsProcessing then
+            UI.AddLog("⚠ Already processing!", CONFIG.UI_COLORS.PROCESSING)
+            return
+        end
+        if State.IsRecording then
+            Recorder.Stop()
+        end
+        spawn(function()
+            Brain.ProcessRecordedActions()
+        end)
+    end)
+    
+    -- Send command
+    local function sendCommand()
+        local text = elements.CommandInput.Text
+        if text and text ~= "" then
+            elements.CommandInput.Text = ""
+            CommandProcessor.ProcessCommand(text)
+        end
+    end
+    
+    elements.SendBtn.MouseButton1Click:Connect(sendCommand)
+    elements.CommandInput.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            sendCommand()
+        end
+    end)
+    
+    -- Stats update loop
+    spawn(function()
+        while true do
+            UI.UpdateStats()
+            task.wait(2)
+        end
+    end)
+end
+
+-- ============================================================
+-- LAUNCH
+-- ============================================================
+Initialize()
+
+print("[MistralLearn] Script loaded successfully! Check the in-game UI.")
