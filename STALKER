@@ -1,0 +1,2480 @@
+-- STALKER | StarterPlayerScript
+-- Place this LocalScript inside StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local SoundService = game:GetService("SoundService")
+local Lighting = game:GetService("Lighting")
+local UserInputService = game:GetService("UserInputService")
+local TextChatService = game:GetService("TextChatService")
+local StarterGui = game:GetService("StarterGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Camera = workspace.CurrentCamera
+
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+
+repeat task.wait() until player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+local character = player.Character
+local humanoid = character:FindFirstChildOfClass("Humanoid")
+local rootPart = character:FindFirstChild("HumanoidRootPart")
+
+-- ═══════════════════════════════════════════════════════
+-- STALKER ENTITY
+-- ═══════════════════════════════════════════════════════
+
+local stalkerModel = Instance.new("Model")
+stalkerModel.Name = "STALKER"
+
+local stalkerTorso = Instance.new("Part")
+stalkerTorso.Name = "HumanoidRootPart"
+stalkerTorso.Size = Vector3.new(2, 5.5, 1)
+stalkerTorso.Color = Color3.new(0, 0, 0)
+stalkerTorso.Material = Enum.Material.SmoothPlastic
+stalkerTorso.Anchored = true
+stalkerTorso.CanCollide = false
+stalkerTorso.CastShadow = true
+stalkerTorso.Transparency = 0
+stalkerTorso.Parent = stalkerModel
+
+local stalkerHead = Instance.new("Part")
+stalkerHead.Name = "Head"
+stalkerHead.Size = Vector3.new(1.8, 1.8, 1.8)
+stalkerHead.Shape = Enum.PartType.Ball
+stalkerHead.Color = Color3.new(0, 0, 0)
+stalkerHead.Material = Enum.Material.SmoothPlastic
+stalkerHead.Anchored = true
+stalkerHead.CanCollide = false
+stalkerHead.CastShadow = true
+stalkerHead.Parent = stalkerModel
+
+local leftEye = Instance.new("Part")
+leftEye.Name = "LeftEye"
+leftEye.Size = Vector3.new(0.25, 0.4, 0.1)
+leftEye.Color = Color3.new(1, 0, 0)
+leftEye.Material = Enum.Material.Neon
+leftEye.Anchored = true
+leftEye.CanCollide = false
+leftEye.Parent = stalkerModel
+
+local rightEye = Instance.new("Part")
+rightEye.Name = "RightEye"
+rightEye.Size = Vector3.new(0.25, 0.4, 0.1)
+rightEye.Color = Color3.new(1, 0, 0)
+rightEye.Material = Enum.Material.Neon
+rightEye.Anchored = true
+rightEye.CanCollide = false
+rightEye.Parent = stalkerModel
+
+local leftArm = Instance.new("Part")
+leftArm.Name = "LeftArm"
+leftArm.Size = Vector3.new(0.6, 4.5, 0.6)
+leftArm.Color = Color3.new(0, 0, 0)
+leftArm.Material = Enum.Material.SmoothPlastic
+leftArm.Anchored = true
+leftArm.CanCollide = false
+leftArm.Parent = stalkerModel
+
+local rightArm = Instance.new("Part")
+rightArm.Name = "RightArm"
+rightArm.Size = Vector3.new(0.6, 4.5, 0.6)
+rightArm.Color = Color3.new(0, 0, 0)
+rightArm.Material = Enum.Material.SmoothPlastic
+rightArm.Anchored = true
+rightArm.CanCollide = false
+rightArm.Parent = stalkerModel
+
+local leftLeg = Instance.new("Part")
+leftLeg.Name = "LeftLeg"
+leftLeg.Size = Vector3.new(0.7, 3.5, 0.7)
+leftLeg.Color = Color3.new(0.05, 0.05, 0.05)
+leftLeg.Material = Enum.Material.SmoothPlastic
+leftLeg.Anchored = true
+leftLeg.CanCollide = false
+leftLeg.Parent = stalkerModel
+
+local rightLeg = Instance.new("Part")
+rightLeg.Name = "RightLeg"
+rightLeg.Size = Vector3.new(0.7, 3.5, 0.7)
+rightLeg.Color = Color3.new(0.05, 0.05, 0.05)
+rightLeg.Material = Enum.Material.SmoothPlastic
+rightLeg.Anchored = true
+rightLeg.CanCollide = false
+rightLeg.Parent = stalkerModel
+
+local eyeGlow1 = Instance.new("PointLight")
+eyeGlow1.Color = Color3.new(1, 0, 0)
+eyeGlow1.Brightness = 3
+eyeGlow1.Range = 8
+eyeGlow1.Parent = leftEye
+
+local eyeGlow2 = Instance.new("PointLight")
+eyeGlow2.Color = Color3.new(1, 0, 0)
+eyeGlow2.Brightness = 3
+eyeGlow2.Range = 8
+eyeGlow2.Parent = rightEye
+
+local smokeEmitter = Instance.new("ParticleEmitter")
+smokeEmitter.Color = ColorSequence.new(Color3.new(0, 0, 0))
+smokeEmitter.Size = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.5),
+	NumberSequenceKeypoint.new(1, 3)
+})
+smokeEmitter.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.3),
+	NumberSequenceKeypoint.new(1, 1)
+})
+smokeEmitter.Lifetime = NumberRange.new(1, 3)
+smokeEmitter.Rate = 15
+smokeEmitter.Speed = NumberRange.new(0.5, 1.5)
+smokeEmitter.SpreadAngle = Vector2.new(180, 180)
+smokeEmitter.Parent = stalkerTorso
+
+stalkerModel.Parent = workspace
+
+local function updateStalkerPose(position, lookAt)
+	local cf = CFrame.new(position, Vector3.new(lookAt.X, position.Y, lookAt.Z))
+	stalkerTorso.CFrame = cf
+	stalkerHead.CFrame = cf * CFrame.new(0, 3.8, 0)
+	leftEye.CFrame = cf * CFrame.new(-0.35, 3.9, -0.8)
+	rightEye.CFrame = cf * CFrame.new(0.35, 3.9, -0.8)
+	leftArm.CFrame = cf * CFrame.new(-1.5, 1.2, 0) * CFrame.Angles(math.rad(-15 + math.sin(tick() * 2) * 5), 0, math.rad(-10))
+	rightArm.CFrame = cf * CFrame.new(1.5, 1.2, 0) * CFrame.Angles(math.rad(-15 + math.sin(tick() * 2 + 1) * 5), 0, math.rad(10))
+	leftLeg.CFrame = cf * CFrame.new(-0.5, -2.8, 0) * CFrame.Angles(math.sin(tick() * 4) * 0.2, 0, 0)
+	rightLeg.CFrame = cf * CFrame.new(0.5, -2.8, 0) * CFrame.Angles(math.sin(tick() * 4 + math.pi) * 0.2, 0, 0)
+end
+
+local function hideStalker()
+	for _, part in pairs(stalkerModel:GetChildren()) do
+		if part:IsA("BasePart") then
+			part.Transparency = 1
+			for _, child in pairs(part:GetChildren()) do
+				if child:IsA("PointLight") then child.Enabled = false end
+				if child:IsA("ParticleEmitter") then child.Enabled = false end
+			end
+		end
+	end
+end
+
+local function showStalker(transparency)
+	transparency = transparency or 0
+	for _, part in pairs(stalkerModel:GetChildren()) do
+		if part:IsA("BasePart") then
+			if part.Name == "LeftEye" or part.Name == "RightEye" then
+				part.Transparency = 0
+			else
+				part.Transparency = transparency
+			end
+			for _, child in pairs(part:GetChildren()) do
+				if child:IsA("PointLight") then child.Enabled = true end
+				if child:IsA("ParticleEmitter") then child.Enabled = true end
+			end
+		end
+	end
+end
+
+hideStalker()
+
+-- ═══════════════════════════════════════════════════════
+-- SOUND ENGINE
+-- ═══════════════════════════════════════════════════════
+
+local sounds = {}
+
+local function createSound(name, id, volume, looped, pitch)
+	local s = Instance.new("Sound")
+	s.Name = name
+	s.SoundId = "rbxassetid://" .. id
+	s.Volume = volume or 1
+	s.Looped = looped or false
+	s.PlaybackSpeed = pitch or 1
+	s.Parent = Camera
+	sounds[name] = s
+	return s
+end
+
+createSound("Ambient", 9114488830, 0.6, true, 0.7)
+createSound("Heartbeat", 142376088, 0, true, 1)
+createSound("Jumpscare", 6229577678, 2.5, false, 0.85)
+createSound("Whisper1", 4891297246, 0.8, false, 0.6)
+createSound("Whisper2", 4891297246, 0.6, false, 0.4)
+createSound("Static", 5765933498, 0.5, true, 1)
+createSound("Breathing", 4813646498, 0.4, true, 0.7)
+createSound("Footstep", 4812876498, 0.6, false, 0.8)
+createSound("Distortion", 9114488830, 0.3, true, 0.3)
+createSound("CreepyMusic", 1843463175, 0.4, true, 0.6)
+createSound("DoorCreak", 4891297246, 0.7, false, 0.5)
+createSound("ThunderBass", 5765933498, 1.5, false, 0.4)
+
+-- ═══════════════════════════════════════════════════════
+-- GUI FRAMEWORK
+-- ═══════════════════════════════════════════════════════
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "STALKER_SYSTEM"
+screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
+screenGui.DisplayOrder = 999
+screenGui.Parent = player.PlayerGui
+
+local vignetteFrame = Instance.new("Frame")
+vignetteFrame.Name = "Vignette"
+vignetteFrame.Size = UDim2.new(1, 0, 1, 0)
+vignetteFrame.Position = UDim2.new(0, 0, 0, 0)
+vignetteFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+vignetteFrame.BackgroundTransparency = 1
+vignetteFrame.BorderSizePixel = 0
+vignetteFrame.ZIndex = 50
+vignetteFrame.Parent = screenGui
+
+local vignetteGradient = Instance.new("UIGradient")
+vignetteGradient.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0),
+	NumberSequenceKeypoint.new(0.3, 0.8),
+	NumberSequenceKeypoint.new(0.7, 0.8),
+	NumberSequenceKeypoint.new(1, 0)
+})
+vignetteGradient.Parent = vignetteFrame
+
+local staticOverlay = Instance.new("ImageLabel")
+staticOverlay.Name = "Static"
+staticOverlay.Size = UDim2.new(1.2, 0, 1.2, 0)
+staticOverlay.Position = UDim2.new(-0.1, 0, -0.1, 0)
+staticOverlay.BackgroundTransparency = 1
+staticOverlay.ImageTransparency = 1
+staticOverlay.Image = "rbxassetid://2700826439"
+staticOverlay.ScaleType = Enum.ScaleType.Tile
+staticOverlay.TileSize = UDim2.new(0, 256, 0, 256)
+staticOverlay.ZIndex = 100
+staticOverlay.Parent = screenGui
+
+local blackScreen = Instance.new("Frame")
+blackScreen.Name = "Blackout"
+blackScreen.Size = UDim2.new(1, 0, 1, 0)
+blackScreen.BackgroundColor3 = Color3.new(0, 0, 0)
+blackScreen.BackgroundTransparency = 1
+blackScreen.BorderSizePixel = 0
+blackScreen.ZIndex = 200
+blackScreen.Parent = screenGui
+
+local jumpscareImage = Instance.new("ImageLabel")
+jumpscareImage.Name = "JumpscareImage"
+jumpscareImage.Size = UDim2.new(1, 0, 1, 0)
+jumpscareImage.BackgroundTransparency = 1
+jumpscareImage.ImageTransparency = 1
+jumpscareImage.Image = "rbxassetid://6829625981"
+jumpscareImage.ZIndex = 300
+jumpscareImage.ScaleType = Enum.ScaleType.Stretch
+jumpscareImage.Parent = screenGui
+
+local messageLabel = Instance.new("TextLabel")
+messageLabel.Name = "HorrorMessage"
+messageLabel.Size = UDim2.new(0.8, 0, 0.15, 0)
+messageLabel.Position = UDim2.new(0.1, 0, 0.42, 0)
+messageLabel.BackgroundTransparency = 1
+messageLabel.TextColor3 = Color3.new(0.7, 0, 0)
+messageLabel.TextTransparency = 1
+messageLabel.Font = Enum.Font.Antique
+messageLabel.TextSize = 48
+messageLabel.TextWrapped = true
+messageLabel.ZIndex = 250
+messageLabel.Text = ""
+messageLabel.Parent = screenGui
+
+local messageStroke = Instance.new("UIStroke")
+messageStroke.Color = Color3.new(0.3, 0, 0)
+messageStroke.Thickness = 2
+messageStroke.Transparency = 1
+messageStroke.Parent = messageLabel
+
+local subliminalImage = Instance.new("ImageLabel")
+subliminalImage.Name = "Subliminal"
+subliminalImage.Size = UDim2.new(1, 0, 1, 0)
+subliminalImage.BackgroundColor3 = Color3.new(0, 0, 0)
+subliminalImage.BackgroundTransparency = 1
+subliminalImage.ImageTransparency = 1
+subliminalImage.Image = "rbxassetid://6829625981"
+subliminalImage.ZIndex = 350
+subliminalImage.Parent = screenGui
+
+local cornerText = Instance.new("TextLabel")
+cornerText.Name = "CornerWhisper"
+cornerText.Size = UDim2.new(0.3, 0, 0.05, 0)
+cornerText.Position = UDim2.new(0.7, 0, 0.9, 0)
+cornerText.BackgroundTransparency = 1
+cornerText.TextColor3 = Color3.new(0.5, 0, 0)
+cornerText.TextTransparency = 1
+cornerText.Font = Enum.Font.Creepster
+cornerText.TextSize = 18
+cornerText.TextXAlignment = Enum.TextXAlignment.Right
+cornerText.ZIndex = 150
+cornerText.Text = ""
+cornerText.Parent = screenGui
+
+local bloodDrip = Instance.new("Frame")
+bloodDrip.Name = "BloodDrip"
+bloodDrip.Size = UDim2.new(0, 3, 0, 0)
+bloodDrip.Position = UDim2.new(0.5, 0, 0, 0)
+bloodDrip.BackgroundColor3 = Color3.new(0.4, 0, 0)
+bloodDrip.BorderSizePixel = 0
+bloodDrip.ZIndex = 120
+bloodDrip.Parent = screenGui
+
+local scanLine = Instance.new("Frame")
+scanLine.Name = "ScanLine"
+scanLine.Size = UDim2.new(1, 0, 0, 2)
+scanLine.Position = UDim2.new(0, 0, 0, 0)
+scanLine.BackgroundColor3 = Color3.new(0, 0, 0)
+scanLine.BackgroundTransparency = 0.7
+scanLine.BorderSizePixel = 0
+scanLine.ZIndex = 90
+scanLine.Visible = false
+scanLine.Parent = screenGui
+
+local redFlash = Instance.new("Frame")
+redFlash.Name = "RedFlash"
+redFlash.Size = UDim2.new(1, 0, 1, 0)
+redFlash.BackgroundColor3 = Color3.new(0.5, 0, 0)
+redFlash.BackgroundTransparency = 1
+redFlash.BorderSizePixel = 0
+redFlash.ZIndex = 180
+redFlash.Parent = screenGui
+
+local distortFrame = Instance.new("Frame")
+distortFrame.Name = "DistortionBars"
+distortFrame.Size = UDim2.new(1, 0, 1, 0)
+distortFrame.BackgroundTransparency = 1
+distortFrame.ZIndex = 85
+distortFrame.Visible = false
+distortFrame.Parent = screenGui
+
+for i = 1, 20 do
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(1, 0, 0, math.random(1, 4))
+	bar.Position = UDim2.new(0, 0, math.random() * 0.95, 0)
+	bar.BackgroundColor3 = Color3.new(0, 0, 0)
+	bar.BackgroundTransparency = 0.6
+	bar.BorderSizePixel = 0
+	bar.Parent = distortFrame
+end
+
+local eyeTracker = Instance.new("ImageLabel")
+eyeTracker.Name = "EyeTracker"
+eyeTracker.Size = UDim2.new(0, 60, 0, 60)
+eyeTracker.Position = UDim2.new(0.5, -30, 0.5, -30)
+eyeTracker.BackgroundTransparency = 1
+eyeTracker.ImageTransparency = 1
+eyeTracker.Image = "rbxassetid://6829625981"
+eyeTracker.ZIndex = 400
+eyeTracker.Parent = screenGui
+
+-- ═══════════════════════════════════════════════════════
+-- CONTROL PANEL GUI
+-- ═══════════════════════════════════════════════════════
+
+local controlGui = Instance.new("ScreenGui")
+controlGui.Name = "STALKER_CONTROLS"
+controlGui.ResetOnSpawn = false
+controlGui.DisplayOrder = 1000
+controlGui.Parent = player.PlayerGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Name = "MainPanel"
+mainFrame.Size = UDim2.new(0, 380, 0, 620)
+mainFrame.Position = UDim2.new(0, 10, 0.5, -310)
+mainFrame.BackgroundColor3 = Color3.fromRGB(8, 2, 2)
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Visible = true
+mainFrame.Parent = controlGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 6)
+mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Color = Color3.fromRGB(120, 0, 0)
+mainStroke.Thickness = 2
+mainStroke.Parent = mainFrame
+
+local glowEffect = Instance.new("UIGradient")
+glowEffect.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 0, 0)),
+	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(15, 2, 2)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 0, 0))
+})
+glowEffect.Rotation = 90
+glowEffect.Parent = mainFrame
+
+local titleBar = Instance.new("Frame")
+titleBar.Name = "TitleBar"
+titleBar.Size = UDim2.new(1, 0, 0, 45)
+titleBar.BackgroundColor3 = Color3.fromRGB(20, 0, 0)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 6)
+titleCorner.Parent = titleBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -10, 1, 0)
+titleLabel.Position = UDim2.new(0, 5, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "☠ S T A L K E R ☠"
+titleLabel.TextColor3 = Color3.fromRGB(200, 0, 0)
+titleLabel.Font = Enum.Font.Creepster
+titleLabel.TextSize = 28
+titleLabel.Parent = titleBar
+
+local titleGlow = Instance.new("UIStroke")
+titleGlow.Color = Color3.fromRGB(255, 0, 0)
+titleGlow.Thickness = 1
+titleGlow.Transparency = 0.5
+titleGlow.Parent = titleLabel
+
+local targetFrame = Instance.new("Frame")
+targetFrame.Name = "TargetFrame"
+targetFrame.Size = UDim2.new(1, -20, 0, 50)
+targetFrame.Position = UDim2.new(0, 10, 0, 50)
+targetFrame.BackgroundColor3 = Color3.fromRGB(15, 0, 0)
+targetFrame.BorderSizePixel = 0
+targetFrame.Parent = mainFrame
+
+local targetCorner = Instance.new("UICorner")
+targetCorner.CornerRadius = UDim.new(0, 4)
+targetCorner.Parent = targetFrame
+
+local targetLabel = Instance.new("TextLabel")
+targetLabel.Size = UDim2.new(0.3, 0, 1, 0)
+targetLabel.BackgroundTransparency = 1
+targetLabel.Text = "TARGET:"
+targetLabel.TextColor3 = Color3.fromRGB(150, 0, 0)
+targetLabel.Font = Enum.Font.Code
+targetLabel.TextSize = 14
+targetLabel.Parent = targetFrame
+
+local targetDropdown = Instance.new("TextButton")
+targetDropdown.Name = "TargetSelect"
+targetDropdown.Size = UDim2.new(0.65, 0, 0.7, 0)
+targetDropdown.Position = UDim2.new(0.3, 5, 0.15, 0)
+targetDropdown.BackgroundColor3 = Color3.fromRGB(25, 2, 2)
+targetDropdown.BorderSizePixel = 0
+targetDropdown.Text = "Select Victim..."
+targetDropdown.TextColor3 = Color3.fromRGB(180, 180, 180)
+targetDropdown.Font = Enum.Font.Code
+targetDropdown.TextSize = 14
+targetDropdown.Parent = targetFrame
+
+local targetDropCorner = Instance.new("UICorner")
+targetDropCorner.CornerRadius = UDim.new(0, 4)
+targetDropCorner.Parent = targetDropdown
+
+local dropdownList = Instance.new("Frame")
+dropdownList.Name = "DropdownList"
+dropdownList.Size = UDim2.new(1, 0, 0, 0)
+dropdownList.Position = UDim2.new(0, 0, 1, 2)
+dropdownList.BackgroundColor3 = Color3.fromRGB(20, 2, 2)
+dropdownList.BorderSizePixel = 0
+dropdownList.ClipsDescendants = true
+dropdownList.ZIndex = 50
+dropdownList.Visible = false
+dropdownList.Parent = targetDropdown
+
+local dropListCorner = Instance.new("UICorner")
+dropListCorner.CornerRadius = UDim.new(0, 4)
+dropListCorner.Parent = dropdownList
+
+local dropLayout = Instance.new("UIListLayout")
+dropLayout.SortOrder = Enum.SortOrder.Name
+dropLayout.Parent = dropdownList
+
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Name = "ButtonScroll"
+scrollFrame.Size = UDim2.new(1, -20, 1, -115)
+scrollFrame.Position = UDim2.new(0, 10, 0, 105)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 4
+scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(120, 0, 0)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollFrame.Parent = mainFrame
+
+local scrollLayout = Instance.new("UIListLayout")
+scrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
+scrollLayout.Padding = UDim.new(0, 6)
+scrollLayout.Parent = scrollFrame
+
+local scrollPadding = Instance.new("UIPadding")
+scrollPadding.PaddingTop = UDim.new(0, 5)
+scrollPadding.Parent = scrollFrame
+
+local selectedTarget = nil
+local dropdownOpen = false
+
+local function refreshDropdown()
+	for _, child in pairs(dropdownList:GetChildren()) do
+		if child:IsA("TextButton") then child:Destroy() end
+	end
+
+	local playerList = Players:GetPlayers()
+	local count = 0
+	for _, p in pairs(playerList) do
+		if p ~= player then
+			count = count + 1
+			local btn = Instance.new("TextButton")
+			btn.Size = UDim2.new(1, 0, 0, 28)
+			btn.BackgroundColor3 = Color3.fromRGB(30, 3, 3)
+			btn.BorderSizePixel = 0
+			btn.Text = "  " .. p.Name
+			btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+			btn.Font = Enum.Font.Code
+			btn.TextSize = 13
+			btn.TextXAlignment = Enum.TextXAlignment.Left
+			btn.ZIndex = 51
+			btn.Parent = dropdownList
+
+			btn.MouseButton1Click:Connect(function()
+				selectedTarget = p
+				targetDropdown.Text = p.Name
+				targetDropdown.TextColor3 = Color3.fromRGB(255, 60, 60)
+				dropdownOpen = false
+				dropdownList.Visible = false
+				dropdownList.Size = UDim2.new(1, 0, 0, 0)
+			end)
+
+			btn.MouseEnter:Connect(function()
+				btn.BackgroundColor3 = Color3.fromRGB(60, 5, 5)
+			end)
+			btn.MouseLeave:Connect(function()
+				btn.BackgroundColor3 = Color3.fromRGB(30, 3, 3)
+			end)
+		end
+	end
+
+	if count == 0 then
+		local noOne = Instance.new("TextButton")
+		noOne.Size = UDim2.new(1, 0, 0, 28)
+		noOne.BackgroundColor3 = Color3.fromRGB(30, 3, 3)
+		noOne.BorderSizePixel = 0
+		noOne.Text = "  No other players"
+		noOne.TextColor3 = Color3.fromRGB(100, 100, 100)
+		noOne.Font = Enum.Font.Code
+		noOne.TextSize = 13
+		noOne.ZIndex = 51
+		noOne.Parent = dropdownList
+	end
+
+	dropdownList.Size = UDim2.new(1, 0, 0, math.min(count, 6) * 28)
+end
+
+targetDropdown.MouseButton1Click:Connect(function()
+	dropdownOpen = not dropdownOpen
+	if dropdownOpen then
+		refreshDropdown()
+		dropdownList.Visible = true
+	else
+		dropdownList.Visible = false
+	end
+end)
+
+-- ═══════════════════════════════════════════════════════
+-- BUTTON CREATION SYSTEM
+-- ═══════════════════════════════════════════════════════
+
+local function createButton(text, icon, layoutOrder, callback)
+	local btn = Instance.new("TextButton")
+	btn.Name = text
+	btn.Size = UDim2.new(1, 0, 0, 42)
+	btn.BackgroundColor3 = Color3.fromRGB(18, 3, 3)
+	btn.BorderSizePixel = 0
+	btn.Text = ""
+	btn.LayoutOrder = layoutOrder
+	btn.Parent = scrollFrame
+
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 5)
+	btnCorner.Parent = btn
+
+	local btnStroke = Instance.new("UIStroke")
+	btnStroke.Color = Color3.fromRGB(60, 0, 0)
+	btnStroke.Thickness = 1
+	btnStroke.Transparency = 0.5
+	btnStroke.Parent = btn
+
+	local iconLabel = Instance.new("TextLabel")
+	iconLabel.Size = UDim2.new(0, 35, 1, 0)
+	iconLabel.Position = UDim2.new(0, 5, 0, 0)
+	iconLabel.BackgroundTransparency = 1
+	iconLabel.Text = icon
+	iconLabel.TextColor3 = Color3.fromRGB(200, 0, 0)
+	iconLabel.Font = Enum.Font.GothamBold
+	iconLabel.TextSize = 20
+	iconLabel.Parent = btn
+
+	local textLabel = Instance.new("TextLabel")
+	textLabel.Size = UDim2.new(1, -50, 1, 0)
+	textLabel.Position = UDim2.new(0, 42, 0, 0)
+	textLabel.BackgroundTransparency = 1
+	textLabel.Text = text
+	textLabel.TextColor3 = Color3.fromRGB(190, 190, 190)
+	textLabel.Font = Enum.Font.GothamMedium
+	textLabel.TextSize = 14
+	textLabel.TextXAlignment = Enum.TextXAlignment.Left
+	textLabel.Parent = btn
+
+	btn.MouseEnter:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(45, 5, 5)}):Play()
+		TweenService:Create(btnStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(150, 0, 0), Transparency = 0}):Play()
+		TweenService:Create(textLabel, TweenInfo.new(0.2), {TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+	end)
+
+	btn.MouseLeave:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.3), {BackgroundColor3 = Color3.fromRGB(18, 3, 3)}):Play()
+		TweenService:Create(btnStroke, TweenInfo.new(0.3), {Color = Color3.fromRGB(60, 0, 0), Transparency = 0.5}):Play()
+		TweenService:Create(textLabel, TweenInfo.new(0.3), {TextColor3 = Color3.fromRGB(190, 190, 190)}):Play()
+	end)
+
+	btn.MouseButton1Click:Connect(function()
+		TweenService:Create(btn, TweenInfo.new(0.05), {BackgroundColor3 = Color3.fromRGB(100, 0, 0)}):Play()
+		task.wait(0.05)
+		TweenService:Create(btn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(45, 5, 5)}):Play()
+		callback()
+	end)
+
+	return btn
+end
+
+-- ═══════════════════════════════════════════════════════
+-- STATE MANAGEMENT
+-- ═══════════════════════════════════════════════════════
+
+local STATE = {
+	active = false,
+	stalking = false,
+	rushing = false,
+	behindYou = false,
+	flickering = false,
+	distortion = false,
+	heartbeatActive = false,
+	ambientPlaying = false,
+	scanlines = false,
+	paranoia = false,
+	mirrorMode = false,
+	chaseLock = false,
+	phaseIndex = 0,
+	intensity = 0,
+	bloodRain = false,
+	nightVision = false,
+}
+
+-- ═══════════════════════════════════════════════════════
+-- CHAT SYSTEM
+-- ═══════════════════════════════════════════════════════
+
+local function sendChat(message)
+	pcall(function()
+		local channels = TextChatService:FindFirstChild("TextChannels")
+		if channels then
+			local rbxGeneral = channels:FindFirstChild("RBXGeneral")
+			if rbxGeneral then
+				rbxGeneral:SendAsync(message)
+			end
+		end
+	end)
+
+	pcall(function()
+		local chatService = game:GetService("Chat")
+		if character and character:FindFirstChild("Head") then
+			chatService:Chat(character.Head, message, Enum.ChatColor.Red)
+		end
+	end)
+
+	pcall(function()
+		StarterGui:SetCore("ChatMakeSystemMessage", {
+			Text = message,
+			Color = Color3.fromRGB(180, 0, 0),
+			Font = Enum.Font.Creepster,
+			TextSize = 18
+		})
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════
+-- HELPER FUNCTIONS
+-- ═══════════════════════════════════════════════════════
+
+local function getTargetCharacter()
+	if selectedTarget and selectedTarget.Character and selectedTarget.Character:FindFirstChild("HumanoidRootPart") then
+		return selectedTarget.Character
+	end
+	return nil
+end
+
+local function getTargetRoot()
+	local char = getTargetCharacter()
+	if char then return char:FindFirstChild("HumanoidRootPart") end
+	return nil
+end
+
+local function getTargetCamera()
+	return Camera
+end
+
+local function showMessage(text, duration, size)
+	size = size or 48
+	duration = duration or 2
+	messageLabel.Text = text
+	messageLabel.TextSize = size
+	TweenService:Create(messageLabel, TweenInfo.new(0.3), {TextTransparency = 0}):Play()
+	TweenService:Create(messageStroke, TweenInfo.new(0.3), {Transparency = 0}):Play()
+
+	task.spawn(function()
+		local elapsed = 0
+		while elapsed < duration do
+			messageLabel.Position = UDim2.new(0.1 + (math.random() - 0.5) * 0.01, 0, 0.42 + (math.random() - 0.5) * 0.01, 0)
+			elapsed = elapsed + 0.05
+			task.wait(0.05)
+		end
+		TweenService:Create(messageLabel, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
+		TweenService:Create(messageStroke, TweenInfo.new(0.5), {Transparency = 1}):Play()
+		task.wait(0.5)
+		messageLabel.Position = UDim2.new(0.1, 0, 0.42, 0)
+	end)
+end
+
+local function flashScreen(color, duration, intensity)
+	color = color or Color3.new(0.5, 0, 0)
+	duration = duration or 0.3
+	intensity = intensity or 0.3
+	redFlash.BackgroundColor3 = color
+	TweenService:Create(redFlash, TweenInfo.new(0.05), {BackgroundTransparency = 1 - intensity}):Play()
+	task.wait(duration)
+	TweenService:Create(redFlash, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
+end
+
+local function staticBurst(duration, intensity)
+	duration = duration or 0.5
+	intensity = intensity or 0.3
+	staticOverlay.ImageTransparency = 1 - intensity
+	sounds.Static:Play()
+	task.wait(duration)
+	staticOverlay.ImageTransparency = 1
+	sounds.Static:Stop()
+end
+
+local function subliminalFlash(duration)
+	duration = duration or 0.08
+	subliminalImage.BackgroundTransparency = 0
+	subliminalImage.ImageTransparency = 0
+	task.wait(duration)
+	subliminalImage.BackgroundTransparency = 1
+	subliminalImage.ImageTransparency = 1
+end
+
+local function distortCamera(intensity, duration)
+	intensity = intensity or 5
+	duration = duration or 0.5
+	local originalFOV = Camera.FieldOfView
+	local elapsed = 0
+	while elapsed < duration do
+		Camera.FieldOfView = originalFOV + math.sin(elapsed * 30) * intensity * (1 - elapsed / duration)
+		local roll = math.sin(elapsed * 20) * math.rad(intensity) * (1 - elapsed / duration)
+		Camera.CFrame = Camera.CFrame * CFrame.Angles(0, 0, roll)
+		elapsed = elapsed + RunService.RenderStepped:Wait()
+	end
+	Camera.FieldOfView = originalFOV
+end
+
+local function shakeCamera(intensity, duration)
+	intensity = intensity or 2
+	duration = duration or 0.5
+	local elapsed = 0
+	while elapsed < duration do
+		local offset = Vector3.new(
+			(math.random() - 0.5) * intensity,
+			(math.random() - 0.5) * intensity,
+			(math.random() - 0.5) * intensity
+		) * (1 - elapsed / duration)
+		Camera.CFrame = Camera.CFrame * CFrame.new(offset)
+		elapsed = elapsed + RunService.RenderStepped:Wait()
+	end
+end
+
+local function getPositionBehind(targetRoot, distance)
+	distance = distance or 8
+	local lookVector = targetRoot.CFrame.LookVector
+	return targetRoot.Position - lookVector * distance
+end
+
+local function isPlayerLookingAtStalker(targetRoot, stalkerPos)
+	local toStalker = (stalkerPos - targetRoot.Position).Unit
+	local lookDir = targetRoot.CFrame.LookVector
+	local dot = lookDir:Dot(toStalker)
+	return dot > 0.3
+end
+
+-- ═══════════════════════════════════════════════════════
+-- BLOOD DRIP SYSTEM
+-- ═══════════════════════════════════════════════════════
+
+local function spawnBloodDrip()
+	local drip = bloodDrip:Clone()
+	drip.Position = UDim2.new(math.random() * 0.98 + 0.01, 0, 0, 0)
+	drip.Size = UDim2.new(0, math.random(2, 5), 0, 0)
+	drip.BackgroundColor3 = Color3.fromRGB(math.random(80, 150), 0, 0)
+	drip.BackgroundTransparency = math.random() * 0.3
+	drip.Parent = screenGui
+
+	local targetY = math.random() * 0.6 + 0.3
+	local speed = math.random(3, 8)
+	TweenService:Create(drip, TweenInfo.new(speed, Enum.EasingStyle.Sine, Enum.EasingDirection.In), {
+		Size = UDim2.new(0, drip.Size.X.Offset, targetY, 0),
+		BackgroundTransparency = 1
+	}):Play()
+
+	task.delay(speed + 0.5, function()
+		drip:Destroy()
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: BEHIND YOU
+-- ═══════════════════════════════════════════════════════
+
+local behindYouActive = false
+
+local function behindYouSequence()
+	if behindYouActive then return end
+	behindYouActive = true
+
+	local targetRoot = getTargetRoot()
+	if not targetRoot then
+		behindYouActive = false
+		return
+	end
+
+	sounds.Breathing:Play()
+	sounds.Heartbeat.Volume = 0.5
+	sounds.Heartbeat:Play()
+
+	local behindPos = getPositionBehind(targetRoot, 10)
+	showStalker(0.4)
+	updateStalkerPose(behindPos, targetRoot.Position)
+
+	sendChat("I'm right behind you.")
+
+	showMessage("BEHIND YOU", 2, 56)
+	flashScreen(Color3.new(0.3, 0, 0), 0.2, 0.4)
+
+	task.wait(1)
+
+	sendChat("Don't turn around.")
+
+	task.wait(1.5)
+
+	local rushed = false
+	local checkStart = tick()
+
+	while tick() - checkStart < 15 and not rushed and behindYouActive do
+		targetRoot = getTargetRoot()
+		if not targetRoot then break end
+
+		behindPos = getPositionBehind(targetRoot, 10 - (tick() - checkStart) * 0.3)
+		behindPos = Vector3.new(behindPos.X, targetRoot.Position.Y, behindPos.Z)
+		updateStalkerPose(behindPos, targetRoot.Position)
+
+		local stalkerPos = stalkerTorso.Position
+		if isPlayerLookingAtStalker(targetRoot, stalkerPos) then
+			rushed = true
+
+			sendChat("TOO LATE.")
+			sounds.Jumpscare:Play()
+
+			local rushFrames = 20
+			for i = 1, rushFrames do
+				targetRoot = getTargetRoot()
+				if not targetRoot then break end
+				local t = i / rushFrames
+				local rushPos = stalkerPos:Lerp(targetRoot.Position + targetRoot.CFrame.LookVector * 2, t)
+				updateStalkerPose(rushPos, targetRoot.Position)
+
+				showStalker(0)
+
+				local eyeFlicker = math.random() > 0.3
+				leftEye.Color = eyeFlicker and Color3.new(1, 0, 0) or Color3.new(1, 1, 1)
+				rightEye.Color = eyeFlicker and Color3.new(1, 0, 0) or Color3.new(1, 1, 1)
+
+				task.wait(0.02)
+			end
+
+			blackScreen.BackgroundTransparency = 0
+			subliminalFlash(0.1)
+			shakeCamera(8, 0.5)
+			staticBurst(0.8, 0.7)
+
+			showMessage("YOU SHOULD HAVE LISTENED", 3, 52)
+
+			task.wait(0.5)
+
+			for i = 1, 5 do
+				subliminalFlash(0.04)
+				task.wait(0.08)
+			end
+
+			task.wait(1)
+			TweenService:Create(blackScreen, TweenInfo.new(2), {BackgroundTransparency = 1}):Play()
+		end
+
+		if not rushed then
+			local dist = (stalkerTorso.Position - targetRoot.Position).Magnitude
+			sounds.Heartbeat.Volume = math.clamp(1 - dist / 20, 0.2, 1.5)
+			sounds.Heartbeat.PlaybackSpeed = math.clamp(2 - dist / 15, 0.8, 2)
+
+			if dist < 5 then
+				sounds.Breathing.Volume = 0.8
+			end
+
+			if math.random() < 0.1 then
+				sounds.Footstep.PlaybackSpeed = 0.6 + math.random() * 0.4
+				sounds.Footstep:Play()
+			end
+		end
+
+		task.wait(0.05)
+	end
+
+	if not rushed then
+		hideStalker()
+		sendChat("You got lucky. This time.")
+		showMessage("...", 2, 40)
+	end
+
+	task.wait(2)
+	hideStalker()
+	sounds.Breathing:Stop()
+	TweenService:Create(sounds.Heartbeat, TweenInfo.new(1), {Volume = 0}):Play()
+	task.wait(1)
+	sounds.Heartbeat:Stop()
+
+	behindYouActive = false
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: STALKER FOLLOWS
+-- ═══════════════════════════════════════════════════════
+
+local stalkingConnection = nil
+
+local function startStalking()
+	if STATE.stalking then return end
+	STATE.stalking = true
+
+	sounds.CreepyMusic:Play()
+	sounds.Heartbeat.Volume = 0.3
+	sounds.Heartbeat:Play()
+
+	showStalker(0.3)
+
+	local stalkDistance = 35
+	local minDistance = 12
+
+	stalkingConnection = RunService.RenderStepped:Connect(function()
+		if not STATE.stalking then return end
+
+		local targetRoot = getTargetRoot()
+		if not targetRoot then return end
+
+		local targetPos = targetRoot.Position
+		local offset = targetRoot.CFrame.LookVector * -stalkDistance
+		offset = offset + targetRoot.CFrame.RightVector * (math.sin(tick() * 0.3) * 15)
+		local stalkPos = targetPos + offset
+		stalkPos = Vector3.new(stalkPos.X, targetPos.Y, stalkPos.Z)
+
+		updateStalkerPose(stalkPos, targetPos)
+
+		local distance = (stalkPos - targetPos).Magnitude
+		local looking = isPlayerLookingAtStalker(targetRoot, stalkPos)
+
+		if looking then
+			showStalker(0.6 + math.sin(tick() * 10) * 0.2)
+			if math.random() < 0.05 then
+				staticBurst(0.1, 0.2)
+			end
+		else
+			showStalker(0.2)
+			stalkDistance = math.max(minDistance, stalkDistance - 0.03)
+		end
+
+		local heartVol = math.clamp(1 - distance / 50, 0.1, 0.8)
+		sounds.Heartbeat.Volume = heartVol
+
+		if math.random() < 0.003 then
+			local messages = {
+				"I see you.",
+				"Keep walking.",
+				"You can't escape.",
+				"I'm getting closer.",
+				"Do you feel that?",
+				"Every step you take...",
+				"I'm patient.",
+			}
+			cornerText.Text = messages[math.random(#messages)]
+			TweenService:Create(cornerText, TweenInfo.new(0.5), {TextTransparency = 0.3}):Play()
+			task.delay(2, function()
+				TweenService:Create(cornerText, TweenInfo.new(1), {TextTransparency = 1}):Play()
+			end)
+		end
+
+		if math.random() < 0.005 then
+			sounds.Footstep.PlaybackSpeed = 0.5 + math.random() * 0.3
+			sounds.Footstep:Play()
+		end
+	end)
+end
+
+local function stopStalking()
+	STATE.stalking = false
+	if stalkingConnection then
+		stalkingConnection:Disconnect()
+		stalkingConnection = nil
+	end
+	hideStalker()
+	sounds.CreepyMusic:Stop()
+	TweenService:Create(sounds.Heartbeat, TweenInfo.new(1), {Volume = 0}):Play()
+	task.wait(1)
+	sounds.Heartbeat:Stop()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: FLICKER LIGHTS
+-- ═══════════════════════════════════════════════════════
+
+local originalAmbient = Lighting.Ambient
+local originalBrightness = Lighting.Brightness
+local originalOutdoorAmbient = Lighting.OutdoorAmbient
+local flickerConn = nil
+
+local function startFlicker()
+	if STATE.flickering then return end
+	STATE.flickering = true
+
+	originalAmbient = Lighting.Ambient
+	originalBrightness = Lighting.Brightness
+	originalOutdoorAmbient = Lighting.OutdoorAmbient
+
+	flickerConn = RunService.RenderStepped:Connect(function()
+		if not STATE.flickering then return end
+
+		if math.random() < 0.15 then
+			local dark = math.random() < 0.6
+			if dark then
+				Lighting.Ambient = Color3.new(0, 0, 0)
+				Lighting.Brightness = 0
+				Lighting.OutdoorAmbient = Color3.new(0, 0, 0)
+			else
+				Lighting.Ambient = originalAmbient
+				Lighting.Brightness = originalBrightness
+				Lighting.OutdoorAmbient = originalOutdoorAmbient
+			end
+		end
+
+		if math.random() < 0.02 then
+			flashScreen(Color3.new(0.5, 0, 0), 0.05, 0.5)
+		end
+	end)
+end
+
+local function stopFlicker()
+	STATE.flickering = false
+	if flickerConn then
+		flickerConn:Disconnect()
+		flickerConn = nil
+	end
+	Lighting.Ambient = originalAmbient
+	Lighting.Brightness = originalBrightness
+	Lighting.OutdoorAmbient = originalOutdoorAmbient
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: PARANOIA MODE
+-- ═══════════════════════════════════════════════════════
+
+local paranoiaConn = nil
+
+local function startParanoia()
+	if STATE.paranoia then return end
+	STATE.paranoia = true
+
+	sounds.Ambient:Play()
+	sounds.Distortion:Play()
+
+	vignetteFrame.BackgroundTransparency = 0.4
+	scanLine.Visible = true
+
+	local paranoiaMessages = {
+		"It watches.",
+		"The walls have eyes.",
+		"You are not alone.",
+		"It remembers your name.",
+		"Sleep is not safe.",
+		"The shadows move.",
+		"It's inside the walls.",
+		"Can you hear it breathing?",
+		"It knows what you did.",
+		"There is no exit.",
+		"It was always here.",
+		"You invited it in.",
+		"The game knows.",
+		"It's learning.",
+		"Your screen is a window.",
+	}
+
+	paranoiaConn = RunService.RenderStepped:Connect(function()
+		if not STATE.paranoia then return end
+
+		scanLine.Position = UDim2.new(0, 0, (tick() * 0.1) % 1, 0)
+
+		if math.random() < 0.003 then
+			cornerText.Text = paranoiaMessages[math.random(#paranoiaMessages)]
+			cornerText.Position = UDim2.new(math.random() * 0.6, 0, math.random() * 0.8 + 0.05, 0)
+			cornerText.TextSize = math.random(12, 22)
+			cornerText.Rotation = (math.random() - 0.5) * 10
+			TweenService:Create(cornerText, TweenInfo.new(0.2), {TextTransparency = 0.2}):Play()
+			task.delay(1.5 + math.random() * 2, function()
+				TweenService:Create(cornerText, TweenInfo.new(0.8), {TextTransparency = 1}):Play()
+			end)
+		end
+
+		if math.random() < 0.001 then
+			subliminalFlash(0.03 + math.random() * 0.04)
+		end
+
+		if math.random() < 0.002 then
+			sounds.Whisper1.PlaybackSpeed = 0.3 + math.random() * 0.5
+			sounds.Whisper1:Play()
+		end
+
+		if math.random() < 0.004 then
+			staticBurst(0.08, 0.15 + math.random() * 0.2)
+		end
+
+		if math.random() < 0.001 then
+			distortCamera(2, 0.3)
+		end
+
+		if math.random() < 0.003 then
+			spawnBloodDrip()
+		end
+	end)
+end
+
+local function stopParanoia()
+	STATE.paranoia = false
+	if paranoiaConn then
+		paranoiaConn:Disconnect()
+		paranoiaConn = nil
+	end
+	sounds.Ambient:Stop()
+	sounds.Distortion:Stop()
+	vignetteFrame.BackgroundTransparency = 1
+	scanLine.Visible = false
+	cornerText.TextTransparency = 1
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: DEATH SEQUENCE
+-- ═══════════════════════════════════════════════════════
+
+local function deathSequence()
+	local targetRoot = getTargetRoot()
+	if not targetRoot then return end
+
+	sendChat("Your time is up.")
+
+	task.wait(2)
+
+	sounds.Heartbeat.Volume = 1
+	sounds.Heartbeat.PlaybackSpeed = 1.5
+	sounds.Heartbeat:Play()
+
+	for i = 1, 6 do
+		flashScreen(Color3.new(0.4, 0, 0), 0.1, 0.5)
+		task.wait(0.8 - i * 0.1)
+	end
+
+	sounds.Heartbeat.PlaybackSpeed = 2.5
+	sounds.Heartbeat.Volume = 1.5
+
+	targetRoot = getTargetRoot()
+	if not targetRoot then return end
+
+	local rushStart = targetRoot.Position + targetRoot.CFrame.LookVector * 40 + Vector3.new(0, 5, 0)
+	showStalker(0)
+	updateStalkerPose(rushStart, targetRoot.Position)
+
+	sendChat("HERE I COME.")
+
+	sounds.Jumpscare:Play()
+
+	for i = 1, 30 do
+		targetRoot = getTargetRoot()
+		if not targetRoot then break end
+		local t = i / 30
+		local pos = rushStart:Lerp(targetRoot.Position, t * t)
+		updateStalkerPose(pos, targetRoot.Position)
+
+		leftEye.Size = Vector3.new(0.25 + t * 0.5, 0.4 + t * 0.8, 0.1)
+		rightEye.Size = Vector3.new(0.25 + t * 0.5, 0.4 + t * 0.8, 0.1)
+		eyeGlow1.Brightness = 3 + t * 15
+		eyeGlow2.Brightness = 3 + t * 15
+
+		shakeCamera(t * 5, 0.03)
+		task.wait(0.02)
+	end
+
+	blackScreen.BackgroundTransparency = 0
+	jumpscareImage.ImageTransparency = 0
+	jumpscareImage.Size = UDim2.new(1.5, 0, 1.5, 0)
+	jumpscareImage.Position = UDim2.new(-0.25, 0, -0.25, 0)
+
+	shakeCamera(12, 0.8)
+
+	for i = 1, 8 do
+		jumpscareImage.ImageTransparency = (i % 2 == 0) and 0 or 0.3
+		flashScreen(Color3.new(1, 0, 0), 0.03, 0.8)
+		staticBurst(0.05, 0.9)
+		task.wait(0.06)
+	end
+
+	task.wait(1)
+
+	showMessage("G A M E  O V E R", 3, 64)
+
+	task.wait(1)
+
+	TweenService:Create(jumpscareImage, TweenInfo.new(1), {ImageTransparency = 1}):Play()
+	task.wait(1.5)
+	TweenService:Create(blackScreen, TweenInfo.new(3), {BackgroundTransparency = 1}):Play()
+
+	hideStalker()
+	leftEye.Size = Vector3.new(0.25, 0.4, 0.1)
+	rightEye.Size = Vector3.new(0.25, 0.4, 0.1)
+	eyeGlow1.Brightness = 3
+	eyeGlow2.Brightness = 3
+	sounds.Heartbeat:Stop()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: MIRROR STALKER
+-- ═══════════════════════════════════════════════════════
+
+local mirrorConn = nil
+
+local function startMirror()
+	if STATE.mirrorMode then return end
+	STATE.mirrorMode = true
+
+	showStalker(0.15)
+
+	mirrorConn = RunService.RenderStepped:Connect(function()
+		if not STATE.mirrorMode then return end
+
+		local targetRoot = getTargetRoot()
+		if not targetRoot then return end
+
+		local mirrorPos = targetRoot.Position + targetRoot.CFrame.LookVector * 25
+		mirrorPos = Vector3.new(mirrorPos.X, targetRoot.Position.Y, mirrorPos.Z)
+		updateStalkerPose(mirrorPos, targetRoot.Position)
+
+		local distance = (mirrorPos - targetRoot.Position).Magnitude
+		local looking = isPlayerLookingAtStalker(targetRoot, mirrorPos)
+
+		if looking then
+			showStalker(0.05)
+			if distance < 15 then
+				showStalker(0)
+			end
+		else
+			showStalker(0.5)
+		end
+
+		if math.random() < 0.002 and looking then
+			local msgs = {
+				"I'm your reflection.",
+				"We look the same, don't we?",
+				"I've always been here.",
+			}
+			cornerText.Text = msgs[math.random(#msgs)]
+			TweenService:Create(cornerText, TweenInfo.new(0.3), {TextTransparency = 0.2}):Play()
+			task.delay(2, function()
+				TweenService:Create(cornerText, TweenInfo.new(1), {TextTransparency = 1}):Play()
+			end)
+		end
+	end)
+end
+
+local function stopMirror()
+	STATE.mirrorMode = false
+	if mirrorConn then
+		mirrorConn:Disconnect()
+		mirrorConn = nil
+	end
+	hideStalker()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: DISTORTION ATTACK
+-- ═══════════════════════════════════════════════════════
+
+local function distortionAttack()
+	sounds.Static.Volume = 1
+	sounds.Static:Play()
+	sounds.Distortion:Play()
+
+	distortFrame.Visible = true
+	staticOverlay.ImageTransparency = 0.2
+
+	for i = 1, 60 do
+		local intensity = math.sin(i / 60 * math.pi)
+		Camera.FieldOfView = 70 + math.sin(i * 0.5) * 20 * intensity
+
+		staticOverlay.Position = UDim2.new(-0.1 + (math.random() - 0.5) * 0.05, 0, -0.1 + (math.random() - 0.5) * 0.05, 0)
+
+		for _, bar in pairs(distortFrame:GetChildren()) do
+			if bar:IsA("Frame") then
+				bar.Position = UDim2.new((math.random() - 0.5) * 0.1, 0, math.random() * 0.95, 0)
+				bar.BackgroundTransparency = 0.3 + math.random() * 0.4
+			end
+		end
+
+		if math.random() < 0.15 then
+			flashScreen(Color3.fromRGB(math.random(100, 200), 0, math.random(0, 50)), 0.02, 0.4)
+		end
+
+		if i == 30 then
+			subliminalFlash(0.06)
+		end
+
+		task.wait(0.03)
+	end
+
+	Camera.FieldOfView = 70
+	staticOverlay.ImageTransparency = 1
+	staticOverlay.Position = UDim2.new(-0.1, 0, -0.1, 0)
+	distortFrame.Visible = false
+	sounds.Static:Stop()
+	sounds.Distortion:Stop()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: WHISPER BARRAGE
+-- ═══════════════════════════════════════════════════════
+
+local function whisperBarrage()
+	local whispers = {
+		"Can you hear me?",
+		"I'm inside your head.",
+		"There's no one coming to help.",
+		"The game was never real.",
+		"I've been watching for so long.",
+		"Your friends can't save you.",
+		"I live in the static.",
+		"Every game you play, I'm there.",
+		"You left the door open.",
+		"I counted your heartbeats.",
+		"The screen sees you too.",
+		"I know your name.",
+		"It's already too late.",
+		"I never left.",
+		"The shadows are mine.",
+	}
+
+	for i = 1, 8 do
+		local msg = whispers[math.random(#whispers)]
+
+		local whisperLabel = Instance.new("TextLabel")
+		whisperLabel.Size = UDim2.new(0.4, 0, 0.04, 0)
+		whisperLabel.Position = UDim2.new(math.random() * 0.55 + 0.02, 0, math.random() * 0.85 + 0.05, 0)
+		whisperLabel.BackgroundTransparency = 1
+		whisperLabel.Text = msg
+		whisperLabel.TextColor3 = Color3.fromRGB(math.random(120, 200), 0, 0)
+		whisperLabel.Font = Enum.Font.Creepster
+		whisperLabel.TextSize = math.random(14, 26)
+		whisperLabel.TextTransparency = 1
+		whisperLabel.Rotation = (math.random() - 0.5) * 15
+		whisperLabel.ZIndex = 160
+		whisperLabel.Parent = screenGui
+
+		TweenService:Create(whisperLabel, TweenInfo.new(0.3), {TextTransparency = 0.1}):Play()
+
+		sounds.Whisper2.PlaybackSpeed = 0.3 + math.random() * 0.6
+		sounds.Whisper2:Play()
+
+		task.delay(2 + math.random() * 2, function()
+			TweenService:Create(whisperLabel, TweenInfo.new(1.5), {TextTransparency = 1}):Play()
+			task.wait(1.5)
+			whisperLabel:Destroy()
+		end)
+
+		task.wait(0.3 + math.random() * 0.5)
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: BLOOD RAIN
+-- ═══════════════════════════════════════════════════════
+
+local bloodConn = nil
+
+local function startBloodRain()
+	if STATE.bloodRain then return end
+	STATE.bloodRain = true
+
+	vignetteFrame.BackgroundTransparency = 0.5
+	vignetteFrame.BackgroundColor3 = Color3.fromRGB(40, 0, 0)
+
+	bloodConn = RunService.RenderStepped:Connect(function()
+		if not STATE.bloodRain then return end
+		if math.random() < 0.3 then
+			spawnBloodDrip()
+		end
+	end)
+end
+
+local function stopBloodRain()
+	STATE.bloodRain = false
+	if bloodConn then
+		bloodConn:Disconnect()
+		bloodConn = nil
+	end
+	vignetteFrame.BackgroundTransparency = 1
+	vignetteFrame.BackgroundColor3 = Color3.new(0, 0, 0)
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: BLACKOUT
+-- ═══════════════════════════════════════════════════════
+
+local function blackout(duration)
+	duration = duration or 5
+
+	Lighting.Ambient = Color3.new(0, 0, 0)
+	Lighting.Brightness = 0
+	Lighting.OutdoorAmbient = Color3.new(0, 0, 0)
+	blackScreen.BackgroundTransparency = 0.1
+
+	sounds.Breathing:Play()
+	sounds.Heartbeat.Volume = 0.6
+	sounds.Heartbeat:Play()
+
+	sendChat("The lights went out.")
+
+	local elapsed = 0
+	while elapsed < duration do
+		if math.random() < 0.05 then
+			Lighting.Brightness = 2
+			task.wait(0.05)
+			Lighting.Brightness = 0
+
+			local targetRoot = getTargetRoot()
+			if targetRoot then
+				local flashPos = targetRoot.Position + Vector3.new(
+					(math.random() - 0.5) * 20,
+					0,
+					(math.random() - 0.5) * 20
+				)
+				showStalker(0)
+				updateStalkerPose(flashPos, targetRoot.Position)
+				task.wait(0.05)
+				hideStalker()
+			end
+		end
+
+		if math.random() < 0.02 then
+			sounds.Footstep.PlaybackSpeed = 0.5 + math.random() * 0.3
+			sounds.Footstep:Play()
+		end
+
+		elapsed = elapsed + 0.05
+		task.wait(0.05)
+	end
+
+	Lighting.Ambient = originalAmbient
+	Lighting.Brightness = originalBrightness
+	Lighting.OutdoorAmbient = originalOutdoorAmbient
+	blackScreen.BackgroundTransparency = 1
+	sounds.Breathing:Stop()
+	sounds.Heartbeat:Stop()
+	hideStalker()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: COUNTDOWN
+-- ═══════════════════════════════════════════════════════
+
+local function deathCountdown()
+	sendChat("10...")
+
+	for i = 10, 1, -1 do
+		showMessage(tostring(i), 0.8, 72 + (10 - i) * 5)
+		flashScreen(Color3.new(0.3 + (10 - i) * 0.07, 0, 0), 0.1, 0.2 + (10 - i) * 0.05)
+
+		sounds.Heartbeat.Volume = 0.3 + (10 - i) * 0.1
+		sounds.Heartbeat.PlaybackSpeed = 1 + (10 - i) * 0.15
+		if not sounds.Heartbeat.IsPlaying then sounds.Heartbeat:Play() end
+
+		shakeCamera((10 - i) * 0.3, 0.3)
+
+		if i <= 5 then
+			staticBurst(0.1, (10 - i) * 0.1)
+		end
+
+		if i <= 3 then
+			sendChat(tostring(i) .. "...")
+		end
+
+		task.wait(1)
+	end
+
+	sounds.Jumpscare:Play()
+	blackScreen.BackgroundTransparency = 0
+	jumpscareImage.ImageTransparency = 0
+	shakeCamera(15, 1)
+
+	sendChat("TIME'S UP.")
+
+	for i = 1, 10 do
+		subliminalFlash(0.03)
+		flashScreen(Color3.new(1, 0, 0), 0.02, 0.9)
+		task.wait(0.05)
+	end
+
+	task.wait(2)
+	TweenService:Create(jumpscareImage, TweenInfo.new(1), {ImageTransparency = 1}):Play()
+	TweenService:Create(blackScreen, TweenInfo.new(2), {BackgroundTransparency = 1}):Play()
+	sounds.Heartbeat:Stop()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: GLITCH TEXT
+-- ═══════════════════════════════════════════════════════
+
+local function glitchText()
+	local phrases = {
+		"H̸̢̛E̵̢ ̷̧̛I̴S̸ ̷H̸E̵R̴E̸",
+		"R̸̢U̵N̷",
+		"Ŷ̸̧O̵̢U̷ ̶C̴A̵N̶'̵T̷ ̶H̴I̶D̷E̸",
+		"I̸̢T̵ ̷S̶E̶E̵S̸ ̷Y̵O̶U̸",
+		"T̸H̵E̷ ̶E̸N̵D̷",
+		"N̸O̵ ̷E̶S̵C̶A̷P̶E̸",
+		"I̸̢'̵M̷ ̶I̶N̵S̶I̷D̶E̸",
+	}
+
+	for i = 1, 15 do
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(0, math.random(100, 300), 0, math.random(20, 60))
+		label.Position = UDim2.new(math.random() * 0.8, 0, math.random() * 0.9, 0)
+		label.BackgroundTransparency = 1
+		label.Text = phrases[math.random(#phrases)]
+		label.TextColor3 = Color3.fromRGB(math.random(150, 255), 0, math.random(0, 30))
+		label.Font = Enum.Font.Code
+		label.TextSize = math.random(16, 40)
+		label.TextTransparency = 0
+		label.Rotation = (math.random() - 0.5) * 30
+		label.ZIndex = 170
+		label.Parent = screenGui
+
+		task.delay(0.1 + math.random() * 0.5, function()
+			for j = 1, math.random(3, 8) do
+				label.Position = UDim2.new(math.random() * 0.8, 0, math.random() * 0.9, 0)
+				label.Rotation = (math.random() - 0.5) * 40
+				label.TextSize = math.random(16, 50)
+				task.wait(0.05)
+			end
+			TweenService:Create(label, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
+			task.wait(0.5)
+			label:Destroy()
+		end)
+
+		task.wait(0.05)
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: STALKER PEEK
+-- ═══════════════════════════════════════════════════════
+
+local function stalkerPeek()
+	local targetRoot = getTargetRoot()
+	if not targetRoot then return end
+
+	local angles = {45, -45, 135, -135, 90, -90}
+	local angle = angles[math.random(#angles)]
+	local distance = math.random(20, 35)
+
+	local offset = CFrame.Angles(0, math.rad(angle), 0).LookVector * distance
+	local peekPos = targetRoot.Position + offset
+	peekPos = Vector3.new(peekPos.X, targetRoot.Position.Y, peekPos.Z)
+
+	showStalker(0.7)
+	updateStalkerPose(peekPos, targetRoot.Position)
+
+	task.wait(0.5)
+
+	for i = 1, 20 do
+		local t = i / 20
+		showStalker(0.7 - t * 0.5)
+		task.wait(0.1)
+	end
+
+	task.wait(2 + math.random() * 3)
+
+	for i = 1, 10 do
+		showStalker(0.2 + i * 0.08)
+		task.wait(0.1)
+	end
+
+	hideStalker()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: FREEZE FRAME
+-- ═══════════════════════════════════════════════════════
+
+local function freezeFrame()
+	local targetRoot = getTargetRoot()
+	if not targetRoot then return end
+
+	sendChat("Don't. Move.")
+
+	staticBurst(0.3, 0.6)
+	sounds.ThunderBass:Play()
+
+	local freezePos = targetRoot.Position + targetRoot.CFrame.LookVector * 8
+	freezePos = Vector3.new(freezePos.X, targetRoot.Position.Y, freezePos.Z)
+	showStalker(0)
+	updateStalkerPose(freezePos, targetRoot.Position)
+
+	flashScreen(Color3.new(1, 1, 1), 0.05, 0.8)
+
+	blackScreen.BackgroundTransparency = 0
+	task.wait(0.1)
+	blackScreen.BackgroundTransparency = 1
+
+	task.wait(3)
+
+	for i = 1, 5 do
+		blackScreen.BackgroundTransparency = 0
+		task.wait(0.05)
+		blackScreen.BackgroundTransparency = 1
+		task.wait(0.1)
+	end
+
+	targetRoot = getTargetRoot()
+	if targetRoot then
+		local closePos = targetRoot.Position + targetRoot.CFrame.LookVector * 3
+		updateStalkerPose(closePos, targetRoot.Position)
+
+		flashScreen(Color3.new(1, 1, 1), 0.05, 0.9)
+		sounds.Jumpscare:Play()
+		shakeCamera(6, 0.5)
+
+		task.wait(1)
+	end
+
+	hideStalker()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: CORRUPTION SPREAD
+-- ═══════════════════════════════════════════════════════
+
+local function corruptionSpread()
+	sounds.Static.Volume = 0.3
+	sounds.Static:Play()
+
+	local corruptParts = {}
+
+	local targetRoot = getTargetRoot()
+	if not targetRoot then return end
+
+	for i = 1, 40 do
+		local part = Instance.new("Part")
+		part.Size = Vector3.new(math.random(2, 8), 0.3, math.random(2, 8))
+		part.Color = Color3.fromRGB(math.random(0, 15), 0, 0)
+		part.Material = Enum.Material.Neon
+		part.Anchored = true
+		part.CanCollide = false
+		part.CastShadow = false
+
+		targetRoot = getTargetRoot()
+		if not targetRoot then break end
+
+		local angle = math.random() * math.pi * 2
+		local dist = math.random(3, 20)
+		part.Position = targetRoot.Position + Vector3.new(math.cos(angle) * dist, -3, math.sin(angle) * dist)
+		part.Transparency = 1
+		part.Parent = workspace
+
+		table.insert(corruptParts, part)
+
+		TweenService:Create(part, TweenInfo.new(0.5), {Transparency = 0.3}):Play()
+
+		if i % 5 == 0 then
+			flashScreen(Color3.new(0.2, 0, 0), 0.05, 0.2)
+		end
+
+		task.wait(0.1)
+	end
+
+	task.wait(3)
+
+	for _, part in pairs(corruptParts) do
+		TweenService:Create(part, TweenInfo.new(1), {Transparency = 1}):Play()
+	end
+
+	task.wait(1.5)
+
+	for _, part in pairs(corruptParts) do
+		part:Destroy()
+	end
+
+	sounds.Static:Stop()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: EYE TRACKER
+-- ═══════════════════════════════════════════════════════
+
+local eyeTrackConn = nil
+
+local function startEyeTracker()
+	if STATE.eyeTracking then return end
+	STATE.eyeTracking = true
+
+	eyeTracker.ImageTransparency = 0.3
+
+	eyeTrackConn = RunService.RenderStepped:Connect(function()
+		if not STATE.eyeTracking then return end
+
+		local mousePos = UserInputService:GetMouseLocation()
+		local viewportSize = Camera.ViewportSize
+
+		local normalizedX = mousePos.X / viewportSize.X
+		local normalizedY = mousePos.Y / viewportSize.Y
+
+		local eyeX = normalizedX * 0.1 + 0.45
+		local eyeY = normalizedY * 0.1 + 0.45
+
+		eyeTracker.Position = UDim2.new(eyeX, -30, eyeY, -30)
+
+		if math.random() < 0.02 then
+			eyeTracker.ImageTransparency = 0
+			task.wait(0.05)
+			eyeTracker.ImageTransparency = 0.3
+		end
+	end)
+end
+
+local function stopEyeTracker()
+	STATE.eyeTracking = false
+	if eyeTrackConn then
+		eyeTrackConn:Disconnect()
+		eyeTrackConn = nil
+	end
+	eyeTracker.ImageTransparency = 1
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: NIGHTMARE
+-- ═══════════════════════════════════════════════════════
+
+local function nightmareSequence()
+	sendChat("Sweet dreams.")
+	task.wait(1)
+
+	TweenService:Create(blackScreen, TweenInfo.new(2), {BackgroundTransparency = 0}):Play()
+	task.wait(2.5)
+
+	Lighting.Ambient = Color3.new(0, 0, 0)
+	Lighting.Brightness = 0
+	Lighting.OutdoorAmbient = Color3.new(0, 0, 0)
+	Lighting.FogEnd = 50
+	Lighting.FogColor = Color3.new(0, 0, 0)
+
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.Saturation = -1
+	cc.Contrast = 0.5
+	cc.TintColor = Color3.fromRGB(180, 120, 120)
+	cc.Parent = Lighting
+
+	TweenService:Create(blackScreen, TweenInfo.new(1), {BackgroundTransparency = 1}):Play()
+	task.wait(1)
+
+	sounds.CreepyMusic:Play()
+	sounds.Breathing.Volume = 0.3
+	sounds.Breathing:Play()
+
+	local targetRoot = getTargetRoot()
+	if targetRoot then
+		for i = 1, 5 do
+			local angle = (i / 5) * math.pi * 2
+			local dist = 15
+			local pos = targetRoot.Position + Vector3.new(math.cos(angle) * dist, 0, math.sin(angle) * dist)
+
+			showStalker(0.5)
+			updateStalkerPose(pos, targetRoot.Position)
+			task.wait(0.5)
+			hideStalker()
+			task.wait(0.3)
+		end
+	end
+
+	whisperBarrage()
+	task.wait(2)
+	glitchText()
+	task.wait(2)
+
+	for i = 1, 3 do
+		subliminalFlash(0.05)
+		sounds.Whisper1:Play()
+		task.wait(0.5)
+	end
+
+	showMessage("WAKE UP", 2, 60)
+	distortCamera(10, 1)
+
+	task.wait(2)
+
+	sounds.Jumpscare:Play()
+
+	local targetRoot2 = getTargetRoot()
+	if targetRoot2 then
+		showStalker(0)
+		updateStalkerPose(targetRoot2.Position + targetRoot2.CFrame.LookVector * 2, targetRoot2.Position)
+		blackScreen.BackgroundTransparency = 0
+		shakeCamera(10, 0.8)
+	end
+
+	task.wait(1.5)
+
+	Lighting.Ambient = originalAmbient
+	Lighting.Brightness = originalBrightness
+	Lighting.OutdoorAmbient = originalOutdoorAmbient
+	Lighting.FogEnd = 100000
+	Lighting.FogColor = Color3.fromRGB(192, 192, 192)
+	cc:Destroy()
+
+	TweenService:Create(blackScreen, TweenInfo.new(3), {BackgroundTransparency = 1}):Play()
+	hideStalker()
+	sounds.CreepyMusic:Stop()
+	sounds.Breathing:Stop()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: CHAT HAUNT
+-- ═══════════════════════════════════════════════════════
+
+local function chatHaunt()
+	local messages = {
+		"I can see you through the screen.",
+		"You shouldn't have joined this server.",
+		"I remember you from last time.",
+		"The exit button won't save you.",
+		"I'm in every game you play.",
+		"Your character isn't the only one I control.",
+		"I've been here since you logged in.",
+		"Can you feel me watching?",
+		"The game remembers everything.",
+		"I know where you are.",
+		"alt+f4 won't help.",
+		"I'm closer than you think.",
+		"Check behind your character.",
+		"I moved. Did you notice?",
+		"This isn't a game anymore.",
+	}
+
+	for i = 1, math.random(5, 8) do
+		local msg = messages[math.random(#messages)]
+		sendChat(msg)
+		task.wait(2 + math.random() * 3)
+
+		if math.random() < 0.3 then
+			staticBurst(0.1, 0.15)
+		end
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: TELEPORT HAUNT
+-- ═══════════════════════════════════════════════════════
+
+local function teleportHaunt()
+	local targetRoot = getTargetRoot()
+	if not targetRoot then return end
+
+	for i = 1, 8 do
+		targetRoot = getTargetRoot()
+		if not targetRoot then break end
+
+		local angle = math.random() * math.pi * 2
+		local dist = math.random(8, 25)
+		local pos = targetRoot.Position + Vector3.new(math.cos(angle) * dist, 0, math.sin(angle) * dist)
+
+		showStalker(0)
+		updateStalkerPose(pos, targetRoot.Position)
+
+		staticBurst(0.05, 0.3)
+		sounds.Whisper1.PlaybackSpeed = 0.4 + math.random() * 0.4
+		sounds.Whisper1:Play()
+
+		task.wait(0.3 + math.random() * 0.5)
+
+		hideStalker()
+		task.wait(0.1 + math.random() * 0.3)
+	end
+
+	targetRoot = getTargetRoot()
+	if targetRoot then
+		showStalker(0)
+		updateStalkerPose(targetRoot.Position + targetRoot.CFrame.LookVector * 4, targetRoot.Position)
+		sounds.Jumpscare:Play()
+		flashScreen(Color3.new(0.5, 0, 0), 0.2, 0.6)
+		shakeCamera(5, 0.3)
+		task.wait(0.5)
+		hideStalker()
+	end
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: SHADOW ARMY
+-- ═══════════════════════════════════════════════════════
+
+local function shadowArmy()
+	local targetRoot = getTargetRoot()
+	if not targetRoot then return end
+
+	local shadows = {}
+
+	for i = 1, 12 do
+		local shadow = Instance.new("Part")
+		shadow.Size = Vector3.new(2, 6, 1)
+		shadow.Color = Color3.new(0, 0, 0)
+		shadow.Material = Enum.Material.SmoothPlastic
+		shadow.Anchored = true
+		shadow.CanCollide = false
+		shadow.Transparency = 0.5
+
+		local angle = (i / 12) * math.pi * 2
+		local dist = 25
+		targetRoot = getTargetRoot()
+		if not targetRoot then break end
+
+		shadow.Position = targetRoot.Position + Vector3.new(math.cos(angle) * dist, 0, math.sin(angle) * dist)
+		shadow.CFrame = CFrame.new(shadow.Position, Vector3.new(targetRoot.Position.X, shadow.Position.Y, targetRoot.Position.Z))
+		shadow.Parent = workspace
+
+		local eyes = Instance.new("Part")
+		eyes.Size = Vector3.new(0.8, 0.3, 0.1)
+		eyes.Color = Color3.new(1, 0, 0)
+		eyes.Material = Enum.Material.Neon
+		eyes.Anchored = true
+		eyes.CanCollide = false
+		eyes.Position = shadow.Position + Vector3.new(0, 2.5, 0) + shadow.CFrame.LookVector * -0.5
+		eyes.Parent = workspace
+
+		local glow = Instance.new("PointLight")
+		glow.Color = Color3.new(1, 0, 0)
+		glow.Brightness = 2
+		glow.Range = 5
+		glow.Parent = eyes
+
+		table.insert(shadows, {body = shadow, eyes = eyes})
+	end
+
+	sounds.CreepyMusic.Volume = 0.6
+	sounds.CreepyMusic:Play()
+
+	for step = 1, 40 do
+		targetRoot = getTargetRoot()
+		if not targetRoot then break end
+
+		for _, s in pairs(shadows) do
+			local dir = (targetRoot.Position - s.body.Position).Unit
+			s.body.Position = s.body.Position + dir * 0.3
+			s.body.CFrame = CFrame.new(s.body.Position, Vector3.new(targetRoot.Position.X, s.body.Position.Y, targetRoot.Position.Z))
+			s.eyes.Position = s.body.Position + Vector3.new(0, 2.5, 0) + s.body.CFrame.LookVector * -0.5
+
+			s.body.Transparency = 0.3 + math.sin(tick() * 5 + _) * 0.2
+		end
+
+		if step % 10 == 0 then
+			flashScreen(Color3.new(0.3, 0, 0), 0.05, 0.3)
+		end
+
+		task.wait(0.1)
+	end
+
+	sounds.Jumpscare:Play()
+	flashScreen(Color3.new(1, 0, 0), 0.3, 0.7)
+	shakeCamera(8, 0.5)
+
+	for _, s in pairs(shadows) do
+		TweenService:Create(s.body, TweenInfo.new(0.5), {Transparency = 1}):Play()
+		TweenService:Create(s.eyes, TweenInfo.new(0.5), {Transparency = 1}):Play()
+	end
+
+	task.wait(1)
+
+	for _, s in pairs(shadows) do
+		s.body:Destroy()
+		s.eyes:Destroy()
+	end
+
+	sounds.CreepyMusic:Stop()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: SCREEN CRACK
+-- ═══════════════════════════════════════════════════════
+
+local function screenCrack()
+	sounds.ThunderBass:Play()
+	shakeCamera(4, 0.3)
+
+	local crackContainer = Instance.new("Frame")
+	crackContainer.Size = UDim2.new(1, 0, 1, 0)
+	crackContainer.BackgroundTransparency = 1
+	crackContainer.ZIndex = 400
+	crackContainer.Parent = screenGui
+
+	local centerX = math.random(30, 70) / 100
+	local centerY = math.random(30, 70) / 100
+
+	for i = 1, 15 do
+		local crack = Instance.new("Frame")
+		local angle = math.random() * 360
+		local length = math.random(50, 250)
+		crack.Size = UDim2.new(0, length, 0, math.random(1, 3))
+		crack.Position = UDim2.new(centerX, 0, centerY, 0)
+		crack.Rotation = angle
+		crack.BackgroundColor3 = Color3.fromRGB(math.random(150, 255), math.random(150, 255), math.random(150, 255))
+		crack.BackgroundTransparency = 0.2
+		crack.BorderSizePixel = 0
+		crack.ZIndex = 401
+		crack.AnchorPoint = Vector2.new(0, 0.5)
+		crack.Parent = crackContainer
+
+		for j = 1, math.random(1, 3) do
+			local subCrack = Instance.new("Frame")
+			subCrack.Size = UDim2.new(0, math.random(20, 80), 0, 1)
+			subCrack.Position = UDim2.new(math.random() * 0.8, 0, 0.5, 0)
+			subCrack.Rotation = (math.random() - 0.5) * 60
+			subCrack.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+			subCrack.BackgroundTransparency = 0.3
+			subCrack.BorderSizePixel = 0
+			subCrack.Parent = crack
+		end
+	end
+
+	flashScreen(Color3.new(1, 1, 1), 0.1, 0.5)
+
+	task.wait(4)
+
+	TweenService:Create(crackContainer, TweenInfo.new(2), {}):Play()
+	for _, child in pairs(crackContainer:GetDescendants()) do
+		if child:IsA("Frame") then
+			TweenService:Create(child, TweenInfo.new(2), {BackgroundTransparency = 1}):Play()
+		end
+	end
+
+	task.wait(2.5)
+	crackContainer:Destroy()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: HEARTBEAT ESCALATION
+-- ═══════════════════════════════════════════════════════
+
+local function heartbeatEscalation()
+	sounds.Heartbeat.Volume = 0.2
+	sounds.Heartbeat.PlaybackSpeed = 0.6
+	sounds.Heartbeat:Play()
+
+	vignetteFrame.BackgroundTransparency = 0.6
+
+	for i = 1, 30 do
+		local t = i / 30
+		sounds.Heartbeat.Volume = 0.2 + t * 1.3
+		sounds.Heartbeat.PlaybackSpeed = 0.6 + t * 1.8
+
+		vignetteFrame.BackgroundTransparency = 0.6 - t * 0.4
+
+		if t > 0.5 then
+			local pulseIntensity = t * 0.3
+			redFlash.BackgroundTransparency = 1 - pulseIntensity * math.abs(math.sin(tick() * sounds.Heartbeat.PlaybackSpeed * 3))
+		end
+
+		if t > 0.7 then
+			shakeCamera(t * 3, 0.1)
+		end
+
+		if t > 0.9 then
+			staticBurst(0.05, t * 0.5)
+		end
+
+		task.wait(0.3 - t * 0.2)
+	end
+
+	sounds.Jumpscare:Play()
+	blackScreen.BackgroundTransparency = 0
+	flashScreen(Color3.new(1, 0, 0), 0.5, 1)
+	shakeCamera(10, 0.5)
+
+	task.wait(1)
+	TweenService:Create(blackScreen, TweenInfo.new(2), {BackgroundTransparency = 1}):Play()
+	TweenService:Create(vignetteFrame, TweenInfo.new(1), {BackgroundTransparency = 1}):Play()
+	redFlash.BackgroundTransparency = 1
+	sounds.Heartbeat:Stop()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: POSSESSION
+-- ═══════════════════════════════════════════════════════
+
+local function possession()
+	sendChat("I'm taking over.")
+
+	task.wait(1.5)
+
+	local cc = Instance.new("ColorCorrectionEffect")
+	cc.Saturation = -0.8
+	cc.Contrast = 0.3
+	cc.TintColor = Color3.fromRGB(255, 150, 150)
+	cc.Parent = Lighting
+
+	local blur = Instance.new("BlurEffect")
+	blur.Size = 0
+	blur.Parent = Lighting
+
+	sounds.Distortion:Play()
+
+	for i = 1, 40 do
+		local t = i / 40
+		blur.Size = t * 15
+		cc.Saturation = -0.8 - t * 0.2
+		cc.Contrast = 0.3 + t * 0.3
+
+		Camera.FieldOfView = 70 + math.sin(i * 0.3) * t * 15
+
+		if math.random() < 0.1 then
+			staticBurst(0.05, 0.3)
+		end
+
+		if math.random() < 0.05 then
+			local glitchMsgs = {"MINE", "SUBMIT", "OBEY", "GIVE IN"}
+			showMessage(glitchMsgs[math.random(#glitchMsgs)], 0.3, 40)
+		end
+
+		task.wait(0.1)
+	end
+
+	sendChat("You belong to me now.")
+
+	task.wait(2)
+
+	for i = 40, 0, -1 do
+		local t = i / 40
+		blur.Size = t * 15
+		cc.Saturation = -0.8 - t * 0.2
+		task.wait(0.05)
+	end
+
+	Camera.FieldOfView = 70
+	blur:Destroy()
+	cc:Destroy()
+	sounds.Distortion:Stop()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- FEATURE: ALL CLEAR FAKE
+-- ═══════════════════════════════════════════════════════
+
+local function fakeSafe()
+	sendChat("It's gone now. You're safe.")
+
+	showMessage("ALL CLEAR", 2, 36)
+	task.wait(3)
+
+	sendChat("Just kidding.")
+	task.wait(0.5)
+
+	sounds.Jumpscare:Play()
+
+	local targetRoot = getTargetRoot()
+	if targetRoot then
+		showStalker(0)
+		updateStalkerPose(targetRoot.Position + targetRoot.CFrame.LookVector * 3, targetRoot.Position)
+	end
+
+	jumpscareImage.ImageTransparency = 0
+	shakeCamera(12, 0.8)
+	flashScreen(Color3.new(1, 0, 0), 0.5, 0.8)
+	staticBurst(0.5, 0.8)
+
+	for i = 1, 6 do
+		subliminalFlash(0.04)
+		task.wait(0.06)
+	end
+
+	task.wait(1)
+	TweenService:Create(jumpscareImage, TweenInfo.new(0.5), {ImageTransparency = 1}):Play()
+	hideStalker()
+end
+
+-- ═══════════════════════════════════════════════════════
+-- REGISTER ALL BUTTONS
+-- ═══════════════════════════════════════════════════════
+
+local order = 0
+local function nextOrder()
+	order = order + 1
+	return order
+end
+
+createButton("Behind You", "👁", nextOrder(), function()
+	task.spawn(behindYouSequence)
+end)
+
+createButton("Stalk", "🕴", nextOrder(), function()
+	if STATE.stalking then
+		stopStalking()
+	else
+		task.spawn(startStalking)
+	end
+end)
+
+createButton("Death Rush", "💀", nextOrder(), function()
+	task.spawn(deathSequence)
+end)
+
+createButton("Countdown", "⏱", nextOrder(), function()
+	task.spawn(deathCountdown)
+end)
+
+createButton("Nightmare", "🌙", nextOrder(), function()
+	task.spawn(nightmareSequence)
+end)
+
+createButton("Flicker Lights", "💡", nextOrder(), function()
+	if STATE.flickering then
+		stopFlicker()
+	else
+		startFlicker()
+	end
+end)
+
+createButton("Paranoia", "🧠", nextOrder(), function()
+	if STATE.paranoia then
+		stopParanoia()
+	else
+		startParanoia()
+	end
+end)
+
+createButton("Blackout", "🔦", nextOrder(), function()
+	task.spawn(function() blackout(8) end)
+end)
+
+createButton("Distortion", "📺", nextOrder(), function()
+	task.spawn(distortionAttack)
+end)
+
+createButton("Whispers", "👂", nextOrder(), function()
+	task.spawn(whisperBarrage)
+end)
+
+createButton("Glitch Text", "⚡", nextOrder(), function()
+	task.spawn(glitchText)
+end)
+
+createButton("Blood Rain", "🩸", nextOrder(), function()
+	if STATE.bloodRain then
+		stopBloodRain()
+	else
+		startBloodRain()
+	end
+end)
+
+createButton("Mirror Stalker", "🪞", nextOrder(), function()
+	if STATE.mirrorMode then
+		stopMirror()
+	else
+		startMirror()
+	end
+end)
+
+createButton("Teleport Haunt", "⚫", nextOrder(), function()
+	task.spawn(teleportHaunt)
+end)
+
+createButton("Shadow Army", "👥", nextOrder(), function()
+	task.spawn(shadowArmy)
+end)
+
+createButton("Screen Crack", "💥", nextOrder(), function()
+	task.spawn(screenCrack)
+end)
+
+createButton("Heartbeat", "❤", nextOrder(), function()
+	task.spawn(heartbeatEscalation)
+end)
+
+createButton("Peek", "👤", nextOrder(), function()
+	task.spawn(stalkerPeek)
+end)
+
+createButton("Chat Haunt", "💬", nextOrder(), function()
+	task.spawn(chatHaunt)
+end)
+
+createButton("Possession", "😈", nextOrder(), function()
+	task.spawn(possession)
+end)
+
+createButton("Fake Safe", "✅", nextOrder(), function()
+	task.spawn(fakeSafe)
+end)
+
+createButton("Corruption", "🦠", nextOrder(), function()
+	task.spawn(corruptionSpread)
+end)
+
+createButton("Freeze Frame", "❄", nextOrder(), function()
+	task.spawn(freezeFrame)
+end)
+
+createButton("Jumpscare", "😱", nextOrder(), function()
+	task.spawn(function()
+		sounds.Jumpscare:Play()
+		jumpscareImage.ImageTransparency = 0
+		blackScreen.BackgroundTransparency = 0
+		shakeCamera(15, 1)
+		for i = 1, 8 do
+			subliminalFlash(0.03)
+			flashScreen(Color3.new(1, 0, 0), 0.03, 0.9)
+			task.wait(0.05)
+		end
+		task.wait(1)
+		TweenService:Create(jumpscareImage, TweenInfo.new(0.5), {ImageTransparency = 1}):Play()
+		TweenService:Create(blackScreen, TweenInfo.new(1.5), {BackgroundTransparency = 1}):Play()
+	end)
+end)
+
+createButton("FULL SEQUENCE", "☠", nextOrder(), function()
+	task.spawn(function()
+		startParanoia()
+		task.wait(5)
+		chatHaunt()
+		task.wait(3)
+		startFlicker()
+		task.wait(4)
+		whisperBarrage()
+		task.wait(3)
+		stopParanoia()
+		stopFlicker()
+		behindYouSequence()
+		task.wait(3)
+		deathCountdown()
+	end)
+end)
+
+-- ═══════════════════════════════════════════════════════
+-- TOGGLE VISIBILITY
+-- ═══════════════════════════════════════════════════════
+
+local guiVisible = true
+
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Name = "Toggle"
+toggleBtn.Size = UDim2.new(0, 40, 0, 40)
+toggleBtn.Position = UDim2.new(0, 10, 0, 10)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 0, 0)
+toggleBtn.BorderSizePixel = 0
+toggleBtn.Text = "☠"
+toggleBtn.TextColor3 = Color3.fromRGB(200, 0, 0)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 22
+toggleBtn.ZIndex = 1001
+toggleBtn.Parent = controlGui
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(0, 20)
+toggleCorner.Parent = toggleBtn
+
+toggleBtn.MouseButton1Click:Connect(function()
+	guiVisible = not guiVisible
+	mainFrame.Visible = guiVisible
+end)
+
+-- ═══════════════════════════════════════════════════════
+-- TITLE BAR ANIMATION
+-- ═══════════════════════════════════════════════════════
+
+task.spawn(function()
+	local titles = {
+		"☠ S T A L K E R ☠",
+		"☠ S̸ T̷ A̶ L̵ K̸ E̷ R̶ ☠",
+		"☠ S T A L K E R ☠",
+		"☠ S̵̢T̶̢A̵L̸K̷E̶R̵ ☠",
+	}
+	local idx = 1
+	while true do
+		titleLabel.Text = titles[idx]
+		idx = idx % #titles + 1
+
+		local flicker = math.random() < 0.1
+		if flicker then
+			titleLabel.TextTransparency = 0.5
+			task.wait(0.05)
+			titleLabel.TextTransparency = 0
+		end
+
+		task.wait(0.5 + math.random() * 1)
+	end
+end)
+
+-- ═══════════════════════════════════════════════════════
+-- AMBIENT SCAN LINE
+-- ═══════════════════════════════════════════════════════
+
+task.spawn(function()
+	while true do
+		if not STATE.paranoia then
+			if math.random() < 0.02 then
+				scanLine.Visible = true
+				for i = 0, 100 do
+					scanLine.Position = UDim2.new(0, 0, i / 100, 0)
+					task.wait(0.01)
+				end
+				scanLine.Visible = false
+			end
+		end
+		task.wait(0.5)
+	end
+end)
+
+-- ═══════════════════════════════════════════════════════
+-- CHARACTER RESPAWN HANDLER
+-- ═══════════════════════════════════════════════════════
+
+player.CharacterAdded:Connect(function(newChar)
+	character = newChar
+	repeat task.wait() until newChar:FindFirstChild("HumanoidRootPart")
+	humanoid = newChar:FindFirstChildOfClass("Humanoid")
+	rootPart = newChar:FindFirstChild("HumanoidRootPart")
+end)
