@@ -1,0 +1,2477 @@
+
+------------------------------------------------------------------------
+-- SERVICES
+------------------------------------------------------------------------
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Chat = game:GetService("Chat")
+local StarterGui = game:GetService("StarterGui")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextChatService = game:GetService("TextChatService")
+
+------------------------------------------------------------------------
+-- PLAYER REFERENCES
+------------------------------------------------------------------------
+local Player = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local Mouse = Player:GetMouse()
+
+------------------------------------------------------------------------
+-- CONFIGURATION
+------------------------------------------------------------------------
+local CONFIG = {
+    -- Animation
+    FRAME_DELAY = 3,
+    STOP_MOTION_FPS = 8,
+    ANIMATION_SMOOTHING = 0.3,
+
+    -- Fall Detection
+    FALL_SPEED_THRESHOLD = -80,
+    FALL_HEIGHT_THRESHOLD = 50,
+    LEVITATE_SPEED = 0.8,
+    LEVITATE_HEIGHT_OFFSET = 5,
+
+    -- Dodge
+    DODGE_SPEED = 60,
+    DODGE_DISTANCE = 12,
+    DODGE_COOLDOWN = 0.4,
+    DODGE_DETECTION_RADIUS = 20,
+    PROJECTILE_DETECTION_RADIUS = 30,
+
+    -- Chat
+    PREFIX = "\u{1F451} 【ＭＡＩＮ ＣＨＡＲＡＣＴＥＲ】\u{1F451}",
+    PREFIX_SHORT = "\u{1F451}MC\u{1F451}",
+
+    -- Cinema Bars
+    BAR_HEIGHT = 80,
+    BAR_TWEEN_TIME = 0.6,
+
+    -- Accessories
+    HALO_COLOR = Color3.fromRGB(255, 215, 0),
+    HALO_GLOW_COLOR = Color3.fromRGB(255, 255, 150),
+    WING_COLOR = Color3.fromRGB(255, 255, 255),
+    WING_GLOW_COLOR = Color3.fromRGB(200, 220, 255),
+
+    -- Particles
+    AURA_COLOR1 = Color3.fromRGB(255, 215, 0),
+    AURA_COLOR2 = Color3.fromRGB(255, 255, 255),
+
+    -- Reanimation
+    REANIMATE_OFFSET = Vector3.new(0, -15, 0),
+}
+
+------------------------------------------------------------------------
+-- STATE
+------------------------------------------------------------------------
+local State = {
+    RigType = nil, -- "R6" or "R15"
+    Character = nil,
+    Humanoid = nil,
+    RootPart = nil,
+    Torso = nil,
+
+    -- Reanimation
+    FakeCharacter = nil,
+    RealCharacter = nil,
+    Reanimated = false,
+    Motors = {},
+
+    -- Animation State
+    CurrentAnim = "idle",
+    AnimationFrame = 0,
+    FrameAccumulator = 0,
+    StopMotionTimer = 0,
+    CurrentKeyframe = 1,
+
+    -- Fall
+    IsFalling = false,
+    IsLevitating = false,
+    FallStartY = 0,
+
+    -- Dodge
+    IsDodging = false,
+    LastDodgeTime = 0,
+    DodgeCount = 0,
+
+    -- Cinema
+    CinemaBarsVisible = false,
+
+    -- Accessories
+    AccessoriesEnabled = false,
+    HaloModel = nil,
+    WingsModel = nil,
+
+    -- Chat auto-response
+    LastAutoChat = 0,
+
+    -- Walking
+    IsMoving = false,
+    IsJumping = false,
+    IsRunning = false,
+
+    -- Connections
+    Connections = {},
+
+    -- Dramatic entrance
+    EntrancePlayed = false,
+
+    -- Slow-mo
+    SlowMoActive = false,
+
+    -- Extra dodge triggers
+    ExtraDodgeMode = false,
+    ExtraDodgeEndTime = 0,
+}
+
+------------------------------------------------------------------------
+-- UTILITY FUNCTIONS
+------------------------------------------------------------------------
+local function Lerp(a, b, t)
+    return a + (b - a) * math.clamp(t, 0, 1)
+end
+
+local function LerpCFrame(a, b, t)
+    return a:Lerp(b, math.clamp(t, 0, 1))
+end
+
+local function SafeDestroy(obj)
+    if obj and obj.Parent then
+        pcall(function() obj:Destroy() end)
+    end
+end
+
+local function CreateInstance(className, properties, parent)
+    local inst = Instance.new(className)
+    if properties then
+        for k, v in pairs(properties) do
+            inst[k] = v
+        end
+    end
+    if parent then
+        inst.Parent = parent
+    end
+    return inst
+end
+
+local function WaitForChild(parent, name, timeout)
+    timeout = timeout or 10
+    return parent:WaitForChild(name, timeout)
+end
+
+------------------------------------------------------------------------
+-- RIG DETECTION
+------------------------------------------------------------------------
+local function DetectRigType(character)
+    if character:FindFirstChild("UpperTorso") then
+        return "R15"
+    elseif character:FindFirstChild("Torso") then
+        return "R6"
+    end
+    return nil
+end
+
+------------------------------------------------------------------------
+-- STOP-MOTION ANIMATION SYSTEM
+------------------------------------------------------------------------
+-- Keyframe format: {time, {[MotorName] = CFrame, ...}}
+-- Animations are defined as sequences of keyframes with stop-motion feel
+
+local Animations = {}
+
+-- R6 Animations
+Animations.R6 = {}
+
+Animations.R6.idle = {
+    Duration = 2.0,
+    Looping = true,
+    Keyframes = {
+        {0.0, {
+            ["Right Shoulder"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["Left Shoulder"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["Right Hip"] = CFrame.Angles(0, 0, 0),
+            ["Left Hip"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-2), 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0.1, 0),
+        }},
+        {0.25, {
+            ["Right Shoulder"] = CFrame.Angles(0, 0, math.rad(8)),
+            ["Left Shoulder"] = CFrame.Angles(0, 0, math.rad(-8)),
+            ["Right Hip"] = CFrame.Angles(0, 0, 0),
+            ["Left Hip"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(2), math.rad(5), 0),
+            ["RootJoint"] = CFrame.new(0, 0.3, 0),
+        }},
+        {0.5, {
+            ["Right Shoulder"] = CFrame.Angles(0, 0, math.rad(12)),
+            ["Left Shoulder"] = CFrame.Angles(0, 0, math.rad(-12)),
+            ["Right Hip"] = CFrame.Angles(0, 0, 0),
+            ["Left Hip"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(5), math.rad(8), 0),
+            ["RootJoint"] = CFrame.new(0, 0.5, 0) * CFrame.Angles(0, 0, math.rad(2)),
+        }},
+        {0.75, {
+            ["Right Shoulder"] = CFrame.Angles(0, 0, math.rad(8)),
+            ["Left Shoulder"] = CFrame.Angles(0, 0, math.rad(-8)),
+            ["Right Hip"] = CFrame.Angles(0, 0, 0),
+            ["Left Hip"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(2), math.rad(-5), 0),
+            ["RootJoint"] = CFrame.new(0, 0.3, 0),
+        }},
+        {1.0, {
+            ["Right Shoulder"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["Left Shoulder"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["Right Hip"] = CFrame.Angles(0, 0, 0),
+            ["Left Hip"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-2), math.rad(-8), 0),
+            ["RootJoint"] = CFrame.new(0, 0.1, 0),
+        }},
+    }
+}
+
+Animations.R6.walk = {
+    Duration = 0.8,
+    Looping = true,
+    Keyframes = {
+        {0.0, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["Right Hip"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["Neck"] = CFrame.Angles(0, 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0.2, 0) * CFrame.Angles(math.rad(-5), 0, 0),
+        }},
+        {0.15, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(15), 0, math.rad(5)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-15), 0, math.rad(-5)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(15), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-3), math.rad(5), 0),
+            ["RootJoint"] = CFrame.new(0, 0.5, 0) * CFrame.Angles(math.rad(-5), 0, math.rad(3)),
+        }},
+        {0.35, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-20), 0, math.rad(8)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(20), 0, math.rad(-8)),
+            ["Right Hip"] = CFrame.Angles(math.rad(25), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(-25), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-5), math.rad(-3), 0),
+            ["RootJoint"] = CFrame.new(0, 0.1, 0) * CFrame.Angles(math.rad(-8), 0, 0),
+        }},
+        {0.5, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["Right Hip"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["Neck"] = CFrame.Angles(0, 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0.2, 0) * CFrame.Angles(math.rad(-5), 0, 0),
+        }},
+        {0.65, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-15), 0, math.rad(-5)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(15), 0, math.rad(5)),
+            ["Right Hip"] = CFrame.Angles(math.rad(15), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-3), math.rad(-5), 0),
+            ["RootJoint"] = CFrame.new(0, 0.5, 0) * CFrame.Angles(math.rad(-5), 0, math.rad(-3)),
+        }},
+        {0.85, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(20), 0, math.rad(-8)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-20), 0, math.rad(8)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-25), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(25), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-5), math.rad(3), 0),
+            ["RootJoint"] = CFrame.new(0, 0.1, 0) * CFrame.Angles(math.rad(-8), 0, 0),
+        }},
+    }
+}
+
+Animations.R6.jump = {
+    Duration = 0.5,
+    Looping = false,
+    Keyframes = {
+        {0.0, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-160), 0, math.rad(20)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-160), 0, math.rad(-20)),
+            ["Right Hip"] = CFrame.Angles(math.rad(20), 0, math.rad(10)),
+            ["Left Hip"] = CFrame.Angles(math.rad(20), 0, math.rad(-10)),
+            ["Neck"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(-10), 0, 0),
+        }},
+        {0.2, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-170), 0, math.rad(25)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-170), 0, math.rad(-25)),
+            ["Right Hip"] = CFrame.Angles(math.rad(30), 0, math.rad(15)),
+            ["Left Hip"] = CFrame.Angles(math.rad(30), 0, math.rad(-15)),
+            ["Neck"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(-15), 0, 0),
+        }},
+        {0.5, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-180), 0, math.rad(30)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-180), 0, math.rad(-30)),
+            ["Right Hip"] = CFrame.Angles(math.rad(40), 0, math.rad(10)),
+            ["Left Hip"] = CFrame.Angles(math.rad(-20), 0, math.rad(-10)),
+            ["Neck"] = CFrame.Angles(math.rad(-25), 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(-10), 0, 0),
+        }},
+    }
+}
+
+Animations.R6.fall = {
+    Duration = 1.0,
+    Looping = true,
+    Keyframes = {
+        {0.0, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-140), 0, math.rad(35)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-140), 0, math.rad(-35)),
+            ["Right Hip"] = CFrame.Angles(math.rad(15), 0, math.rad(8)),
+            ["Left Hip"] = CFrame.Angles(math.rad(15), 0, math.rad(-8)),
+            ["Neck"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(5), 0, 0),
+        }},
+        {0.5, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-150), 0, math.rad(40)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-150), 0, math.rad(-40)),
+            ["Right Hip"] = CFrame.Angles(math.rad(20), 0, math.rad(12)),
+            ["Left Hip"] = CFrame.Angles(math.rad(20), 0, math.rad(-12)),
+            ["Neck"] = CFrame.Angles(math.rad(15), math.rad(5), 0),
+            ["RootJoint"] = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(8), 0, math.rad(3)),
+        }},
+    }
+}
+
+Animations.R6.dodge = {
+    Duration = 0.35,
+    Looping = false,
+    Keyframes = {
+        {0.0, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-10), 0, math.rad(40)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-10), 0, math.rad(-40)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(20), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-10), math.rad(30), 0),
+            ["RootJoint"] = CFrame.new(0, -0.5, 0) * CFrame.Angles(math.rad(-15), math.rad(45), 0),
+        }},
+        {0.15, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-40), 0, math.rad(60)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-40), 0, math.rad(-20)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-50), 0, math.rad(10)),
+            ["Left Hip"] = CFrame.Angles(math.rad(40), 0, math.rad(-10)),
+            ["Neck"] = CFrame.Angles(math.rad(-20), math.rad(60), 0),
+            ["RootJoint"] = CFrame.new(0, -1.0, 0) * CFrame.Angles(math.rad(-25), math.rad(90), math.rad(15)),
+        }},
+        {0.35, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-10), 0, math.rad(30)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-10), 0, math.rad(-30)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-5), math.rad(10), 0),
+            ["RootJoint"] = CFrame.new(0, -0.3, 0) * CFrame.Angles(math.rad(-5), math.rad(20), 0),
+        }},
+    }
+}
+
+Animations.R6.roll = {
+    Duration = 0.6,
+    Looping = false,
+    Keyframes = {
+        {0.0, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-90), 0, math.rad(30)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-90), 0, math.rad(-30)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-60), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(-60), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["RootJoint"] = CFrame.new(0, -1.5, 0) * CFrame.Angles(math.rad(45), 0, 0),
+        }},
+        {0.15, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-120), 0, math.rad(20)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-120), 0, math.rad(-20)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-80), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(-80), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(45), 0, 0),
+            ["RootJoint"] = CFrame.new(0, -0.5, -1) * CFrame.Angles(math.rad(120), 0, 0),
+        }},
+        {0.3, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-150), 0, math.rad(10)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-150), 0, math.rad(-10)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-90), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(-90), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0.5, -2) * CFrame.Angles(math.rad(220), 0, 0),
+        }},
+        {0.45, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-80), 0, math.rad(20)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-80), 0, math.rad(-20)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-50), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(-50), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["RootJoint"] = CFrame.new(0, -0.2, -3) * CFrame.Angles(math.rad(320), 0, 0),
+        }},
+        {0.6, {
+            ["Right Shoulder"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["Left Shoulder"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["Right Hip"] = CFrame.Angles(0, 0, 0),
+            ["Left Hip"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(0, 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0, -3) * CFrame.Angles(math.rad(360), 0, 0),
+        }},
+    }
+}
+
+Animations.R6.levitate = {
+    Duration = 2.0,
+    Looping = true,
+    Keyframes = {
+        {0.0, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-30), 0, math.rad(50)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-30), 0, math.rad(-50)),
+            ["Right Hip"] = CFrame.Angles(math.rad(10), 0, math.rad(8)),
+            ["Left Hip"] = CFrame.Angles(math.rad(-5), 0, math.rad(-8)),
+            ["Neck"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0, 0) * CFrame.Angles(math.rad(-5), 0, 0),
+        }},
+        {0.5, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-40), math.rad(10), math.rad(60)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-40), math.rad(-10), math.rad(-60)),
+            ["Right Hip"] = CFrame.Angles(math.rad(15), 0, math.rad(12)),
+            ["Left Hip"] = CFrame.Angles(math.rad(-10), 0, math.rad(-12)),
+            ["Neck"] = CFrame.Angles(math.rad(-25), math.rad(10), 0),
+            ["RootJoint"] = CFrame.new(0, 0.3, 0) * CFrame.Angles(math.rad(-8), math.rad(5), 0),
+        }},
+        {1.0, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-35), 0, math.rad(55)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-35), 0, math.rad(-55)),
+            ["Right Hip"] = CFrame.Angles(math.rad(12), 0, math.rad(10)),
+            ["Left Hip"] = CFrame.Angles(math.rad(-8), 0, math.rad(-10)),
+            ["Neck"] = CFrame.Angles(math.rad(-22), math.rad(-10), 0),
+            ["RootJoint"] = CFrame.new(0, 0.1, 0) * CFrame.Angles(math.rad(-6), math.rad(-5), 0),
+        }},
+    }
+}
+
+Animations.R6.entrance = {
+    Duration = 1.5,
+    Looping = false,
+    Keyframes = {
+        {0.0, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-180), 0, math.rad(10)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-180), 0, math.rad(-10)),
+            ["Right Hip"] = CFrame.Angles(0, 0, 0),
+            ["Left Hip"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["RootJoint"] = CFrame.new(0, 2, 0),
+        }},
+        {0.4, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-160), math.rad(20), math.rad(30)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-160), math.rad(-20), math.rad(-30)),
+            ["Right Hip"] = CFrame.Angles(math.rad(10), 0, math.rad(5)),
+            ["Left Hip"] = CFrame.Angles(math.rad(-10), 0, math.rad(-5)),
+            ["Neck"] = CFrame.Angles(math.rad(-20), math.rad(15), 0),
+            ["RootJoint"] = CFrame.new(0, 3, 0) * CFrame.Angles(0, math.rad(90), 0),
+        }},
+        {0.8, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-90), 0, math.rad(70)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-90), 0, math.rad(-70)),
+            ["Right Hip"] = CFrame.Angles(0, 0, 0),
+            ["Left Hip"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["RootJoint"] = CFrame.new(0, 2, 0) * CFrame.Angles(0, math.rad(270), 0),
+        }},
+        {1.2, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-20), 0, math.rad(45)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-20), 0, math.rad(-45)),
+            ["Right Hip"] = CFrame.Angles(0, 0, 0),
+            ["Left Hip"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0.5, 0) * CFrame.Angles(0, math.rad(360), 0),
+        }},
+        {1.5, {
+            ["Right Shoulder"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["Left Shoulder"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["Right Hip"] = CFrame.Angles(0, 0, 0),
+            ["Left Hip"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(0, 0, 0),
+            ["RootJoint"] = CFrame.new(0, 0, 0),
+        }},
+    }
+}
+
+Animations.R6.hyped = {
+    Duration = 0.6,
+    Looping = true,
+    Keyframes = {
+        {0.0, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-160), 0, math.rad(20)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-160), 0, math.rad(-20)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-15), math.rad(10), 0),
+            ["RootJoint"] = CFrame.new(0, 1.5, 0) * CFrame.Angles(0, 0, math.rad(5)),
+        }},
+        {0.15, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-140), math.rad(20), math.rad(30)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-140), math.rad(-20), math.rad(-30)),
+            ["Right Hip"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-10), math.rad(-10), 0),
+            ["RootJoint"] = CFrame.new(0, 0.2, 0) * CFrame.Angles(0, 0, math.rad(-5)),
+        }},
+        {0.3, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-170), 0, math.rad(25)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-170), 0, math.rad(-25)),
+            ["Right Hip"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-20), math.rad(15), 0),
+            ["RootJoint"] = CFrame.new(0, 1.8, 0) * CFrame.Angles(0, math.rad(10), math.rad(3)),
+        }},
+        {0.45, {
+            ["Right Shoulder"] = CFrame.Angles(math.rad(-130), math.rad(-15), math.rad(35)),
+            ["Left Shoulder"] = CFrame.Angles(math.rad(-130), math.rad(15), math.rad(-35)),
+            ["Right Hip"] = CFrame.Angles(math.rad(5), 0, 0),
+            ["Left Hip"] = CFrame.Angles(math.rad(5), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-8), math.rad(-15), 0),
+            ["RootJoint"] = CFrame.new(0, 0.3, 0) * CFrame.Angles(0, math.rad(-10), math.rad(-3)),
+        }},
+    }
+}
+
+-- R15 Animations (using R15 motor names)
+Animations.R15 = {}
+
+Animations.R15.idle = {
+    Duration = 2.0,
+    Looping = true,
+    Keyframes = {
+        {0.0, {
+            ["RightShoulder"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["LeftShoulder"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["RightHip"] = CFrame.Angles(0, 0, 0),
+            ["LeftHip"] = CFrame.Angles(0, 0, 0),
+            ["RightKnee"] = CFrame.Angles(0, 0, 0),
+            ["LeftKnee"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-2), 0, 0),
+            ["Waist"] = CFrame.Angles(0, 0, 0),
+            ["Root"] = CFrame.new(0, 0.1, 0),
+        }},
+        {0.5, {
+            ["RightShoulder"] = CFrame.Angles(0, 0, math.rad(10)),
+            ["LeftShoulder"] = CFrame.Angles(0, 0, math.rad(-10)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-8), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-8), 0, 0),
+            ["RightHip"] = CFrame.Angles(0, 0, 0),
+            ["LeftHip"] = CFrame.Angles(0, 0, 0),
+            ["RightKnee"] = CFrame.Angles(0, 0, 0),
+            ["LeftKnee"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(3), math.rad(8), 0),
+            ["Waist"] = CFrame.Angles(0, 0, math.rad(2)),
+            ["Root"] = CFrame.new(0, 0.5, 0),
+        }},
+        {1.0, {
+            ["RightShoulder"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["LeftShoulder"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["RightHip"] = CFrame.Angles(0, 0, 0),
+            ["LeftHip"] = CFrame.Angles(0, 0, 0),
+            ["RightKnee"] = CFrame.Angles(0, 0, 0),
+            ["LeftKnee"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-2), math.rad(-8), 0),
+            ["Waist"] = CFrame.Angles(0, 0, math.rad(-2)),
+            ["Root"] = CFrame.new(0, 0.1, 0),
+        }},
+    }
+}
+
+Animations.R15.walk = {
+    Duration = 0.8,
+    Looping = true,
+    Keyframes = {
+        {0.0, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["RightElbow"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["LeftHip"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["RightKnee"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-3), 0, 0),
+            ["Waist"] = CFrame.Angles(math.rad(-3), math.rad(5), 0),
+            ["Root"] = CFrame.new(0, 0.2, 0),
+        }},
+        {0.25, {
+            ["RightShoulder"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["LeftShoulder"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["RightHip"] = CFrame.Angles(0, 0, 0),
+            ["LeftHip"] = CFrame.Angles(0, 0, 0),
+            ["RightKnee"] = CFrame.Angles(0, 0, 0),
+            ["LeftKnee"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-5), math.rad(3), 0),
+            ["Waist"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["Root"] = CFrame.new(0, 0.5, 0),
+        }},
+        {0.5, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["RightElbow"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["LeftHip"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["RightKnee"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-3), 0, 0),
+            ["Waist"] = CFrame.Angles(math.rad(-3), math.rad(-5), 0),
+            ["Root"] = CFrame.new(0, 0.2, 0),
+        }},
+        {0.75, {
+            ["RightShoulder"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["LeftShoulder"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["RightHip"] = CFrame.Angles(0, 0, 0),
+            ["LeftHip"] = CFrame.Angles(0, 0, 0),
+            ["RightKnee"] = CFrame.Angles(0, 0, 0),
+            ["LeftKnee"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-5), math.rad(-3), 0),
+            ["Waist"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["Root"] = CFrame.new(0, 0.5, 0),
+        }},
+    }
+}
+
+Animations.R15.jump = {
+    Duration = 0.5,
+    Looping = false,
+    Keyframes = {
+        {0.0, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-160), 0, math.rad(20)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-160), 0, math.rad(-20)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(20), 0, math.rad(10)),
+            ["LeftHip"] = CFrame.Angles(math.rad(20), 0, math.rad(-10)),
+            ["RightKnee"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["Waist"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["Root"] = CFrame.new(0, 0, 0),
+        }},
+        {0.5, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-180), 0, math.rad(30)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-180), 0, math.rad(-30)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(30), 0, math.rad(10)),
+            ["LeftHip"] = CFrame.Angles(math.rad(-15), 0, math.rad(-10)),
+            ["RightKnee"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-25), 0, 0),
+            ["Waist"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["Root"] = CFrame.new(0, 0, 0),
+        }},
+    }
+}
+
+Animations.R15.fall = Animations.R15.jump -- Reuse
+
+Animations.R15.dodge = {
+    Duration = 0.35,
+    Looping = false,
+    Keyframes = {
+        {0.0, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-10), 0, math.rad(40)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-10), 0, math.rad(-40)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["LeftHip"] = CFrame.Angles(math.rad(20), 0, 0),
+            ["RightKnee"] = CFrame.Angles(math.rad(20), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-10), math.rad(30), 0),
+            ["Waist"] = CFrame.Angles(math.rad(-15), math.rad(45), 0),
+            ["Root"] = CFrame.new(0, -0.5, 0),
+        }},
+        {0.15, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-40), 0, math.rad(60)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-40), 0, math.rad(-20)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-50), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(-50), 0, math.rad(10)),
+            ["LeftHip"] = CFrame.Angles(math.rad(40), 0, math.rad(-10)),
+            ["RightKnee"] = CFrame.Angles(math.rad(40), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-20), math.rad(60), 0),
+            ["Waist"] = CFrame.Angles(math.rad(-25), math.rad(80), math.rad(10)),
+            ["Root"] = CFrame.new(0, -1.0, 0),
+        }},
+        {0.35, {
+            ["RightShoulder"] = CFrame.Angles(0, 0, math.rad(10)),
+            ["LeftShoulder"] = CFrame.Angles(0, 0, math.rad(-10)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["RightHip"] = CFrame.Angles(0, 0, 0),
+            ["LeftHip"] = CFrame.Angles(0, 0, 0),
+            ["RightKnee"] = CFrame.Angles(0, 0, 0),
+            ["LeftKnee"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-5), math.rad(10), 0),
+            ["Waist"] = CFrame.Angles(math.rad(-5), math.rad(10), 0),
+            ["Root"] = CFrame.new(0, 0, 0),
+        }},
+    }
+}
+
+Animations.R15.roll = {
+    Duration = 0.6,
+    Looping = false,
+    Keyframes = {
+        {0.0, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-90), 0, math.rad(30)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-90), 0, math.rad(-30)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-40), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-40), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(-60), 0, 0),
+            ["LeftHip"] = CFrame.Angles(math.rad(-60), 0, 0),
+            ["RightKnee"] = CFrame.Angles(math.rad(40), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(40), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["Waist"] = CFrame.Angles(math.rad(30), 0, 0),
+            ["Root"] = CFrame.new(0, -1.5, 0) * CFrame.Angles(math.rad(45), 0, 0),
+        }},
+        {0.3, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-150), 0, math.rad(10)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-150), 0, math.rad(-10)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-60), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-60), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(-90), 0, 0),
+            ["LeftHip"] = CFrame.Angles(math.rad(-90), 0, 0),
+            ["RightKnee"] = CFrame.Angles(math.rad(60), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(60), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(20), 0, 0),
+            ["Waist"] = CFrame.Angles(math.rad(45), 0, 0),
+            ["Root"] = CFrame.new(0, 0, -2) * CFrame.Angles(math.rad(200), 0, 0),
+        }},
+        {0.6, {
+            ["RightShoulder"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["LeftShoulder"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["RightHip"] = CFrame.Angles(0, 0, 0),
+            ["LeftHip"] = CFrame.Angles(0, 0, 0),
+            ["RightKnee"] = CFrame.Angles(0, 0, 0),
+            ["LeftKnee"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(0, 0, 0),
+            ["Waist"] = CFrame.Angles(0, 0, 0),
+            ["Root"] = CFrame.new(0, 0, -3) * CFrame.Angles(math.rad(360), 0, 0),
+        }},
+    }
+}
+
+Animations.R15.levitate = {
+    Duration = 2.0,
+    Looping = true,
+    Keyframes = {
+        {0.0, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-30), 0, math.rad(50)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-30), 0, math.rad(-50)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(10), 0, math.rad(8)),
+            ["LeftHip"] = CFrame.Angles(math.rad(-5), 0, math.rad(-8)),
+            ["RightKnee"] = CFrame.Angles(math.rad(-15), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["Waist"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["Root"] = CFrame.new(0, 0, 0),
+        }},
+        {1.0, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-40), math.rad(10), math.rad(60)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-40), math.rad(-10), math.rad(-60)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-25), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-25), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(15), 0, math.rad(12)),
+            ["LeftHip"] = CFrame.Angles(math.rad(-10), 0, math.rad(-12)),
+            ["RightKnee"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(15), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-25), math.rad(8), 0),
+            ["Waist"] = CFrame.Angles(math.rad(-8), math.rad(5), 0),
+            ["Root"] = CFrame.new(0, 0.3, 0),
+        }},
+    }
+}
+
+Animations.R15.entrance = {
+    Duration = 1.5,
+    Looping = false,
+    Keyframes = {
+        {0.0, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-180), 0, math.rad(10)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-180), 0, math.rad(-10)),
+            ["RightElbow"] = CFrame.Angles(0, 0, 0),
+            ["LeftElbow"] = CFrame.Angles(0, 0, 0),
+            ["RightHip"] = CFrame.Angles(0, 0, 0),
+            ["LeftHip"] = CFrame.Angles(0, 0, 0),
+            ["RightKnee"] = CFrame.Angles(0, 0, 0),
+            ["LeftKnee"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["Waist"] = CFrame.Angles(0, 0, 0),
+            ["Root"] = CFrame.new(0, 2, 0),
+        }},
+        {0.75, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-90), 0, math.rad(70)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-90), 0, math.rad(-70)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["LeftHip"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["RightKnee"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(5), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-10), 0, 0),
+            ["Waist"] = CFrame.Angles(0, math.rad(180), 0),
+            ["Root"] = CFrame.new(0, 2, 0),
+        }},
+        {1.5, {
+            ["RightShoulder"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["LeftShoulder"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-5), 0, 0),
+            ["RightHip"] = CFrame.Angles(0, 0, 0),
+            ["LeftHip"] = CFrame.Angles(0, 0, 0),
+            ["RightKnee"] = CFrame.Angles(0, 0, 0),
+            ["LeftKnee"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(0, 0, 0),
+            ["Waist"] = CFrame.Angles(0, math.rad(360), 0),
+            ["Root"] = CFrame.new(0, 0, 0),
+        }},
+    }
+}
+
+Animations.R15.hyped = {
+    Duration = 0.6,
+    Looping = true,
+    Keyframes = {
+        {0.0, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-160), 0, math.rad(20)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-160), 0, math.rad(-20)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-30), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["LeftHip"] = CFrame.Angles(math.rad(-20), 0, 0),
+            ["RightKnee"] = CFrame.Angles(math.rad(15), 0, 0),
+            ["LeftKnee"] = CFrame.Angles(math.rad(15), 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-15), math.rad(10), 0),
+            ["Waist"] = CFrame.Angles(0, 0, math.rad(5)),
+            ["Root"] = CFrame.new(0, 1.5, 0),
+        }},
+        {0.3, {
+            ["RightShoulder"] = CFrame.Angles(math.rad(-140), math.rad(20), math.rad(35)),
+            ["LeftShoulder"] = CFrame.Angles(math.rad(-140), math.rad(-20), math.rad(-35)),
+            ["RightElbow"] = CFrame.Angles(math.rad(-40), 0, 0),
+            ["LeftElbow"] = CFrame.Angles(math.rad(-40), 0, 0),
+            ["RightHip"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["LeftHip"] = CFrame.Angles(math.rad(10), 0, 0),
+            ["RightKnee"] = CFrame.Angles(0, 0, 0),
+            ["LeftKnee"] = CFrame.Angles(0, 0, 0),
+            ["Neck"] = CFrame.Angles(math.rad(-10), math.rad(-10), 0),
+            ["Waist"] = CFrame.Angles(0, 0, math.rad(-5)),
+            ["Root"] = CFrame.new(0, 0.2, 0),
+        }},
+    }
+}
+
+------------------------------------------------------------------------
+-- ANIMATION PLAYER
+------------------------------------------------------------------------
+local AnimPlayer = {}
+AnimPlayer.CurrentTime = 0
+AnimPlayer.CurrentAnim = nil
+AnimPlayer.AnimData = nil
+AnimPlayer.Playing = false
+AnimPlayer.QueuedAnim = nil
+AnimPlayer.TargetPoses = {}
+AnimPlayer.CurrentPoses = {}
+AnimPlayer.StopMotionAccum = 0
+
+function AnimPlayer:GetAnimSet()
+    if State.RigType == "R15" then
+        return Animations.R15
+    else
+        return Animations.R6
+    end
+end
+
+function AnimPlayer:Play(animName, force)
+    local animSet = self:GetAnimSet()
+    if not animSet[animName] then return end
+    if self.CurrentAnim == animName and not force then return end
+    
+    self.CurrentAnim = animName
+    self.AnimData = animSet[animName]
+    self.CurrentTime = 0
+    self.Playing = true
+    self.StopMotionAccum = 0
+    State.CurrentAnim = animName
+end
+
+function AnimPlayer:Stop()
+    self.Playing = false
+    self.CurrentAnim = nil
+    self.AnimData = nil
+end
+
+function AnimPlayer:InterpolateBetweenKeyframes(kf1, kf2, alpha)
+    local result = {}
+    local poses1 = kf1[2]
+    local poses2 = kf2[2]
+    
+    local allKeys = {}
+    for k in pairs(poses1) do allKeys[k] = true end
+    for k in pairs(poses2) do allKeys[k] = true end
+    
+    for k in pairs(allKeys) do
+        local cf1 = poses1[k] or CFrame.new()
+        local cf2 = poses2[k] or CFrame.new()
+        result[k] = cf1:Lerp(cf2, alpha)
+    end
+    
+    return result
+end
+
+function AnimPlayer:GetCurrentPoses()
+    if not self.AnimData or not self.Playing then return {} end
+    
+    local kfs = self.AnimData.Keyframes
+    local duration = self.AnimData.Duration
+    local t = self.CurrentTime
+    
+    if self.AnimData.Looping then
+        t = t % duration
+    else
+        t = math.min(t, duration)
+    end
+    
+    local normalizedT = t / duration
+    
+    local kf1, kf2
+    for i = 1, #kfs - 1 do
+        local t1 = kfs[i][1]
+        local t2 = kfs[i + 1][1]
+        if normalizedT >= t1 and normalizedT <= t2 then
+            kf1 = kfs[i]
+            kf2 = kfs[i + 1]
+            break
+        end
+    end
+    
+    if not kf1 then
+        if normalizedT <= kfs[1][1] then
+            return kfs[1][2]
+        else
+            return kfs[#kfs][2]
+        end
+    end
+    
+    local range = kf2[1] - kf1[1]
+    local alpha = 0
+    if range > 0 then
+        alpha = (normalizedT - kf1[1]) / range
+    end
+    
+    -- Quantize alpha for stop-motion feel
+    local steps = CONFIG.STOP_MOTION_FPS
+    alpha = math.floor(alpha * steps) / steps
+    
+    return self:InterpolateBetweenKeyframes(kf1, kf2, alpha)
+end
+
+function AnimPlayer:Update(dt)
+    if not self.Playing or not self.AnimData then return end
+    
+    -- Accumulate for frame delay effect
+    self.StopMotionAccum = self.StopMotionAccum + dt
+    local frameInterval = 1 / CONFIG.STOP_MOTION_FPS
+    
+    if self.StopMotionAccum >= frameInterval then
+        self.StopMotionAccum = self.StopMotionAccum - frameInterval
+        self.CurrentTime = self.CurrentTime + frameInterval * CONFIG.FRAME_DELAY * 0.5
+    end
+    
+    local duration = self.AnimData.Duration
+    if not self.AnimData.Looping and self.CurrentTime >= duration then
+        self.Playing = false
+        if self.QueuedAnim then
+            self:Play(self.QueuedAnim, true)
+            self.QueuedAnim = nil
+        end
+    end
+    
+    self.TargetPoses = self:GetCurrentPoses()
+    
+    -- Smooth interpolation with stop-motion snapping
+    for name, targetCF in pairs(self.TargetPoses) do
+        local current = self.CurrentPoses[name]
+        if current then
+            self.CurrentPoses[name] = current:Lerp(targetCF, CONFIG.ANIMATION_SMOOTHING)
+        else
+            self.CurrentPoses[name] = targetCF
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- MOTOR6D MANAGEMENT
+------------------------------------------------------------------------
+local MotorManager = {}
+
+function MotorManager:CollectMotors(character)
+    State.Motors = {}
+    
+    if State.RigType == "R6" then
+        local torso = character:FindFirstChild("Torso")
+        local head = character:FindFirstChild("Head")
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        
+        if torso then
+            for _, child in pairs(torso:GetChildren()) do
+                if child:IsA("Motor6D") then
+                    State.Motors[child.Name] = {
+                        Motor = child,
+                        C0_Original = child.C0,
+                        C1_Original = child.C1,
+                    }
+                end
+            end
+        end
+        if rootPart then
+            for _, child in pairs(rootPart:GetChildren()) do
+                if child:IsA("Motor6D") then
+                    State.Motors[child.Name] = {
+                        Motor = child,
+                        C0_Original = child.C0,
+                        C1_Original = child.C1,
+                    }
+                end
+            end
+        end
+    else -- R15
+        for _, desc in pairs(character:GetDescendants()) do
+            if desc:IsA("Motor6D") then
+                State.Motors[desc.Name] = {
+                    Motor = desc,
+                    C0_Original = desc.C0,
+                    C1_Original = desc.C1,
+                }
+            end
+        end
+    end
+end
+
+function MotorManager:ApplyPoses(poses)
+    for name, cf in pairs(poses) do
+        local motorData = State.Motors[name]
+        if motorData then
+            pcall(function()
+                motorData.Motor.C0 = motorData.C0_Original * cf
+            end)
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- CINEMA BARS
+------------------------------------------------------------------------
+local CinemaSystem = {}
+
+function CinemaSystem:Create()
+    local screenGui = Player:FindFirstChild("PlayerGui") and Player.PlayerGui:FindFirstChild("MCCinemaBars")
+    if screenGui then return screenGui end
+    
+    screenGui = CreateInstance("ScreenGui", {
+        Name = "MCCinemaBars",
+        ResetOnSpawn = false,
+        DisplayOrder = 100,
+        IgnoreGuiInset = true,
+    }, Player.PlayerGui)
+    
+    local topBar = CreateInstance("Frame", {
+        Name = "TopBar",
+        Size = UDim2.new(1, 0, 0, CONFIG.BAR_HEIGHT),
+        Position = UDim2.new(0, 0, 0, -CONFIG.BAR_HEIGHT),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BorderSizePixel = 0,
+        ZIndex = 100,
+    }, screenGui)
+    
+    local bottomBar = CreateInstance("Frame", {
+        Name = "BottomBar",
+        Size = UDim2.new(1, 0, 0, CONFIG.BAR_HEIGHT),
+        Position = UDim2.new(0, 0, 1, 0),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BorderSizePixel = 0,
+        ZIndex = 100,
+    }, screenGui)
+    
+    return screenGui
+end
+
+function CinemaSystem:Show()
+    if State.CinemaBarsVisible then return end
+    State.CinemaBarsVisible = true
+    
+    local gui = self:Create()
+    local topBar = gui:FindFirstChild("TopBar")
+    local bottomBar = gui:FindFirstChild("BottomBar")
+    
+    if topBar then
+        TweenService:Create(topBar, TweenInfo.new(CONFIG.BAR_TWEEN_TIME, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Position = UDim2.new(0, 0, 0, 0)
+        }):Play()
+    end
+    
+    if bottomBar then
+        TweenService:Create(bottomBar, TweenInfo.new(CONFIG.BAR_TWEEN_TIME, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
+            Position = UDim2.new(0, 0, 1, -CONFIG.BAR_HEIGHT)
+        }):Play()
+    end
+end
+
+function CinemaSystem:Hide()
+    if not State.CinemaBarsVisible then return end
+    State.CinemaBarsVisible = false
+    
+    local gui = Player.PlayerGui:FindFirstChild("MCCinemaBars")
+    if not gui then return end
+    
+    local topBar = gui:FindFirstChild("TopBar")
+    local bottomBar = gui:FindFirstChild("BottomBar")
+    
+    if topBar then
+        TweenService:Create(topBar, TweenInfo.new(CONFIG.BAR_TWEEN_TIME, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+            Position = UDim2.new(0, 0, 0, -CONFIG.BAR_HEIGHT)
+        }):Play()
+    end
+    
+    if bottomBar then
+        TweenService:Create(bottomBar, TweenInfo.new(CONFIG.BAR_TWEEN_TIME, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+            Position = UDim2.new(0, 0, 1, 0)
+        }):Play()
+    end
+end
+
+------------------------------------------------------------------------
+-- PARTICLE / AURA SYSTEM
+------------------------------------------------------------------------
+local AuraSystem = {}
+
+function AuraSystem:CreateAura(character)
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+    
+    -- Remove old aura
+    local oldAura = rootPart:FindFirstChild("MCParticleAura")
+    if oldAura then oldAura:Destroy() end
+    
+    local attachment = CreateInstance("Attachment", {
+        Name = "MCParticleAura",
+    }, rootPart)
+    
+    -- Golden sparkle particles
+    local sparkle = CreateInstance("ParticleEmitter", {
+        Name = "GoldenSparkle",
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, CONFIG.AURA_COLOR1),
+            ColorSequenceKeypoint.new(1, CONFIG.AURA_COLOR2),
+        }),
+        Size = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.1),
+            NumberSequenceKeypoint.new(0.5, 0.3),
+            NumberSequenceKeypoint.new(1, 0),
+        }),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.5),
+            NumberSequenceKeypoint.new(0.5, 0.2),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Lifetime = NumberRange.new(0.5, 1.2),
+        Rate = 15,
+        Speed = NumberRange.new(1, 3),
+        SpreadAngle = Vector2.new(180, 180),
+        LightEmission = 1,
+        LightInfluence = 0,
+        Brightness = 2,
+    }, attachment)
+    
+    -- Subtle glow ring
+    local glowRing = CreateInstance("ParticleEmitter", {
+        Name = "GlowRing",
+        Color = ColorSequence.new(CONFIG.AURA_COLOR1),
+        Size = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 2),
+            NumberSequenceKeypoint.new(1, 4),
+        }),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.8),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Lifetime = NumberRange.new(0.8, 1.5),
+        Rate = 3,
+        Speed = NumberRange.new(0, 0.5),
+        SpreadAngle = Vector2.new(360, 0),
+        LightEmission = 1,
+        LightInfluence = 0,
+        Brightness = 1,
+        Orientation = Enum.ParticleOrientation.VelocityParallel,
+    }, attachment)
+    
+    -- Point light for ambient glow
+    local glow = CreateInstance("PointLight", {
+        Name = "MCGlow",
+        Color = CONFIG.AURA_COLOR1,
+        Brightness = 0.5,
+        Range = 12,
+    }, rootPart)
+end
+
+function AuraSystem:RemoveAura(character)
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if rootPart then
+        local att = rootPart:FindFirstChild("MCParticleAura")
+        if att then att:Destroy() end
+        local glow = rootPart:FindFirstChild("MCGlow")
+        if glow then glow:Destroy() end
+    end
+end
+
+------------------------------------------------------------------------
+-- ACCESSORY SYSTEM (HALO + ANGEL WINGS)
+------------------------------------------------------------------------
+local AccessorySystem = {}
+
+function AccessorySystem:CreateHalo(character)
+    local head = character:FindFirstChild("Head")
+    if not head then return end
+    
+    if character:FindFirstChild("MCHalo") then return end
+    
+    local haloModel = Instance.new("Model")
+    haloModel.Name = "MCHalo"
+    
+    -- Create halo ring using parts
+    local segments = 16
+    local radius = 1.2
+    local thickness = 0.08
+    
+    for i = 1, segments do
+        local angle = (i / segments) * math.pi * 2
+        local x = math.cos(angle) * radius
+        local z = math.sin(angle) * radius
+        
+        local part = CreateInstance("Part", {
+            Name = "HaloSegment_" .. i,
+            Size = Vector3.new(thickness * 3, thickness, thickness * 3),
+            Shape = Enum.PartType.Ball,
+            Material = Enum.Material.Neon,
+            Color = CONFIG.HALO_COLOR,
+            CanCollide = false,
+            Anchored = false,
+            Massless = true,
+            CastShadow = false,
+        }, haloModel)
+        
+        local weld = CreateInstance("Weld", {
+            Part0 = head,
+            Part1 = part,
+            C0 = CFrame.new(x, 1.6, z),
+        }, part)
+    end
+    
+    -- Center glow
+    local glowPart = CreateInstance("Part", {
+        Name = "HaloGlow",
+        Size = Vector3.new(0.1, 0.1, 0.1),
+        Transparency = 1,
+        CanCollide = false,
+        Anchored = false,
+        Massless = true,
+    }, haloModel)
+    
+    CreateInstance("Weld", {
+        Part0 = head,
+        Part1 = glowPart,
+        C0 = CFrame.new(0, 1.6, 0),
+    }, glowPart)
+    
+    local haloLight = CreateInstance("PointLight", {
+        Color = CONFIG.HALO_GLOW_COLOR,
+        Brightness = 1.5,
+        Range = 8,
+    }, glowPart)
+    
+    local haloParticles = CreateInstance("Attachment", {Name = "HaloAtt"}, glowPart)
+    CreateInstance("ParticleEmitter", {
+        Color = ColorSequence.new(CONFIG.HALO_COLOR),
+        Size = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(0.5, 0.15),
+            NumberSequenceKeypoint.new(1, 0),
+        }),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.3),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Lifetime = NumberRange.new(0.3, 0.8),
+        Rate = 20,
+        Speed = NumberRange.new(0.5, 2),
+        SpreadAngle = Vector2.new(360, 360),
+        LightEmission = 1,
+        Brightness = 3,
+    }, haloParticles)
+    
+    haloModel.Parent = character
+    State.HaloModel = haloModel
+end
+
+function AccessorySystem:CreateWings(character)
+    local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+    if not torso then return end
+    
+    if character:FindFirstChild("MCWings") then return end
+    
+    local wingsModel = Instance.new("Model")
+    wingsModel.Name = "MCWings"
+    
+    -- Wing structure: each wing has 3 feather layers
+    local wingData = {
+        -- Right wing feathers
+        {offset = CFrame.new(0.8, 0.5, 0.5), size = Vector3.new(0.15, 2.5, 1.2), angle = CFrame.Angles(math.rad(-10), math.rad(30), math.rad(20))},
+        {offset = CFrame.new(1.5, 0.8, 0.7), size = Vector3.new(0.12, 3.0, 0.9), angle = CFrame.Angles(math.rad(-15), math.rad(40), math.rad(30))},
+        {offset = CFrame.new(2.0, 1.0, 0.9), size = Vector3.new(0.1, 2.2, 0.7), angle = CFrame.Angles(math.rad(-20), math.rad(50), math.rad(40))},
+        {offset = CFrame.new(1.2, 0.2, 0.6), size = Vector3.new(0.12, 2.0, 1.0), angle = CFrame.Angles(math.rad(-5), math.rad(25), math.rad(15))},
+        {offset = CFrame.new(2.3, 0.6, 1.0), size = Vector3.new(0.08, 1.5, 0.5), angle = CFrame.Angles(math.rad(-25), math.rad(55), math.rad(45))},
+        -- Left wing feathers (mirrored)
+        {offset = CFrame.new(-0.8, 0.5, 0.5), size = Vector3.new(0.15, 2.5, 1.2), angle = CFrame.Angles(math.rad(-10), math.rad(-30), math.rad(-20))},
+        {offset = CFrame.new(-1.5, 0.8, 0.7), size = Vector3.new(0.12, 3.0, 0.9), angle = CFrame.Angles(math.rad(-15), math.rad(-40), math.rad(-30))},
+        {offset = CFrame.new(-2.0, 1.0, 0.9), size = Vector3.new(0.1, 2.2, 0.7), angle = CFrame.Angles(math.rad(-20), math.rad(-50), math.rad(-40))},
+        {offset = CFrame.new(-1.2, 0.2, 0.6), size = Vector3.new(0.12, 2.0, 1.0), angle = CFrame.Angles(math.rad(-5), math.rad(-25), math.rad(-15))},
+        {offset = CFrame.new(-2.3, 0.6, 1.0), size = Vector3.new(0.08, 1.5, 0.5), angle = CFrame.Angles(math.rad(-25), math.rad(-55), math.rad(-45))},
+    }
+    
+    for i, data in ipairs(wingData) do
+        local feather = CreateInstance("Part", {
+            Name = "Feather_" .. i,
+            Size = data.size,
+            Material = Enum.Material.Neon,
+            Color = CONFIG.WING_COLOR,
+            Transparency = 0.2,
+            CanCollide = false,
+            Anchored = false,
+            Massless = true,
+            CastShadow = false,
+        }, wingsModel)
+        
+        CreateInstance("Weld", {
+            Name = "FeatherWeld",
+            Part0 = torso,
+            Part1 = feather,
+            C0 = data.offset * data.angle,
+        }, feather)
+    end
+    
+    -- Wing glow particles
+    local wingGlow = CreateInstance("Part", {
+        Name = "WingGlowCenter",
+        Size = Vector3.new(0.1, 0.1, 0.1),
+        Transparency = 1,
+        CanCollide = false,
+        Anchored = false,
+        Massless = true,
+    }, wingsModel)
+    
+    CreateInstance("Weld", {
+        Part0 = torso,
+        Part1 = wingGlow,
+        C0 = CFrame.new(0, 0.5, 0.5),
+    }, wingGlow)
+    
+    local wingAtt = CreateInstance("Attachment", {Name = "WingAtt"}, wingGlow)
+    CreateInstance("ParticleEmitter", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, CONFIG.WING_GLOW_COLOR),
+            ColorSequenceKeypoint.new(1, CONFIG.WING_COLOR),
+        }),
+        Size = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(0.3, 0.2),
+            NumberSequenceKeypoint.new(1, 0),
+        }),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.4),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Lifetime = NumberRange.new(0.5, 1.5),
+        Rate = 25,
+        Speed = NumberRange.new(1, 4),
+        SpreadAngle = Vector2.new(120, 60),
+        LightEmission = 1,
+        Brightness = 2,
+        Rotation = NumberRange.new(0, 360),
+    }, wingAtt)
+    
+    CreateInstance("PointLight", {
+        Color = CONFIG.WING_GLOW_COLOR,
+        Brightness = 0.8,
+        Range = 15,
+    }, wingGlow)
+    
+    wingsModel.Parent = character
+    State.WingsModel = wingsModel
+end
+
+function AccessorySystem:AnimateWings(dt)
+    if not State.WingsModel or not State.WingsModel.Parent then return end
+    
+    local t = tick()
+    local flapAngle = math.sin(t * 3) * math.rad(15)
+    local breathAngle = math.sin(t * 1.5) * math.rad(5)
+    
+    for _, part in pairs(State.WingsModel:GetChildren()) do
+        if part:IsA("Part") and part.Name:find("Feather") then
+            local weld = part:FindFirstChild("FeatherWeld")
+            if weld then
+                local idx = tonumber(part.Name:match("%d+")) or 1
+                local isRight = idx <= 5
+                local sign = isRight and 1 or -1
+                
+                local extraAngle = flapAngle * sign + breathAngle
+                -- Apply gentle flap by modifying the weld C1
+                weld.C1 = CFrame.Angles(0, 0, extraAngle * 0.5)
+            end
+        end
+    end
+end
+
+function AccessorySystem:AnimateHalo(dt)
+    if not State.HaloModel or not State.HaloModel.Parent then return end
+    
+    local t = tick()
+    local bobOffset = math.sin(t * 2) * 0.1
+    local rotOffset = t * 0.5
+    
+    for _, part in pairs(State.HaloModel:GetChildren()) do
+        if part:IsA("Part") and part.Name:find("HaloSegment") then
+            local weld = part:FindFirstChildOfClass("Weld")
+            if weld then
+                weld.C1 = CFrame.new(0, -bobOffset, 0) * CFrame.Angles(0, rotOffset, 0)
+            end
+        end
+    end
+end
+
+function AccessorySystem:Toggle(character)
+    State.AccessoriesEnabled = not State.AccessoriesEnabled
+    
+    if State.AccessoriesEnabled then
+        self:CreateHalo(character)
+        self:CreateWings(character)
+    else
+        if State.HaloModel then
+            State.HaloModel:Destroy()
+            State.HaloModel = nil
+        end
+        if State.WingsModel then
+            State.WingsModel:Destroy()
+            State.WingsModel = nil
+        end
+    end
+end
+
+function AccessorySystem:Remove()
+    if State.HaloModel then
+        pcall(function() State.HaloModel:Destroy() end)
+        State.HaloModel = nil
+    end
+    if State.WingsModel then
+        pcall(function() State.WingsModel:Destroy() end)
+        State.WingsModel = nil
+    end
+    State.AccessoriesEnabled = false
+end
+
+------------------------------------------------------------------------
+-- GUI SYSTEM
+------------------------------------------------------------------------
+local GuiSystem = {}
+
+function GuiSystem:Create()
+    local existing = Player.PlayerGui:FindFirstChild("MCControlGui")
+    if existing then existing:Destroy() end
+    
+    local screenGui = CreateInstance("ScreenGui", {
+        Name = "MCControlGui",
+        ResetOnSpawn = false,
+        DisplayOrder = 50,
+    }, Player.PlayerGui)
+    
+    -- Small toggle button
+    local toggleBtn = CreateInstance("TextButton", {
+        Name = "AccessoryToggle",
+        Size = UDim2.new(0, 140, 0, 36),
+        Position = UDim2.new(1, -155, 0.5, -18),
+        BackgroundColor3 = Color3.fromRGB(25, 25, 35),
+        BorderSizePixel = 0,
+        Text = "\u{1F451} Accessories",
+        TextColor3 = Color3.fromRGB(255, 215, 0),
+        TextSize = 14,
+        Font = Enum.Font.GothamBold,
+        AutoButtonColor = true,
+    }, screenGui)
+    
+    CreateInstance("UICorner", {
+        CornerRadius = UDim.new(0, 8),
+    }, toggleBtn)
+    
+    CreateInstance("UIStroke", {
+        Color = Color3.fromRGB(255, 215, 0),
+        Thickness = 1.5,
+        Transparency = 0.3,
+    }, toggleBtn)
+    
+    -- Status indicator
+    local statusLabel = CreateInstance("TextLabel", {
+        Name = "StatusLabel",
+        Size = UDim2.new(0, 140, 0, 20),
+        Position = UDim2.new(1, -155, 0.5, 22),
+        BackgroundTransparency = 1,
+        Text = "OFF",
+        TextColor3 = Color3.fromRGB(150, 150, 150),
+        TextSize = 11,
+        Font = Enum.Font.Gotham,
+    }, screenGui)
+    
+    toggleBtn.MouseButton1Click:Connect(function()
+        if State.Character then
+            AccessorySystem:Toggle(State.Character)
+            
+            if State.AccessoriesEnabled then
+                statusLabel.Text = "\u{2728} ACTIVE"
+                statusLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+                toggleBtn.BackgroundColor3 = Color3.fromRGB(40, 35, 15)
+            else
+                statusLabel.Text = "OFF"
+                statusLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+                toggleBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+            end
+        end
+    end)
+    
+    -- Hyped button
+    local hypedBtn = CreateInstance("TextButton", {
+        Name = "HypedToggle",
+        Size = UDim2.new(0, 140, 0, 36),
+        Position = UDim2.new(1, -155, 0.5, 50),
+        BackgroundColor3 = Color3.fromRGB(25, 25, 35),
+        BorderSizePixel = 0,
+        Text = "\u{1F525} Hyped Mode",
+        TextColor3 = Color3.fromRGB(255, 100, 50),
+        TextSize = 14,
+        Font = Enum.Font.GothamBold,
+        AutoButtonColor = true,
+    }, screenGui)
+    
+    CreateInstance("UICorner", {
+        CornerRadius = UDim.new(0, 8),
+    }, hypedBtn)
+    
+    CreateInstance("UIStroke", {
+        Color = Color3.fromRGB(255, 100, 50),
+        Thickness = 1.5,
+        Transparency = 0.3,
+    }, hypedBtn)
+    
+    local hypedActive = false
+    hypedBtn.MouseButton1Click:Connect(function()
+        hypedActive = not hypedActive
+        if hypedActive then
+            AnimPlayer:Play("hyped", true)
+            hypedBtn.BackgroundColor3 = Color3.fromRGB(40, 20, 10)
+            hypedBtn.Text = "\u{1F525} HYPED!"
+        else
+            AnimPlayer:Play("idle", true)
+            hypedBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+            hypedBtn.Text = "\u{1F525} Hyped Mode"
+        end
+    end)
+    
+    return screenGui
+end
+
+------------------------------------------------------------------------
+-- CHAT PREFIX SYSTEM
+------------------------------------------------------------------------
+local ChatSystem = {}
+
+function ChatSystem:Setup()
+    -- Legacy Chat System
+    pcall(function()
+        StarterGui:SetCore("ChatWindowConfiguration", {
+            ChatWindowTextSize = 18,
+        })
+    end)
+    
+    -- TextChatService (modern chat)
+    pcall(function()
+        local textChatService = TextChatService
+        if textChatService then
+            textChatService.OnIncomingMessage = function(message)
+                local props = Instance.new("TextChatMessageProperties")
+                
+                if message.TextSource then
+                    local sourcePlayer = Players:GetPlayerByUserId(message.TextSource.UserId)
+                    if sourcePlayer == Player then
+                        props.PrefixText = "<font color='rgb(255,215,0)'>" .. CONFIG.PREFIX .. "</font> " .. message.PrefixText
+                    end
+                end
+                
+                return props
+            end
+        end
+    end)
+    
+    -- Also try the callback approach
+    pcall(function()
+        if TextChatService.MessageReceived then
+            -- Already handled above
+        end
+    end)
+end
+
+function ChatSystem:SendMessage(text)
+    pcall(function()
+        -- Try TextChatService first
+        local channels = TextChatService:FindFirstChild("TextChannels")
+        if channels then
+            local rbxGeneral = channels:FindFirstChild("RBXGeneral")
+            if rbxGeneral then
+                rbxGeneral:SendAsync(text)
+                return
+            end
+        end
+    end)
+    
+    pcall(function()
+        -- Fallback: legacy chat
+        local chatRemote = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+        if chatRemote then
+            local sayMsg = chatRemote:FindFirstChild("SayMessageRequest")
+            if sayMsg then
+                sayMsg:FireServer(text, "All")
+            end
+        end
+    end)
+end
+
+function ChatSystem:MonitorChat()
+    -- Monitor for "nah bro thinks he's the main character" type messages
+    local function checkMessage(speaker, message)
+        if speaker == Player.Name then return end
+        
+        local lower = string.lower(message)
+        local triggers = {
+            "thinks he",
+            "main character",
+            "nah bro",
+            "who does he think",
+            "not the main",
+            "aint the main",
+            "cringe",
+        }
+        
+        local triggered = false
+        for _, trigger in ipairs(triggers) do
+            if lower:find(trigger) then
+                triggered = true
+                break
+            end
+        end
+        
+        if triggered and tick() - State.LastAutoChat > 5 then
+            State.LastAutoChat = tick()
+            
+            -- Auto-respond
+            task.delay(0.5, function()
+                ChatSystem:SendMessage("EXCUSE ME!!?? \u{1F451}")
+            end)
+            
+            -- Trigger extra dodge sequence
+            State.ExtraDodgeMode = true
+            State.ExtraDodgeEndTime = tick() + 4
+            
+            -- Play dramatic dodge sequence
+            task.spawn(function()
+                for i = 1, 3 do
+                    if State.Character and State.Humanoid and State.Humanoid.Health > 0 then
+                        PerformDodge()
+                        task.wait(0.5)
+                    end
+                end
+            end)
+            
+            -- Send follow-up
+            task.delay(3, function()
+                if tick() - State.LastAutoChat > 2 then
+                    local responses = {
+                        "I AM the main character. \u{1F451}\u{2728}",
+                        "Check the title. \u{1F451}",
+                        "This is MY story. \u{2728}\u{1F451}\u{2728}",
+                    }
+                    ChatSystem:SendMessage(responses[math.random(#responses)])
+                end
+            end)
+        end
+    end
+    
+    -- Listen to chat events
+    pcall(function()
+        -- TextChatService
+        TextChatService.MessageReceived:Connect(function(msg)
+            if msg.TextSource then
+                local sourcePlayer = Players:GetPlayerByUserId(msg.TextSource.UserId)
+                if sourcePlayer and sourcePlayer ~= Player then
+                    checkMessage(sourcePlayer.Name, msg.Text or "")
+                end
+            end
+        end)
+    end)
+    
+    -- Legacy chat
+    pcall(function()
+        local chatEvents = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
+        if chatEvents then
+            local onMsg = chatEvents:FindFirstChild("OnMessageDoneFiltering")
+            if onMsg then
+                onMsg.OnClientEvent:Connect(function(data)
+                    if data and data.FromSpeaker and data.Message then
+                        checkMessage(data.FromSpeaker, data.Message)
+                    end
+                end)
+            end
+        end
+    end)
+    
+    -- Player chatted event
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= Player then
+            pcall(function()
+                plr.Chatted:Connect(function(msg)
+                    checkMessage(plr.Name, msg)
+                end)
+            end)
+        end
+    end
+    
+    Players.PlayerAdded:Connect(function(plr)
+        if plr ~= Player then
+            pcall(function()
+                plr.Chatted:Connect(function(msg)
+                    checkMessage(plr.Name, msg)
+                end)
+            end)
+        end
+    end)
+end
+
+------------------------------------------------------------------------
+-- SMART FALL DETECTION SYSTEM
+------------------------------------------------------------------------
+local FallSystem = {}
+
+function FallSystem:CheckFatalFall()
+    if not State.RootPart or not State.Humanoid then return false end
+    if State.IsLevitating or State.IsFalling then return false end
+    
+    local vel = State.RootPart.Velocity
+    local falling = vel.Y < CONFIG.FALL_SPEED_THRESHOLD
+    
+    if falling then
+        -- Raycast down to check distance to ground
+        local rayOrigin = State.RootPart.Position
+        local rayDirection = Vector3.new(0, -500, 0)
+        local params = RaycastParams.new()
+        params.FilterDescendantsInstances = {State.Character}
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        
+        local result = Workspace:Raycast(rayOrigin, rayDirection, params)
+        
+        if result then
+            local distToGround = (rayOrigin - result.Position).Magnitude
+            if distToGround > CONFIG.FALL_HEIGHT_THRESHOLD then
+                return true
+            end
+        else
+            -- No ground detected at all - definitely fatal
+            return true
+        end
+    end
+    
+    -- Also check if we're about to hit void
+    if State.RootPart.Position.Y < -50 then
+        return true
+    end
+    
+    return false
+end
+
+function FallSystem:PerformFallRecovery()
+    if State.IsLevitating then return end
+    State.IsFalling = true
+    State.IsLevitating = true
+    
+    local rootPart = State.RootPart
+    local humanoid = State.Humanoid
+    if not rootPart or not humanoid then
+        State.IsFalling = false
+        State.IsLevitating = false
+        return
+    end
+    
+    -- Play roll animation first
+    AnimPlayer:Play("roll", true)
+    
+    -- Show cinema bars
+    CinemaSystem:Show()
+    
+    -- Stop all velocity
+    local bodyVel = CreateInstance("BodyVelocity", {
+        Name = "MCFallStop",
+        Velocity = Vector3.new(0, 0, 0),
+        MaxForce = Vector3.new(math.huge, math.huge, math.huge),
+        P = 10000,
+    }, rootPart)
+    
+    task.wait(0.6) -- Roll duration
+    
+    -- Now levitate back up
+    AnimPlayer:Play("levitate", true)
+    
+    -- Find safe ground position
+    local safeY = rootPart.Position.Y
+    local rayOrigin = rootPart.Position + Vector3.new(0, 10, 0)
+    local rayDirection = Vector3.new(0, -300, 0)
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = {State.Character}
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    
+    local result = Workspace:Raycast(rayOrigin, rayDirection, params)
+    if result then
+        safeY = result.Position.Y + 3 + CONFIG.LEVITATE_HEIGHT_OFFSET
+    else
+        safeY = rootPart.Position.Y + 20
+    end
+    
+    -- Smoothly levitate up
+    local startPos = rootPart.Position
+    local targetPos = Vector3.new(startPos.X, safeY, startPos.Z)
+    
+    local levitateTime = 0
+    local levitateDuration = 2.0
+    
+    while levitateTime < levitateDuration do
+        local dt = RunService.Heartbeat:Wait()
+        levitateTime = levitateTime + dt
+        
+        local alpha = math.clamp(levitateTime / levitateDuration, 0, 1)
+        -- Ease out cubic
+        local easedAlpha = 1 - (1 - alpha) ^ 3
+        
+        local newPos = startPos:Lerp(targetPos, easedAlpha)
+        bodyVel.Velocity = (newPos - rootPart.Position) * 10
+        
+        -- Gentle rotation
+        local spinAngle = levitateTime * 0.5
+    end
+    
+    -- Land softly
+    bodyVel.Velocity = Vector3.new(0, -5, 0)
+    task.wait(0.5)
+    
+    SafeDestroy(bodyVel)
+    
+    -- Hide cinema bars
+    CinemaSystem:Hide()
+    
+    -- Return to idle
+    AnimPlayer:Play("idle", true)
+    
+    State.IsFalling = false
+    State.IsLevitating = false
+end
+
+------------------------------------------------------------------------
+-- SMART DODGE SYSTEM
+------------------------------------------------------------------------
+local DodgeSystem = {}
+
+function DodgeSystem:FindThreats()
+    if not State.RootPart then return nil end
+    
+    local myPos = State.RootPart.Position
+    local threats = {}
+    
+    -- Check for nearby players who might be attacking
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= Player and plr.Character then
+            local theirRoot = plr.Character:FindFirstChild("HumanoidRootPart")
+            local theirHumanoid = plr.Character:FindFirstChildOfClass("Humanoid")
+            
+            if theirRoot and theirHumanoid then
+                local dist = (theirRoot.Position - myPos).Magnitude
+                
+                if dist < CONFIG.DODGE_DETECTION_RADIUS then
+                    -- Check if they're facing us and moving towards us
+                    local dirToUs = (myPos - theirRoot.Position).Unit
+                    local theirLookVector = theirRoot.CFrame.LookVector
+                    local dot = dirToUs:Dot(theirLookVector)
+                    
+                    -- Check if they have a tool equipped (weapon)
+                    local hasTool = plr.Character:FindFirstChildOfClass("Tool") ~= nil
+                    
+                    if dot > 0.5 and (hasTool or dist < 8) then
+                        table.insert(threats, {
+                            Position = theirRoot.Position,
+                            Direction = theirLookVector,
+                            Distance = dist,
+                            HasWeapon = hasTool,
+                            Priority = (hasTool and 2 or 1) * (1 / math.max(dist, 1)),
+                        })
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Check for projectiles (parts moving fast towards us)
+    local nearbyParts = Workspace:GetPartBoundsInRadius(myPos, CONFIG.PROJECTILE_DETECTION_RADIUS)
+    for _, part in pairs(nearbyParts) do
+        if part.Velocity.Magnitude > 30 then
+            local velDir = part.Velocity.Unit
+            local dirToUs = (myPos - part.Position).Unit
+            local dot = velDir:Dot(dirToUs)
+            
+            if dot > 0.7 then
+                local dist = (part.Position - myPos).Magnitude
+                table.insert(threats, {
+                    Position = part.Position,
+                    Direction = velDir,
+                    Distance = dist,
+                    HasWeapon = true,
+                    Priority = 3 * (1 / math.max(dist, 1)),
+                    IsProjectile = true,
+                })
+            end
+        end
+    end
+    
+    -- Sort by priority
+    table.sort(threats, function(a, b) return a.Priority > b.Priority end)
+    
+    return threats[1]
+end
+
+function PerformDodge(directionOverride)
+    if State.IsDodging then return end
+    if tick() - State.LastDodgeTime < CONFIG.DODGE_COOLDOWN then return end
+    
+    State.IsDodging = true
+    State.LastDodgeTime = tick()
+    State.DodgeCount = State.DodgeCount + 1
+    
+    local rootPart = State.RootPart
+    if not rootPart then
+        State.IsDodging = false
+        return
+    end
+    
+    -- Determine dodge direction
+    local dodgeDir
+    if directionOverride then
+        dodgeDir = directionOverride
+    else
+        -- Dodge perpendicular to facing direction
+        local lookVector = rootPart.CFrame.LookVector
+        local side = (State.DodgeCount % 2 == 0) and 1 or -1
+        dodgeDir = Vector3.new(-lookVector.Z * side, 0, lookVector.X * side).Unit
+    end
+    
+    -- Play dodge animation
+    AnimPlayer:Play("dodge", true)
+    
+    -- Apply dodge force
+    local bodyVel = CreateInstance("BodyVelocity", {
+        Name = "MCDodge",
+        Velocity = dodgeDir * CONFIG.DODGE_SPEED + Vector3.new(0, 15, 0),
+        MaxForce = Vector3.new(math.huge, math.huge, math.huge),
+        P = 10000,
+    }, rootPart)
+    
+    -- Brief slow-motion effect (camera FOV)
+    local originalFOV = Camera.FieldOfView
+    TweenService:Create(Camera, TweenInfo.new(0.1), {FieldOfView = originalFOV + 5}):Play()
+    
+    task.delay(0.15, function()
+        if bodyVel and bodyVel.Parent then
+            bodyVel.Velocity = dodgeDir * CONFIG.DODGE_SPEED * 0.3
+        end
+    end)
+    
+    task.delay(0.3, function()
+        SafeDestroy(bodyVel)
+        TweenService:Create(Camera, TweenInfo.new(0.2), {FieldOfView = originalFOV}):Play()
+    end)
+    
+    task.delay(0.35, function()
+        State.IsDodging = false
+        if not State.IsLevitating then
+            AnimPlayer:Play("idle", true)
+        end
+    end)
+end
+
+------------------------------------------------------------------------
+-- DRAMATIC ENTRANCE
+------------------------------------------------------------------------
+local function PlayEntrance()
+    if State.EntrancePlayed then return end
+    State.EntrancePlayed = true
+    
+    local rootPart = State.RootPart
+    if not rootPart then return end
+    
+    -- Cinema bars
+    CinemaSystem:Show()
+    
+    -- Play entrance animation
+    AnimPlayer:Play("entrance", true)
+    
+    -- Brief levitation
+    local bodyPos = CreateInstance("BodyPosition", {
+        Name = "MCEntrance",
+        Position = rootPart.Position + Vector3.new(0, 5, 0),
+        MaxForce = Vector3.new(math.huge, math.huge, math.huge),
+        P = 5000,
+        D = 500,
+    }, rootPart)
+    
+    -- Burst particles
+    local att = rootPart:FindFirstChild("MCParticleAura")
+    if att then
+        for _, emitter in pairs(att:GetChildren()) do
+            if emitter:IsA("ParticleEmitter") then
+                emitter:Emit(30)
+            end
+        end
+    end
+    
+    task.delay(1.5, function()
+        SafeDestroy(bodyPos)
+    end)
+    
+    task.delay(2.0, function()
+        CinemaSystem:Hide()
+        AnimPlayer:Play("idle", true)
+    end)
+end
+
+------------------------------------------------------------------------
+-- SPEED LINES EFFECT
+------------------------------------------------------------------------
+local function CreateSpeedLines()
+    local existing = Player.PlayerGui:FindFirstChild("MCSpeedLines")
+    if existing then return existing end
+    
+    local gui = CreateInstance("ScreenGui", {
+        Name = "MCSpeedLines",
+        ResetOnSpawn = false,
+        DisplayOrder = 90,
+        IgnoreGuiInset = true,
+    }, Player.PlayerGui)
+    
+    -- Radial lines emanating from center during dodge
+    for i = 1, 12 do
+        local angle = (i / 12) * 360
+        local line = CreateInstance("Frame", {
+            Name = "SpeedLine_" .. i,
+            Size = UDim2.new(0, 2, 0.5, 0),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            AnchorPoint = Vector2.new(0.5, 1),
+            Rotation = angle,
+            BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ZIndex = 90,
+        }, gui)
+    end
+    
+    return gui
+end
+
+local function FlashSpeedLines(duration)
+    local gui = CreateSpeedLines()
+    
+    for _, line in pairs(gui:GetChildren()) do
+        if line:IsA("Frame") then
+            line.BackgroundTransparency = 0.6
+            TweenService:Create(line, TweenInfo.new(duration or 0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundTransparency = 1
+            }):Play()
+        end
+    end
+end
+
+------------------------------------------------------------------------
+-- HEALTH MONITORING (for dodge trigger)
+------------------------------------------------------------------------
+local lastHealth = 100
+
+local function OnHealthChanged(newHealth)
+    if not State.Humanoid then return end
+    
+    if newHealth < lastHealth then
+        -- We took damage, trigger dodge
+        local threat = DodgeSystem:FindThreats()
+        if threat then
+            local dodgeDir = -threat.Direction
+            dodgeDir = Vector3.new(-dodgeDir.Z, 0, dodgeDir.X).Unit
+            PerformDodge(dodgeDir)
+        else
+            PerformDodge()
+        end
+        FlashSpeedLines(0.3)
+    end
+    
+    lastHealth = newHealth
+end
+
+------------------------------------------------------------------------
+-- NAMEPLATE / OVERHEAD GUI
+------------------------------------------------------------------------
+local function CreateOverheadGui(character)
+    local head = character:FindFirstChild("Head")
+    if not head then return end
+    
+    local existing = head:FindFirstChild("MCOverhead")
+    if existing then existing:Destroy() end
+    
+    local billboardGui = CreateInstance("BillboardGui", {
+        Name = "MCOverhead",
+        Size = UDim2.new(0, 200, 0, 50),
+        StudsOffset = Vector3.new(0, 2.5, 0),
+        AlwaysOnTop = false,
+        MaxDistance = 100,
+    }, head)
+    
+    local titleLabel = CreateInstance("TextLabel", {
+        Name = "Title",
+        Size = UDim2.new(1, 0, 0.5, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        BackgroundTransparency = 1,
+        Text = "\u{1F451} MAIN CHARACTER \u{1F451}",
+        TextColor3 = Color3.fromRGB(255, 215, 0),
+        TextStrokeColor3 = Color3.fromRGB(100, 70, 0),
+        TextStrokeTransparency = 0.3,
+        TextSize = 14,
+        Font = Enum.Font.GothamBold,
+        TextScaled = false,
+    }, billboardGui)
+    
+    local nameLabel = CreateInstance("TextLabel", {
+        Name = "PlayerName",
+        Size = UDim2.new(1, 0, 0.5, 0),
+        Position = UDim2.new(0, 0, 0.5, 0),
+        BackgroundTransparency = 1,
+        Text = Player.DisplayName,
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        TextStrokeColor3 = Color3.fromRGB(0, 0, 0),
+        TextStrokeTransparency = 0.5,
+        TextSize = 12,
+        Font = Enum.Font.Gotham,
+        TextScaled = false,
+    }, billboardGui)
+    
+    -- Animate title shimmer
+    task.spawn(function()
+        local colors = {
+            Color3.fromRGB(255, 215, 0),
+            Color3.fromRGB(255, 235, 100),
+            Color3.fromRGB(255, 200, 50),
+            Color3.fromRGB(255, 245, 150),
+        }
+        local idx = 1
+        while titleLabel and titleLabel.Parent do
+            TweenService:Create(titleLabel, TweenInfo.new(0.8, Enum.EasingStyle.Sine), {
+                TextColor3 = colors[idx]
+            }):Play()
+            idx = idx % #colors + 1
+            task.wait(0.8)
+        end
+    end)
+end
+
+------------------------------------------------------------------------
+-- FOOTSTEP PARTICLES
+------------------------------------------------------------------------
+local function CreateFootstepEffect()
+    if not State.RootPart then return end
+    
+    -- Small golden burst at feet when walking
+    local att = Instance.new("Attachment")
+    att.Name = "FootstepAtt"
+    att.Position = Vector3.new(0, -3, 0)
+    att.Parent = State.RootPart
+    
+    local emitter = CreateInstance("ParticleEmitter", {
+        Color = ColorSequence.new(CONFIG.AURA_COLOR1),
+        Size = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.1),
+            NumberSequenceKeypoint.new(1, 0),
+        }),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.5),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Lifetime = NumberRange.new(0.2, 0.5),
+        Rate = 0,
+        Speed = NumberRange.new(0.5, 2),
+        SpreadAngle = Vector2.new(180, 0),
+        LightEmission = 1,
+        Brightness = 1.5,
+        Enabled = false,
+    }, att)
+    
+    return emitter
+end
+
+------------------------------------------------------------------------
+-- MAIN CHARACTER INITIALIZATION
+------------------------------------------------------------------------
+local footstepEmitter = nil
+
+local function SetupCharacter(character)
+    -- Clean previous connections
+    for _, conn in pairs(State.Connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    State.Connections = {}
+    
+    -- Wait for character to fully load
+    local humanoid = character:WaitForChild("Humanoid", 10)
+    local rootPart = character:WaitForChild("HumanoidRootPart", 10)
+    
+    if not humanoid or not rootPart then
+        warn("[MC] Character components missing")
+        return
+    end
+    
+    -- Detect rig type
+    State.RigType = DetectRigType(character)
+    if not State.RigType then
+        -- Wait a bit and try again
+        task.wait(1)
+        State.RigType = DetectRigType(character)
+        if not State.RigType then
+            warn("[MC] Could not detect rig type")
+            return
+        end
+    end
+    
+    State.Character = character
+    State.Humanoid = humanoid
+    State.RootPart = rootPart
+    State.EntrancePlayed = false
+    State.IsFalling = false
+    State.IsLevitating = false
+    State.IsDodging = false
+    lastHealth = humanoid.Health
+    
+    -- Collect motors
+    MotorManager:CollectMotors(character)
+    
+    -- Create aura
+    AuraSystem:CreateAura(character)
+    
+    -- Create overhead gui
+    CreateOverheadGui(character)
+    
+    -- Footstep particles
+    footstepEmitter = CreateFootstepEffect()
+    
+    -- Re-enable accessories if they were on
+    if State.AccessoriesEnabled then
+        AccessorySystem:CreateHalo(character)
+        AccessorySystem:CreateWings(character)
+    end
+    
+    -- Start idle animation
+    AnimPlayer:Play("idle", true)
+    
+    -- Health monitoring for dodge
+    table.insert(State.Connections, humanoid.HealthChanged:Connect(OnHealthChanged))
+    
+    -- State change monitoring
+    table.insert(State.Connections, humanoid.StateChanged:Connect(function(oldState, newState)
+        if State.IsLevitating or State.IsDodging then return end
+        
+        if newState == Enum.HumanoidStateType.Jumping then
+            AnimPlayer:Play("jump", true)
+            AnimPlayer.QueuedAnim = "fall"
+        elseif newState == Enum.HumanoidStateType.Freefall then
+            if AnimPlayer.CurrentAnim ~= "jump" then
+                AnimPlayer:Play("fall", true)
+            end
+        elseif newState == Enum.HumanoidStateType.Landed then
+            AnimPlayer:Play("idle", true)
+        end
+    end))
+    
+    -- Dramatic entrance
+    task.delay(0.5, function()
+        PlayEntrance()
+    end)
+end
+
+------------------------------------------------------------------------
+-- CHARACTER SPAWNING
+------------------------------------------------------------------------
+local function OnCharacterAdded(character)
+    task.wait(0.1)
+    SetupCharacter(character)
+end
+
+if Player.Character then
+    task.spawn(function()
+        OnCharacterAdded(Player.Character)
+    end)
+end
+
+Player.CharacterAdded:Connect(OnCharacterAdded)
+
+------------------------------------------------------------------------
+-- MAIN UPDATE LOOP
+------------------------------------------------------------------------
+local stepAccumulator = 0
+local footstepAccumulator = 0
+
+RunService.Heartbeat:Connect(function(dt)
+    if not State.Character or not State.Humanoid or not State.RootPart then return end
+    if State.Humanoid.Health <= 0 then return end
+    
+    -- Update animation player
+    AnimPlayer:Update(dt)
+    
+    -- Apply animation poses to motors
+    if AnimPlayer.CurrentPoses then
+        MotorManager:ApplyPoses(AnimPlayer.CurrentPoses)
+    end
+    
+    -- Determine movement state
+    local vel = State.RootPart.Velocity
+    local speed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+    local isMoving = speed > 1
+    local isInAir = State.Humanoid:GetState() == Enum.HumanoidStateType.Freefall 
+                    or State.Humanoid:GetState() == Enum.HumanoidStateType.Jumping
+    
+    -- Auto-switch animations based on state
+    if not State.IsLevitating and not State.IsDodging and not State.IsFalling then
+        if AnimPlayer.CurrentAnim ~= "hyped" and AnimPlayer.CurrentAnim ~= "entrance" and AnimPlayer.CurrentAnim ~= "roll" then
+            if isInAir then
+                if AnimPlayer.CurrentAnim ~= "jump" and AnimPlayer.CurrentAnim ~= "fall" then
+                    AnimPlayer:Play("fall", false)
+                end
+            elseif isMoving then
+                AnimPlayer:Play("walk", false)
+            else
+                AnimPlayer:Play("idle", false)
+            end
+        end
+    end
+    
+    -- Footstep particles
+    if footstepEmitter and isMoving and not isInAir then
+        footstepAccumulator = footstepAccumulator + dt
+        if footstepAccumulator > 0.3 then
+            footstepAccumulator = 0
+            footstepEmitter:Emit(3)
+        end
+    end
+    
+    -- Smart fall detection
+    if not State.IsLevitating and not State.IsFalling then
+        if FallSystem:CheckFatalFall() then
+            task.spawn(function()
+                FallSystem:PerformFallRecovery()
+            end)
+        end
+    end
+    
+    -- Threat detection for auto-dodge
+    stepAccumulator = stepAccumulator + dt
+    if stepAccumulator > 0.15 then
+        stepAccumulator = 0
+        
+        if not State.IsDodging and not State.IsLevitating then
+            local threat = DodgeSystem:FindThreats()
+            if threat and threat.Distance < 10 and threat.HasWeapon then
+                local dodgeDir = Vector3.new(-threat.Direction.Z, 0, threat.Direction.X).Unit
+                PerformDodge(dodgeDir)
+                FlashSpeedLines(0.2)
+            end
+        end
+    end
+    
+    -- Extra dodge mode (triggered by chat response)
+    if State.ExtraDodgeMode and tick() > State.ExtraDodgeEndTime then
+        State.ExtraDodgeMode = false
+    end
+    
+    -- Animate accessories
+    if State.AccessoriesEnabled then
+        AccessorySystem:AnimateWings(dt)
+        AccessorySystem:AnimateHalo(dt)
+    end
+end)
+
+------------------------------------------------------------------------
+-- KEYBOARD SHORTCUTS
+------------------------------------------------------------------------
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    -- Q for manual dodge
+    if input.KeyCode == Enum.KeyCode.Q then
+        PerformDodge()
+        FlashSpeedLines(0.2)
+    end
+    
+    -- E for hyped toggle
+    if input.KeyCode == Enum.KeyCode.E then
+        if AnimPlayer.CurrentAnim == "hyped" then
+            AnimPlayer:Play("idle", true)
+        else
+            AnimPlayer:Play("hyped", true)
+        end
+    end
+end)
+
+------------------------------------------------------------------------
+-- INITIALIZE SYSTEMS
+------------------------------------------------------------------------
+ChatSystem:Setup()
+ChatSystem:MonitorChat()
+CinemaSystem:Create()
+CreateSpeedLines()
+GuiSystem:Create()
+
+print("[MAIN CHARACTER] System loaded | Rig detection: Active | FE Compliant")
+print("[MAIN CHARACTER] Q = Dodge | E = Hyped | GUI button = Accessories")
