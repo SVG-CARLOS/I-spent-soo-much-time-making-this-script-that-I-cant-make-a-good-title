@@ -1,0 +1,1554 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+local StarterGui = game:GetService("StarterGui")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "VoiceModPro"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = playerGui
+
+local C = {
+	bg = Color3.fromRGB(8, 8, 14),
+	panel = Color3.fromRGB(14, 14, 24),
+	card = Color3.fromRGB(20, 20, 34),
+	cardHover = Color3.fromRGB(28, 28, 46),
+	border = Color3.fromRGB(38, 38, 62),
+	accent = Color3.fromRGB(110, 60, 255),
+	accentBright = Color3.fromRGB(140, 90, 255),
+	accentDim = Color3.fromRGB(70, 35, 170),
+	red = Color3.fromRGB(255, 55, 95),
+	redBright = Color3.fromRGB(255, 85, 120),
+	cyan = Color3.fromRGB(0, 210, 255),
+	cyanBright = Color3.fromRGB(60, 230, 255),
+	green = Color3.fromRGB(0, 230, 130),
+	greenBright = Color3.fromRGB(40, 255, 160),
+	gold = Color3.fromRGB(255, 195, 40),
+	orange = Color3.fromRGB(255, 130, 40),
+	pink = Color3.fromRGB(255, 100, 200),
+	white = Color3.fromRGB(235, 235, 250),
+	textPrimary = Color3.fromRGB(225, 225, 245),
+	textSecondary = Color3.fromRGB(140, 140, 175),
+	textMuted = Color3.fromRGB(75, 75, 105),
+	sliderTrack = Color3.fromRGB(28, 28, 48),
+}
+
+local state = {
+	pitch = 1,
+	reverb = 0,
+	distortion = 0,
+	chorus = 0,
+	echo = 0,
+	flanger = 0,
+	compressor = 0,
+	tremolo = 0,
+	enabled = true,
+	minimized = false,
+	activePreset = nil,
+	loudness = 0,
+	smoothLoudness = 0,
+	frequencyBands = {},
+	peakHold = {},
+	analyzerHistory = {},
+}
+
+for i = 1, 48 do
+	state.frequencyBands[i] = 0
+	state.peakHold[i] = 0
+	state.analyzerHistory[i] = {}
+	for j = 1, 8 do
+		state.analyzerHistory[i][j] = 0
+	end
+end
+
+local function corner(parent, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, r or 8)
+	c.Parent = parent
+	return c
+end
+
+local function stroke(parent, color, thick, trans)
+	local s = Instance.new("UIStroke")
+	s.Color = color or C.border
+	s.Thickness = thick or 1
+	s.Transparency = trans or 0.5
+	s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	s.Parent = parent
+	return s
+end
+
+local function grad(parent, c1, c2, rot)
+	local g = Instance.new("UIGradient")
+	g.Color = ColorSequence.new(c1, c2)
+	g.Rotation = rot or 90
+	g.Parent = parent
+	return g
+end
+
+local function pad(parent, t, b, l, r)
+	local p = Instance.new("UIPadding")
+	p.PaddingTop = UDim.new(0, t or 0)
+	p.PaddingBottom = UDim.new(0, b or 0)
+	p.PaddingLeft = UDim.new(0, l or 0)
+	p.PaddingRight = UDim.new(0, r or 0)
+	p.Parent = parent
+	return p
+end
+
+local function lerp(a, b, t)
+	return a + (b - a) * math.clamp(t, 0, 1)
+end
+
+local function lerpC(a, b, t)
+	t = math.clamp(t, 0, 1)
+	return Color3.new(lerp(a.R, b.R, t), lerp(a.G, b.G, t), lerp(a.B, b.B, t))
+end
+
+local function tw(obj, props, dur, style, dir)
+	local t = TweenService:Create(obj, TweenInfo.new(dur or 0.25, style or Enum.EasingStyle.Quint, dir or Enum.EasingDirection.Out), props)
+	t:Play()
+	return t
+end
+
+local function spring(obj, props, dur)
+	return tw(obj, props, dur or 0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+end
+
+local function getAudioAnalyzer()
+	local character = player.Character
+	if not character then return nil end
+	local head = character:FindFirstChild("Head")
+	if not head then return nil end
+	
+	local analyzer = head:FindFirstChild("VoiceAnalyzer")
+	if not analyzer then
+		pcall(function()
+			analyzer = Instance.new("AudioAnalyzer")
+			analyzer.Name = "VoiceAnalyzer"
+			analyzer.Parent = head
+			
+			local listener = head:FindFirstChildOfClass("AudioListener") or head:FindFirstChild("AudioListener")
+			if not listener then
+				for _, desc in pairs(head:GetDescendants()) do
+					if desc:IsA("AudioListener") then
+						listener = desc
+						break
+					end
+				end
+			end
+			
+			if listener then
+				local wire = Instance.new("Wire")
+				wire.SourceInstance = listener
+				wire.TargetInstance = analyzer
+				wire.Parent = head
+			end
+		end)
+	end
+	return analyzer
+end
+
+local function getRealLoudness()
+	local analyzer = getAudioAnalyzer()
+	if analyzer then
+		local success, spectrum = pcall(function()
+			return analyzer:GetSpectrum()
+		end)
+		if success and spectrum then
+			local total = 0
+			local count = 0
+			for i, v in ipairs(spectrum) do
+				total = total + math.abs(v)
+				count = count + 1
+			end
+			if count > 0 then
+				return math.clamp(total / count * 500, 0, 1), spectrum
+			end
+		end
+		
+		local success2, peak = pcall(function()
+			return analyzer:GetPeakLevel()
+		end)
+		if success2 and peak then
+			return math.clamp(math.max(peak.X or 0, peak.Y or 0), 0, 1), nil
+		end
+	end
+	
+	local character = player.Character
+	if character then
+		local head = character:FindFirstChild("Head")
+		if head then
+			for _, child in pairs(head:GetChildren()) do
+				if child:IsA("Sound") and child.Playing then
+					local loud = child.PlaybackLoudness / 1000
+					return math.clamp(loud, 0, 1), nil
+				end
+			end
+		end
+	end
+	
+	return 0, nil
+end
+
+local function processAudioData(dt)
+	local rawLoudness, spectrum = getRealLoudness()
+	
+	state.smoothLoudness = lerp(state.smoothLoudness, rawLoudness, math.clamp(dt * 12, 0, 1))
+	state.loudness = state.smoothLoudness
+	
+	local bandCount = 48
+	
+	if spectrum and #spectrum > 0 then
+		local specLen = #spectrum
+		for i = 1, bandCount do
+			local startIdx = math.floor((i - 1) / bandCount * specLen) + 1
+			local endIdx = math.floor(i / bandCount * specLen)
+			endIdx = math.max(endIdx, startIdx)
+			
+			local bandVal = 0
+			local count = 0
+			for j = startIdx, math.min(endIdx, specLen) do
+				bandVal = bandVal + math.abs(spectrum[j])
+				count = count + 1
+			end
+			if count > 0 then
+				bandVal = bandVal / count
+			end
+			
+			local logScale = 1 + math.log(i) / math.log(bandCount) * 2
+			bandVal = bandVal * logScale * 300
+			
+			bandVal = bandVal * (0.5 + state.pitch * 0.3 + state.distortion * 0.4)
+			
+			bandVal = math.clamp(bandVal, 0, 1)
+			
+			local smoothing = math.clamp(dt * 15, 0, 1)
+			state.frequencyBands[i] = lerp(state.frequencyBands[i], bandVal, smoothing)
+			
+			if state.frequencyBands[i] > state.peakHold[i] then
+				state.peakHold[i] = state.frequencyBands[i]
+			else
+				state.peakHold[i] = math.max(0, state.peakHold[i] - dt * 0.8)
+			end
+			
+			table.insert(state.analyzerHistory[i], 1, state.frequencyBands[i])
+			if #state.analyzerHistory[i] > 8 then
+				table.remove(state.analyzerHistory[i])
+			end
+		end
+	else
+		for i = 1, bandCount do
+			local falloff = math.max(0, state.frequencyBands[i] - dt * 3)
+			state.frequencyBands[i] = falloff
+			state.peakHold[i] = math.max(0, state.peakHold[i] - dt * 0.5)
+		end
+	end
+end
+
+local function setupEffects()
+	local character = player.Character or player.CharacterAdded:Wait()
+	local head = character:WaitForChild("Head", 10)
+	if not head then return end
+	
+	local effectNames = {"VMPitch", "VMReverb", "VMDistortion", "VMChorus", "VMEcho", "VMFlanger", "VMCompressor", "VMTremolo", "VMEqualizer"}
+	for _, name in ipairs(effectNames) do
+		local existing = head:FindFirstChild(name)
+		if existing then existing:Destroy() end
+	end
+	
+	local pitch = Instance.new("PitchShiftSoundEffect")
+	pitch.Name = "VMPitch"
+	pitch.Octave = state.pitch
+	pitch.Enabled = state.enabled
+	pitch.Parent = head
+	
+	local eq = Instance.new("EqualizerSoundEffect")
+	eq.Name = "VMEqualizer"
+	eq.HighGain = 0
+	eq.MidGain = 0
+	eq.LowGain = 0
+	eq.Enabled = state.enabled
+	eq.Parent = head
+	
+	local reverb = Instance.new("ReverbSoundEffect")
+	reverb.Name = "VMReverb"
+	reverb.DecayTime = math.max(0.1, state.reverb * 12)
+	reverb.Density = state.reverb
+	reverb.Diffusion = state.reverb
+	reverb.DryLevel = 0
+	reverb.WetLevel = state.reverb > 0.01 and (state.reverb * -15 + (-15)) or -80
+	reverb.Enabled = state.enabled and state.reverb > 0.01
+	reverb.Parent = head
+	
+	local dist = Instance.new("DistortionSoundEffect")
+	dist.Name = "VMDistortion"
+	dist.Level = state.distortion * 0.75
+	dist.Enabled = state.enabled and state.distortion > 0.01
+	dist.Parent = head
+	
+	local chor = Instance.new("ChorusSoundEffect")
+	chor.Name = "VMChorus"
+	chor.Depth = state.chorus * 0.8
+	chor.Mix = state.chorus * 0.7
+	chor.Rate = math.max(0.01, state.chorus * 4)
+	chor.Enabled = state.enabled and state.chorus > 0.01
+	chor.Parent = head
+	
+	local ech = Instance.new("EchoSoundEffect")
+	ech.Name = "VMEcho"
+	ech.Delay = math.max(0.02, state.echo * 0.4 + 0.02)
+	ech.Feedback = state.echo * 0.55
+	ech.DryMix = 1
+	ech.WetMix = state.echo * 0.8
+	ech.Enabled = state.enabled and state.echo > 0.01
+	ech.Parent = head
+	
+	local fla = Instance.new("FlangeSoundEffect")
+	fla.Name = "VMFlanger"
+	fla.Depth = state.flanger * 0.9
+	fla.Mix = state.flanger * 0.75
+	fla.Rate = math.max(0.01, state.flanger * 8)
+	fla.Enabled = state.enabled and state.flanger > 0.01
+	fla.Parent = head
+	
+	local comp = Instance.new("CompressorSoundEffect")
+	comp.Name = "VMCompressor"
+	comp.Threshold = -8 - state.compressor * 32
+	comp.Attack = 0.005
+	comp.Release = 0.08
+	comp.Ratio = 1 + state.compressor * 24
+	comp.GainMakeup = state.compressor * 10
+	comp.Enabled = state.enabled and state.compressor > 0.01
+	comp.Parent = head
+	
+	local trem = Instance.new("TremoloSoundEffect")
+	trem.Name = "VMTremolo"
+	trem.Depth = state.tremolo * 0.85
+	trem.Frequency = math.max(0.01, state.tremolo * 12)
+	trem.Duty = 0.5
+	trem.Enabled = state.enabled and state.tremolo > 0.01
+	trem.Parent = head
+end
+
+local function syncEffects()
+	local character = player.Character
+	if not character then return end
+	local head = character:FindFirstChild("Head")
+	if not head then return end
+	
+	local p = head:FindFirstChild("VMPitch")
+	if p then p.Octave = state.pitch; p.Enabled = state.enabled end
+	
+	local r = head:FindFirstChild("VMReverb")
+	if r then
+		r.DecayTime = math.max(0.1, state.reverb * 12)
+		r.Density = state.reverb
+		r.Diffusion = state.reverb
+		r.WetLevel = state.reverb > 0.01 and (state.reverb * -15 + (-15)) or -80
+		r.Enabled = state.enabled and state.reverb > 0.01
+	end
+	
+	local d = head:FindFirstChild("VMDistortion")
+	if d then d.Level = state.distortion * 0.75; d.Enabled = state.enabled and state.distortion > 0.01 end
+	
+	local ch = head:FindFirstChild("VMChorus")
+	if ch then
+		ch.Depth = state.chorus * 0.8
+		ch.Mix = state.chorus * 0.7
+		ch.Rate = math.max(0.01, state.chorus * 4)
+		ch.Enabled = state.enabled and state.chorus > 0.01
+	end
+	
+	local ec = head:FindFirstChild("VMEcho")
+	if ec then
+		ec.Delay = math.max(0.02, state.echo * 0.4 + 0.02)
+		ec.Feedback = state.echo * 0.55
+		ec.WetMix = state.echo * 0.8
+		ec.Enabled = state.enabled and state.echo > 0.01
+	end
+	
+	local fl = head:FindFirstChild("VMFlanger")
+	if fl then
+		fl.Depth = state.flanger * 0.9
+		fl.Mix = state.flanger * 0.75
+		fl.Rate = math.max(0.01, state.flanger * 8)
+		fl.Enabled = state.enabled and state.flanger > 0.01
+	end
+	
+	local co = head:FindFirstChild("VMCompressor")
+	if co then
+		co.Threshold = -8 - state.compressor * 32
+		co.Ratio = 1 + state.compressor * 24
+		co.GainMakeup = state.compressor * 10
+		co.Enabled = state.enabled and state.compressor > 0.01
+	end
+	
+	local tr = head:FindFirstChild("VMTremolo")
+	if tr then
+		tr.Depth = state.tremolo * 0.85
+		tr.Frequency = math.max(0.01, state.tremolo * 12)
+		tr.Enabled = state.enabled and state.tremolo > 0.01
+	end
+	
+	local eq = head:FindFirstChild("VMEqualizer")
+	if eq then
+		if state.pitch < 0.8 then
+			eq.LowGain = (1 - state.pitch) * 6
+			eq.MidGain = 0
+			eq.HighGain = -(1 - state.pitch) * 3
+		elseif state.pitch > 1.3 then
+			eq.LowGain = -(state.pitch - 1) * 4
+			eq.MidGain = (state.pitch - 1) * 2
+			eq.HighGain = (state.pitch - 1) * 5
+		else
+			eq.LowGain = 0
+			eq.MidGain = 0
+			eq.HighGain = 0
+		end
+		eq.Enabled = state.enabled
+	end
+end
+
+local function replicate()
+	local character = player.Character
+	if not character then return end
+	local head = character:FindFirstChild("Head")
+	if not head then return end
+	
+	local cfg = head:FindFirstChild("VMConfig")
+	if not cfg then
+		cfg = Instance.new("StringValue")
+		cfg.Name = "VMConfig"
+		cfg.Parent = head
+	end
+	
+	cfg.Value = string.format("%.3f|%.3f|%.3f|%.3f|%.3f|%.3f|%.3f|%.3f|%s",
+		state.pitch, state.reverb, state.distortion, state.chorus,
+		state.echo, state.flanger, state.compressor, state.tremolo,
+		tostring(state.enabled))
+end
+
+local guiScale = isMobile and 0.85 or 1
+local panelW = math.floor(440 * guiScale)
+local panelH = math.floor(720 * guiScale)
+
+local main = Instance.new("Frame")
+main.Name = "Main"
+main.Size = UDim2.new(0, panelW, 0, panelH)
+main.Position = UDim2.new(0.5, -panelW/2, 0.5, -panelH/2)
+main.BackgroundColor3 = C.bg
+main.BackgroundTransparency = 0
+main.ClipsDescendants = true
+main.Parent = screenGui
+corner(main, 18)
+
+local mainStroke = stroke(main, C.accent, 1.5, 0.35)
+
+local scanline = Instance.new("Frame")
+scanline.Name = "Scanline"
+scanline.Size = UDim2.new(1, 0, 0, 2)
+scanline.Position = UDim2.new(0, 0, 0, 0)
+scanline.BackgroundColor3 = C.accent
+scanline.BackgroundTransparency = 0.85
+scanline.BorderSizePixel = 0
+scanline.ZIndex = 15
+scanline.Parent = main
+
+local header = Instance.new("Frame")
+header.Name = "Header"
+header.Size = UDim2.new(1, 0, 0, math.floor(62 * guiScale))
+header.BackgroundColor3 = C.panel
+header.BorderSizePixel = 0
+header.Parent = main
+corner(header, 0)
+
+local headerDivider = Instance.new("Frame")
+headerDivider.Size = UDim2.new(1, 0, 0, 1)
+headerDivider.Position = UDim2.new(0, 0, 1, 0)
+headerDivider.BackgroundColor3 = C.accent
+headerDivider.BackgroundTransparency = 0.5
+headerDivider.BorderSizePixel = 0
+headerDivider.Parent = header
+
+local logoBg = Instance.new("Frame")
+logoBg.Size = UDim2.new(0, math.floor(38 * guiScale), 0, math.floor(38 * guiScale))
+logoBg.Position = UDim2.new(0, math.floor(14 * guiScale), 0.5, -math.floor(19 * guiScale))
+logoBg.BackgroundColor3 = C.accent
+logoBg.Parent = header
+corner(logoBg, 10)
+grad(logoBg, C.accent, C.red, 135)
+
+local logoGlow = Instance.new("Frame")
+logoGlow.Size = UDim2.new(1.4, 0, 1.4, 0)
+logoGlow.Position = UDim2.new(-0.2, 0, -0.2, 0)
+logoGlow.BackgroundColor3 = C.accent
+logoGlow.BackgroundTransparency = 0.8
+logoGlow.Parent = logoBg
+logoGlow.ZIndex = 0
+corner(logoGlow, 14)
+
+local logoText = Instance.new("TextLabel")
+logoText.Size = UDim2.new(1, 0, 1, 0)
+logoText.BackgroundTransparency = 1
+logoText.Text = "VM"
+logoText.TextColor3 = C.white
+logoText.TextSize = math.floor(16 * guiScale)
+logoText.Font = Enum.Font.GothamBlack
+logoText.Parent = logoBg
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(0, 200, 0, math.floor(22 * guiScale))
+title.Position = UDim2.new(0, math.floor(60 * guiScale), 0, math.floor(11 * guiScale))
+title.BackgroundTransparency = 1
+title.Text = "VOICEMOD PRO"
+title.TextColor3 = C.white
+title.TextSize = math.floor(18 * guiScale)
+title.Font = Enum.Font.GothamBlack
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = header
+
+local subtitle = Instance.new("TextLabel")
+subtitle.Size = UDim2.new(0, 200, 0, math.floor(14 * guiScale))
+subtitle.Position = UDim2.new(0, math.floor(60 * guiScale), 0, math.floor(34 * guiScale))
+subtitle.BackgroundTransparency = 1
+subtitle.Text = "REAL-TIME VOICE ENGINE"
+subtitle.TextColor3 = C.textMuted
+subtitle.TextSize = math.floor(9 * guiScale)
+subtitle.Font = Enum.Font.GothamBold
+subtitle.TextXAlignment = Enum.TextXAlignment.Left
+subtitle.Parent = header
+
+local statusDot = Instance.new("Frame")
+statusDot.Size = UDim2.new(0, 8, 0, 8)
+statusDot.Position = UDim2.new(0, math.floor(185 * guiScale), 0, math.floor(38 * guiScale))
+statusDot.BackgroundColor3 = C.green
+statusDot.Parent = header
+corner(statusDot, 4)
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(0, 40, 0, 14)
+statusLabel.Position = UDim2.new(0, math.floor(197 * guiScale), 0, math.floor(34 * guiScale))
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "LIVE"
+statusLabel.TextColor3 = C.green
+statusLabel.TextSize = math.floor(9 * guiScale)
+statusLabel.Font = Enum.Font.GothamBold
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = header
+
+local btnSize = math.floor(34 * guiScale)
+local btnGap = math.floor(8 * guiScale)
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, btnSize, 0, btnSize)
+closeBtn.Position = UDim2.new(1, -(btnSize + math.floor(12 * guiScale)), 0.5, -btnSize/2)
+closeBtn.BackgroundColor3 = C.card
+closeBtn.Text = "×"
+closeBtn.TextColor3 = C.red
+closeBtn.TextSize = math.floor(18 * guiScale)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.AutoButtonColor = false
+closeBtn.Parent = header
+corner(closeBtn, 8)
+stroke(closeBtn, C.border, 1, 0.6)
+
+local minBtn = Instance.new("TextButton")
+minBtn.Size = UDim2.new(0, btnSize, 0, btnSize)
+minBtn.Position = UDim2.new(1, -(btnSize*2 + btnGap + math.floor(12 * guiScale)), 0.5, -btnSize/2)
+minBtn.BackgroundColor3 = C.card
+minBtn.Text = "—"
+minBtn.TextColor3 = C.textSecondary
+minBtn.TextSize = math.floor(14 * guiScale)
+minBtn.Font = Enum.Font.GothamBold
+minBtn.AutoButtonColor = false
+minBtn.Parent = header
+corner(minBtn, 8)
+stroke(minBtn, C.border, 1, 0.6)
+
+local powerBtn = Instance.new("TextButton")
+powerBtn.Size = UDim2.new(0, btnSize, 0, btnSize)
+powerBtn.Position = UDim2.new(1, -(btnSize*3 + btnGap*2 + math.floor(12 * guiScale)), 0.5, -btnSize/2)
+powerBtn.BackgroundColor3 = C.green
+powerBtn.BackgroundTransparency = 0.15
+powerBtn.Text = "⏻"
+powerBtn.TextColor3 = C.white
+powerBtn.TextSize = math.floor(16 * guiScale)
+powerBtn.Font = Enum.Font.GothamBold
+powerBtn.AutoButtonColor = false
+powerBtn.Parent = header
+corner(powerBtn, 8)
+
+local analyzerH = math.floor(80 * guiScale)
+local analyzerFrame = Instance.new("Frame")
+analyzerFrame.Name = "Analyzer"
+analyzerFrame.Size = UDim2.new(1, -math.floor(24 * guiScale), 0, analyzerH)
+analyzerFrame.Position = UDim2.new(0, math.floor(12 * guiScale), 0, math.floor(70 * guiScale))
+analyzerFrame.BackgroundColor3 = C.panel
+analyzerFrame.ClipsDescendants = true
+analyzerFrame.Parent = main
+corner(analyzerFrame, 12)
+stroke(analyzerFrame, C.border, 1, 0.6)
+
+local gridLineCount = 4
+for i = 1, gridLineCount do
+	local gridLine = Instance.new("Frame")
+	gridLine.Size = UDim2.new(1, 0, 0, 1)
+	gridLine.Position = UDim2.new(0, 0, i / (gridLineCount + 1), 0)
+	gridLine.BackgroundColor3 = C.border
+	gridLine.BackgroundTransparency = 0.75
+	gridLine.BorderSizePixel = 0
+	gridLine.ZIndex = 1
+	gridLine.Parent = analyzerFrame
+end
+
+for i = 1, 8 do
+	local vLine = Instance.new("Frame")
+	vLine.Size = UDim2.new(0, 1, 1, 0)
+	vLine.Position = UDim2.new(i / 9, 0, 0, 0)
+	vLine.BackgroundColor3 = C.border
+	vLine.BackgroundTransparency = 0.8
+	vLine.BorderSizePixel = 0
+	vLine.ZIndex = 1
+	vLine.Parent = analyzerFrame
+end
+
+local barCount = 48
+local bars = {}
+local peakDots = {}
+local reflectionBars = {}
+local barPadding = 2
+local totalBarSpace = panelW - math.floor(28 * guiScale)
+local barWidth = math.max(2, math.floor((totalBarSpace - barPadding * (barCount - 1)) / barCount))
+
+for i = 1, barCount do
+	local xPos = math.floor(4 * guiScale) + (i - 1) * (barWidth + barPadding)
+	
+	local reflection = Instance.new("Frame")
+	reflection.Size = UDim2.new(0, barWidth, 0, 0)
+	reflection.Position = UDim2.new(0, xPos, 1, 0)
+	reflection.AnchorPoint = Vector2.new(0, 0)
+	reflection.BackgroundColor3 = C.accent
+	reflection.BackgroundTransparency = 0.85
+	reflection.BorderSizePixel = 0
+	reflection.ZIndex = 2
+	reflection.Parent = analyzerFrame
+	corner(reflection, 1)
+	reflectionBars[i] = reflection
+	
+	local bar = Instance.new("Frame")
+	bar.Name = "Bar" .. i
+	bar.Size = UDim2.new(0, barWidth, 0, 2)
+	bar.Position = UDim2.new(0, xPos, 1, -2)
+	bar.AnchorPoint = Vector2.new(0, 1)
+	bar.BackgroundColor3 = C.accent
+	bar.BorderSizePixel = 0
+	bar.ZIndex = 3
+	bar.Parent = analyzerFrame
+	corner(bar, 1)
+	bars[i] = bar
+	
+	local peakDot = Instance.new("Frame")
+	peakDot.Size = UDim2.new(0, barWidth, 0, 2)
+	peakDot.Position = UDim2.new(0, xPos, 1, -2)
+	peakDot.AnchorPoint = Vector2.new(0, 1)
+	peakDot.BackgroundColor3 = C.white
+	peakDot.BackgroundTransparency = 0.3
+	peakDot.BorderSizePixel = 0
+	peakDot.ZIndex = 4
+	peakDot.Parent = analyzerFrame
+	peakDots[i] = peakDot
+end
+
+local dbLabel = Instance.new("TextLabel")
+dbLabel.Size = UDim2.new(0, 60, 0, 14)
+dbLabel.Position = UDim2.new(0, 6, 0, 4)
+dbLabel.BackgroundTransparency = 1
+dbLabel.Text = "-∞ dB"
+dbLabel.TextColor3 = C.textMuted
+dbLabel.TextSize = math.floor(9 * guiScale)
+dbLabel.Font = Enum.Font.GothamBold
+dbLabel.TextXAlignment = Enum.TextXAlignment.Left
+dbLabel.ZIndex = 5
+dbLabel.Parent = analyzerFrame
+
+local levelMeter = Instance.new("Frame")
+levelMeter.Size = UDim2.new(0, 80, 0, 6)
+levelMeter.Position = UDim2.new(1, -86, 0, 8)
+levelMeter.BackgroundColor3 = C.sliderTrack
+levelMeter.ZIndex = 5
+levelMeter.Parent = analyzerFrame
+corner(levelMeter, 3)
+
+local levelFill = Instance.new("Frame")
+levelFill.Size = UDim2.new(0, 0, 1, 0)
+levelFill.BackgroundColor3 = C.green
+levelFill.ZIndex = 6
+levelFill.Parent = levelMeter
+corner(levelFill, 3)
+
+local contentScroll = Instance.new("ScrollingFrame")
+contentScroll.Name = "Content"
+contentScroll.Size = UDim2.new(1, -math.floor(16 * guiScale), 1, -math.floor(160 * guiScale))
+contentScroll.Position = UDim2.new(0, math.floor(8 * guiScale), 0, math.floor(158 * guiScale))
+contentScroll.BackgroundTransparency = 1
+contentScroll.ScrollBarThickness = isMobile and 4 or 3
+contentScroll.ScrollBarImageColor3 = C.accent
+contentScroll.ScrollBarImageTransparency = 0.4
+contentScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+contentScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+contentScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+contentScroll.ElasticBehavior = Enum.ElasticBehavior.Always
+contentScroll.Parent = main
+
+local contentList = Instance.new("UIListLayout")
+contentList.SortOrder = Enum.SortOrder.LayoutOrder
+contentList.Padding = UDim.new(0, math.floor(8 * guiScale))
+contentList.Parent = contentScroll
+
+pad(contentScroll, 4, 20, 4, 4)
+
+local function sectionHeader(text, icon, order)
+	local frame = Instance.new("Frame")
+	frame.Size = UDim2.new(1, 0, 0, math.floor(24 * guiScale))
+	frame.BackgroundTransparency = 1
+	frame.LayoutOrder = order
+	frame.Parent = contentScroll
+	
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 1, 0)
+	label.BackgroundTransparency = 1
+	label.Text = icon .. "  " .. text
+	label.TextColor3 = C.textSecondary
+	label.TextSize = math.floor(11 * guiScale)
+	label.Font = Enum.Font.GothamBold
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = frame
+	
+	return frame
+end
+
+sectionHeader("VOICE PRESETS", "◆", 1)
+
+local presetWrap = Instance.new("Frame")
+presetWrap.Name = "Presets"
+presetWrap.Size = UDim2.new(1, 0, 0, 0)
+presetWrap.AutomaticSize = Enum.AutomaticSize.Y
+presetWrap.BackgroundTransparency = 1
+presetWrap.LayoutOrder = 2
+presetWrap.Parent = contentScroll
+
+local presetGrid = Instance.new("UIGridLayout")
+presetGrid.CellSize = UDim2.new(0.48, 0, 0, math.floor(58 * guiScale))
+presetGrid.CellPadding = UDim2.new(0.02, 0, 0, math.floor(6 * guiScale))
+presetGrid.SortOrder = Enum.SortOrder.LayoutOrder
+presetGrid.FillDirectionMaxCells = 2
+presetGrid.Parent = presetWrap
+
+local PRESETS = {
+	{name = "Deep Bass", icon = "🔊", color = C.accent, pitch = 0.55, reverb = 0.2, distortion = 0, chorus = 0, echo = 0.05, flanger = 0, compressor = 0.4, tremolo = 0},
+	{name = "Chipmunk", icon = "🐿️", color = C.gold, pitch = 2.0, reverb = 0, distortion = 0, chorus = 0.15, echo = 0, flanger = 0, compressor = 0.25, tremolo = 0},
+	{name = "Robot", icon = "🤖", color = C.cyan, pitch = 0.85, reverb = 0.25, distortion = 0.45, chorus = 0.65, echo = 0.1, flanger = 0.55, compressor = 0.85, tremolo = 0},
+	{name = "Demon", icon = "👹", color = C.red, pitch = 0.4, reverb = 0.65, distortion = 0.55, chorus = 0.2, echo = 0.35, flanger = 0.1, compressor = 0.6, tremolo = 0.18},
+	{name = "Ghost", icon = "👻", color = Color3.fromRGB(170, 170, 220), pitch = 1.2, reverb = 0.85, distortion = 0, chorus = 0.45, echo = 0.55, flanger = 0.35, compressor = 0.1, tremolo = 0.25},
+	{name = "Radio", icon = "📻", color = C.orange, pitch = 1.05, reverb = 0.02, distortion = 0.35, chorus = 0, echo = 0, flanger = 0, compressor = 0.95, tremolo = 0},
+	{name = "Alien", icon = "👽", color = C.green, pitch = 1.5, reverb = 0.45, distortion = 0.15, chorus = 0.75, echo = 0.2, flanger = 0.85, compressor = 0.3, tremolo = 0.45},
+	{name = "Cave", icon = "🦇", color = Color3.fromRGB(100, 80, 60), pitch = 0.75, reverb = 0.95, distortion = 0, chorus = 0.1, echo = 0.7, flanger = 0, compressor = 0.15, tremolo = 0},
+	{name = "Helium", icon = "🎈", color = C.pink, pitch = 2.5, reverb = 0, distortion = 0, chorus = 0.3, echo = 0, flanger = 0.2, compressor = 0.5, tremolo = 0},
+	{name = "Reset", icon = "↺", color = C.textMuted, pitch = 1, reverb = 0, distortion = 0, chorus = 0, echo = 0, flanger = 0, compressor = 0, tremolo = 0},
+}
+
+local presetBtns = {}
+
+for i, preset in ipairs(PRESETS) do
+	local btn = Instance.new("TextButton")
+	btn.Name = preset.name
+	btn.BackgroundColor3 = C.card
+	btn.Text = ""
+	btn.LayoutOrder = i
+	btn.AutoButtonColor = false
+	btn.Parent = presetWrap
+	corner(btn, 10)
+	local bStroke = stroke(btn, C.border, 1, 0.55)
+	
+	local glow = Instance.new("Frame")
+	glow.Size = UDim2.new(1, 0, 0, 3)
+	glow.Position = UDim2.new(0, 0, 0, 0)
+	glow.BackgroundColor3 = preset.color
+	glow.BackgroundTransparency = 1
+	glow.BorderSizePixel = 0
+	glow.Parent = btn
+	
+	local topCorner = Instance.new("UICorner")
+	topCorner.CornerRadius = UDim.new(0, 10)
+	topCorner.Parent = glow
+	
+	local icon = Instance.new("TextLabel")
+	icon.Size = UDim2.new(0, math.floor(28 * guiScale), 0, math.floor(28 * guiScale))
+	icon.Position = UDim2.new(0, math.floor(10 * guiScale), 0.5, -math.floor(14 * guiScale))
+	icon.BackgroundTransparency = 1
+	icon.Text = preset.icon
+	icon.TextSize = math.floor(20 * guiScale)
+	icon.Parent = btn
+	
+	local nameLabel = Instance.new("TextLabel")
+	nameLabel.Size = UDim2.new(1, -math.floor(44 * guiScale), 0, math.floor(16 * guiScale))
+	nameLabel.Position = UDim2.new(0, math.floor(40 * guiScale), 0, math.floor(12 * guiScale))
+	nameLabel.BackgroundTransparency = 1
+	nameLabel.Text = preset.name
+	nameLabel.TextColor3 = C.textPrimary
+	nameLabel.TextSize = math.floor(12 * guiScale)
+	nameLabel.Font = Enum.Font.GothamBold
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+	nameLabel.Parent = btn
+	
+	local pitchInfo = Instance.new("TextLabel")
+	pitchInfo.Size = UDim2.new(1, -math.floor(44 * guiScale), 0, math.floor(12 * guiScale))
+	pitchInfo.Position = UDim2.new(0, math.floor(40 * guiScale), 0, math.floor(30 * guiScale))
+	pitchInfo.BackgroundTransparency = 1
+	pitchInfo.Text = string.format("%.1fx pitch", preset.pitch)
+	pitchInfo.TextColor3 = C.textMuted
+	pitchInfo.TextSize = math.floor(9 * guiScale)
+	pitchInfo.Font = Enum.Font.Gotham
+	pitchInfo.TextXAlignment = Enum.TextXAlignment.Left
+	pitchInfo.Parent = btn
+	
+	local activeMark = Instance.new("Frame")
+	activeMark.Size = UDim2.new(0, 6, 0, 6)
+	activeMark.Position = UDim2.new(1, -math.floor(14 * guiScale), 0, math.floor(10 * guiScale))
+	activeMark.BackgroundColor3 = preset.color
+	activeMark.BackgroundTransparency = 1
+	activeMark.Parent = btn
+	corner(activeMark, 3)
+	
+	presetBtns[i] = {btn = btn, stroke = bStroke, glow = glow, dot = activeMark, preset = preset}
+	
+	btn.MouseEnter:Connect(function()
+		if state.activePreset ~= i then
+			tw(btn, {BackgroundColor3 = C.cardHover}, 0.15)
+			tw(bStroke, {Color = lerpC(C.border, preset.color, 0.5), Transparency = 0.3}, 0.15)
+		end
+	end)
+	
+	btn.MouseLeave:Connect(function()
+		if state.activePreset ~= i then
+			tw(btn, {BackgroundColor3 = C.card}, 0.15)
+			tw(bStroke, {Color = C.border, Transparency = 0.55}, 0.15)
+		end
+	end)
+	
+	btn.MouseButton1Click:Connect(function()
+		for j, pb in pairs(presetBtns) do
+			if j ~= i then
+				tw(pb.btn, {BackgroundColor3 = C.card}, 0.2)
+				tw(pb.glow, {BackgroundTransparency = 1}, 0.2)
+				tw(pb.stroke, {Color = C.border, Transparency = 0.55}, 0.2)
+				tw(pb.dot, {BackgroundTransparency = 1}, 0.2)
+			end
+		end
+		
+		if state.activePreset == i then
+			state.activePreset = nil
+			tw(btn, {BackgroundColor3 = C.card}, 0.2)
+			tw(glow, {BackgroundTransparency = 1}, 0.2)
+			tw(bStroke, {Color = C.border, Transparency = 0.55}, 0.2)
+			tw(activeMark, {BackgroundTransparency = 1}, 0.2)
+		else
+			state.activePreset = i
+			tw(btn, {BackgroundColor3 = lerpC(C.card, preset.color, 0.18)}, 0.25)
+			tw(glow, {BackgroundTransparency = 0.2}, 0.25)
+			tw(bStroke, {Color = preset.color, Transparency = 0.15}, 0.25)
+			tw(activeMark, {BackgroundTransparency = 0}, 0.25)
+			
+			state.pitch = preset.pitch
+			state.reverb = preset.reverb
+			state.distortion = preset.distortion
+			state.chorus = preset.chorus
+			state.echo = preset.echo
+			state.flanger = preset.flanger
+			state.compressor = preset.compressor
+			state.tremolo = preset.tremolo
+			syncEffects()
+			replicate()
+		end
+	end)
+end
+
+sectionHeader("FINE CONTROLS", "◆", 3)
+
+local SLIDERS = {
+	{name = "Pitch", key = "pitch", min = 0.2, max = 3.0, color = C.accent, icon = "♪"},
+	{name = "Reverb", key = "reverb", min = 0, max = 1, color = C.cyan, icon = "◎"},
+	{name = "Distortion", key = "distortion", min = 0, max = 1, color = C.red, icon = "⚡"},
+	{name = "Chorus", key = "chorus", min = 0, max = 1, color = C.green, icon = "≋"},
+	{name = "Echo", key = "echo", min = 0, max = 1, color = C.gold, icon = "◌"},
+	{name = "Flanger", key = "flanger", min = 0, max = 1, color = C.orange, icon = "◐"},
+	{name = "Compressor", key = "compressor", min = 0, max = 1, color = Color3.fromRGB(180, 100, 255), icon = "▥"},
+	{name = "Tremolo", key = "tremolo", min = 0, max = 1, color = C.pink, icon = "∿"},
+}
+
+local sliderRefs = {}
+
+for idx, cfg in ipairs(SLIDERS) do
+	local cardH = math.floor(54 * guiScale)
+	local card = Instance.new("Frame")
+	card.Name = cfg.name .. "Slider"
+	card.Size = UDim2.new(1, 0, 0, cardH)
+	card.BackgroundColor3 = C.card
+	card.BackgroundTransparency = 0.15
+	card.LayoutOrder = 3 + idx
+	card.Parent = contentScroll
+	corner(card, 10)
+	stroke(card, C.border, 1, 0.65)
+	
+	local accentBar = Instance.new("Frame")
+	accentBar.Size = UDim2.new(0, 3, 0.6, 0)
+	accentBar.Position = UDim2.new(0, 0, 0.2, 0)
+	accentBar.BackgroundColor3 = cfg.color
+	accentBar.BackgroundTransparency = 0.3
+	accentBar.BorderSizePixel = 0
+	accentBar.Parent = card
+	
+	local ic = Instance.new("TextLabel")
+	ic.Size = UDim2.new(0, math.floor(20 * guiScale), 0, math.floor(14 * guiScale))
+	ic.Position = UDim2.new(0, math.floor(12 * guiScale), 0, math.floor(8 * guiScale))
+	ic.BackgroundTransparency = 1
+	ic.Text = cfg.icon
+	ic.TextColor3 = cfg.color
+	ic.TextSize = math.floor(13 * guiScale)
+	ic.Font = Enum.Font.GothamBold
+	ic.Parent = card
+	
+	local nm = Instance.new("TextLabel")
+	nm.Size = UDim2.new(0, 100, 0, math.floor(14 * guiScale))
+	nm.Position = UDim2.new(0, math.floor(32 * guiScale), 0, math.floor(8 * guiScale))
+	nm.BackgroundTransparency = 1
+	nm.Text = cfg.name
+	nm.TextColor3 = C.textPrimary
+	nm.TextSize = math.floor(11 * guiScale)
+	nm.Font = Enum.Font.GothamBold
+	nm.TextXAlignment = Enum.TextXAlignment.Left
+	nm.Parent = card
+	
+	local val = Instance.new("TextLabel")
+	val.Name = "Value"
+	val.Size = UDim2.new(0, 55, 0, math.floor(14 * guiScale))
+	val.Position = UDim2.new(1, -math.floor(67 * guiScale), 0, math.floor(8 * guiScale))
+	val.BackgroundTransparency = 1
+	val.Text = string.format("%.2f", state[cfg.key])
+	val.TextColor3 = cfg.color
+	val.TextSize = math.floor(11 * guiScale)
+	val.Font = Enum.Font.GothamBold
+	val.TextXAlignment = Enum.TextXAlignment.Right
+	val.Parent = card
+	
+	local trackH = math.floor(6 * guiScale)
+	local trackY = math.floor(32 * guiScale)
+	local trackMargin = math.floor(12 * guiScale)
+	
+	local track = Instance.new("Frame")
+	track.Name = "Track"
+	track.Size = UDim2.new(1, -trackMargin * 2, 0, trackH)
+	track.Position = UDim2.new(0, trackMargin, 0, trackY)
+	track.BackgroundColor3 = C.sliderTrack
+	track.Parent = card
+	corner(track, 3)
+	
+	local initFill = math.clamp((state[cfg.key] - cfg.min) / (cfg.max - cfg.min), 0, 1)
+	
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.Size = UDim2.new(initFill, 0, 1, 0)
+	fill.BackgroundColor3 = cfg.color
+	fill.Parent = track
+	corner(fill, 3)
+	grad(fill, lerpC(cfg.color, C.bg, 0.4), cfg.color, 0)
+	
+	local fillGlow = Instance.new("Frame")
+	fillGlow.Size = UDim2.new(1, 0, 3, 0)
+	fillGlow.Position = UDim2.new(0, 0, -1, 0)
+	fillGlow.BackgroundColor3 = cfg.color
+	fillGlow.BackgroundTransparency = 0.8
+	fillGlow.BorderSizePixel = 0
+	fillGlow.Parent = fill
+	
+	local knobSize = math.floor(isMobile and 22 or 18)
+	local hitboxSize = math.floor(isMobile and 44 or 30)
+	
+	local knobHitbox = Instance.new("TextButton")
+	knobHitbox.Name = "KnobHitbox"
+	knobHitbox.Size = UDim2.new(0, hitboxSize, 0, hitboxSize)
+	knobHitbox.Position = UDim2.new(initFill, -hitboxSize/2, 0.5, -hitboxSize/2)
+	knobHitbox.BackgroundTransparency = 1
+	knobHitbox.Text = ""
+	knobHitbox.ZIndex = 6
+	knobHitbox.Parent = track
+	
+	local knob = Instance.new("Frame")
+	knob.Name = "Knob"
+	knob.Size = UDim2.new(0, knobSize, 0, knobSize)
+	knob.Position = UDim2.new(0.5, -knobSize/2, 0.5, -knobSize/2)
+	knob.BackgroundColor3 = C.white
+	knob.ZIndex = 7
+	knob.Parent = knobHitbox
+	corner(knob, knobSize/2)
+	stroke(knob, cfg.color, 2, 0)
+	
+	local knobInner = Instance.new("Frame")
+	knobInner.Size = UDim2.new(0, math.floor(knobSize * 0.4), 0, math.floor(knobSize * 0.4))
+	knobInner.Position = UDim2.new(0.5, -math.floor(knobSize * 0.2), 0.5, -math.floor(knobSize * 0.2))
+	knobInner.BackgroundColor3 = cfg.color
+	knobInner.ZIndex = 8
+	knobInner.Parent = knob
+	corner(knobInner, knobSize)
+	
+	local dragging = false
+	
+	local function applySlider(inputX)
+		local absPos = track.AbsolutePosition.X
+		local absSize = track.AbsoluteSize.X
+		local rel = math.clamp((inputX - absPos) / absSize, 0, 1)
+		local value = cfg.min + rel * (cfg.max - cfg.min)
+		value = math.floor(value * 100 + 0.5) / 100
+		
+		state[cfg.key] = value
+		fill.Size = UDim2.new(rel, 0, 1, 0)
+		knobHitbox.Position = UDim2.new(rel, -hitboxSize/2, 0.5, -hitboxSize/2)
+		val.Text = string.format("%.2f", value)
+		
+		state.activePreset = nil
+		for _, pb in pairs(presetBtns) do
+			tw(pb.btn, {BackgroundColor3 = C.card}, 0.15)
+			tw(pb.glow, {BackgroundTransparency = 1}, 0.15)
+			tw(pb.stroke, {Color = C.border, Transparency = 0.55}, 0.15)
+			tw(pb.dot, {BackgroundTransparency = 1}, 0.15)
+		end
+		
+		syncEffects()
+		replicate()
+	end
+	
+	knobHitbox.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			contentScroll.ScrollingEnabled = false
+			tw(knob, {Size = UDim2.new(0, knobSize + 6, 0, knobSize + 6), Position = UDim2.new(0.5, -(knobSize+6)/2, 0.5, -(knobSize+6)/2)}, 0.12)
+			applySlider(input.Position.X)
+		end
+	end)
+	
+	track.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			contentScroll.ScrollingEnabled = false
+			tw(knob, {Size = UDim2.new(0, knobSize + 6, 0, knobSize + 6), Position = UDim2.new(0.5, -(knobSize+6)/2, 0.5, -(knobSize+6)/2)}, 0.12)
+			applySlider(input.Position.X)
+		end
+	end)
+	
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			applySlider(input.Position.X)
+		end
+	end)
+	
+	UserInputService.InputEnded:Connect(function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+			dragging = false
+			contentScroll.ScrollingEnabled = true
+			tw(knob, {Size = UDim2.new(0, knobSize, 0, knobSize), Position = UDim2.new(0.5, -knobSize/2, 0.5, -knobSize/2)}, 0.2)
+		end
+	end)
+	
+	sliderRefs[cfg.key] = {fill = fill, knob = knobHitbox, val = val, track = track, cfg = cfg, knobFrame = knob, hitboxSize = hitboxSize}
+end
+
+sectionHeader("QUICK ACTIONS", "◆", 20)
+
+local actionsWrap = Instance.new("Frame")
+actionsWrap.Size = UDim2.new(1, 0, 0, math.floor(44 * guiScale))
+actionsWrap.BackgroundTransparency = 1
+actionsWrap.LayoutOrder = 21
+actionsWrap.Parent = contentScroll
+
+local actionsRow = Instance.new("UIListLayout")
+actionsRow.FillDirection = Enum.FillDirection.Horizontal
+actionsRow.Padding = UDim.new(0, math.floor(6 * guiScale))
+actionsRow.Parent = actionsWrap
+
+local function quickBtn(name, icon, color, order, fn)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(0, math.floor(95 * guiScale), 0, math.floor(38 * guiScale))
+	b.BackgroundColor3 = C.card
+	b.Text = ""
+	b.AutoButtonColor = false
+	b.LayoutOrder = order
+	b.Parent = actionsWrap
+	corner(b, 8)
+	stroke(b, color, 1, 0.55)
+	
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1, 0, 1, 0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = icon .. " " .. name
+	lbl.TextColor3 = color
+	lbl.TextSize = math.floor(10 * guiScale)
+	lbl.Font = Enum.Font.GothamBold
+	lbl.Parent = b
+	
+	b.MouseEnter:Connect(function()
+		tw(b, {BackgroundColor3 = lerpC(C.card, color, 0.2)}, 0.12)
+	end)
+	b.MouseLeave:Connect(function()
+		tw(b, {BackgroundColor3 = C.card}, 0.12)
+	end)
+	
+	if isMobile then
+		b.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Touch then
+				tw(b, {BackgroundColor3 = lerpC(C.card, color, 0.3)}, 0.08)
+			end
+		end)
+		b.InputEnded:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.Touch then
+				tw(b, {BackgroundColor3 = C.card}, 0.15)
+			end
+		end)
+	end
+	
+	b.MouseButton1Click:Connect(fn)
+	return b
+end
+
+local function refreshSliderVisuals()
+	for key, ref in pairs(sliderRefs) do
+		local cfg = ref.cfg
+		local rel = math.clamp((state[key] - cfg.min) / (cfg.max - cfg.min), 0, 1)
+		tw(ref.fill, {Size = UDim2.new(rel, 0, 1, 0)}, 0.3)
+		tw(ref.knob, {Position = UDim2.new(rel, -ref.hitboxSize/2, 0.5, -ref.hitboxSize/2)}, 0.3)
+		ref.val.Text = string.format("%.2f", state[key])
+	end
+end
+
+quickBtn("Reset", "↺", C.textSecondary, 1, function()
+	state.pitch = 1
+	state.reverb = 0
+	state.distortion = 0
+	state.chorus = 0
+	state.echo = 0
+	state.flanger = 0
+	state.compressor = 0
+	state.tremolo = 0
+	state.activePreset = nil
+	
+	for _, pb in pairs(presetBtns) do
+		tw(pb.btn, {BackgroundColor3 = C.card}, 0.2)
+		tw(pb.glow, {BackgroundTransparency = 1}, 0.2)
+		tw(pb.stroke, {Color = C.border, Transparency = 0.55}, 0.2)
+		tw(pb.dot, {BackgroundTransparency = 1}, 0.2)
+	end
+	
+	refreshSliderVisuals()
+	syncEffects()
+	replicate()
+end)
+
+quickBtn("Random", "🎲", C.gold, 2, function()
+	state.pitch = math.random(20, 300) / 100
+	state.reverb = math.random(0, 100) / 100
+	state.distortion = math.random(0, 75) / 100
+	state.chorus = math.random(0, 100) / 100
+	state.echo = math.random(0, 65) / 100
+	state.flanger = math.random(0, 100) / 100
+	state.compressor = math.random(0, 100) / 100
+	state.tremolo = math.random(0, 55) / 100
+	state.activePreset = nil
+	
+	for _, pb in pairs(presetBtns) do
+		tw(pb.btn, {BackgroundColor3 = C.card}, 0.2)
+		tw(pb.glow, {BackgroundTransparency = 1}, 0.2)
+		tw(pb.stroke, {Color = C.border, Transparency = 0.55}, 0.2)
+		tw(pb.dot, {BackgroundTransparency = 1}, 0.2)
+	end
+	
+	refreshSliderVisuals()
+	syncEffects()
+	replicate()
+end)
+
+quickBtn("Extreme", "💀", C.red, 3, function()
+	state.pitch = ({0.25, 3.0, 0.3, 2.8})[math.random(1, 4)]
+	state.reverb = math.random(70, 100) / 100
+	state.distortion = math.random(60, 100) / 100
+	state.chorus = math.random(50, 100) / 100
+	state.echo = math.random(40, 80) / 100
+	state.flanger = math.random(60, 100) / 100
+	state.compressor = math.random(70, 100) / 100
+	state.tremolo = math.random(30, 70) / 100
+	state.activePreset = nil
+	
+	for _, pb in pairs(presetBtns) do
+		tw(pb.btn, {BackgroundColor3 = C.card}, 0.2)
+		tw(pb.glow, {BackgroundTransparency = 1}, 0.2)
+		tw(pb.stroke, {Color = C.border, Transparency = 0.55}, 0.2)
+		tw(pb.dot, {BackgroundTransparency = 1}, 0.2)
+	end
+	
+	refreshSliderVisuals()
+	syncEffects()
+	replicate()
+end)
+
+local bottomSpacer = Instance.new("Frame")
+bottomSpacer.Size = UDim2.new(1, 0, 0, 30)
+bottomSpacer.BackgroundTransparency = 1
+bottomSpacer.LayoutOrder = 99
+bottomSpacer.Parent = contentScroll
+
+local fab = Instance.new("TextButton")
+fab.Name = "FAB"
+fab.Size = UDim2.new(0, math.floor(isMobile and 56 or 48), 0, math.floor(isMobile and 56 or 48))
+fab.Position = UDim2.new(0, math.floor(isMobile and 20 or 14), 0.5, -math.floor(isMobile and 28 or 24))
+fab.BackgroundColor3 = C.accent
+fab.Text = "🎙"
+fab.TextSize = math.floor(isMobile and 26 or 22)
+fab.TextColor3 = C.white
+fab.AutoButtonColor = false
+fab.Visible = false
+fab.ZIndex = 20
+fab.Parent = screenGui
+corner(fab, isMobile and 28 or 24)
+stroke(fab, C.accentBright, 2, 0.15)
+
+local fabGlow = Instance.new("Frame")
+fabGlow.Size = UDim2.new(1.3, 0, 1.3, 0)
+fabGlow.Position = UDim2.new(-0.15, 0, -0.15, 0)
+fabGlow.BackgroundColor3 = C.accent
+fabGlow.BackgroundTransparency = 0.7
+fabGlow.ZIndex = 19
+fabGlow.Parent = fab
+corner(fabGlow, isMobile and 36 or 32)
+
+local draggingUI = false
+local dragStart, startPos
+
+header.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		draggingUI = true
+		dragStart = input.Position
+		startPos = main.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				draggingUI = false
+			end
+		end)
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if draggingUI and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+powerBtn.MouseButton1Click:Connect(function()
+	state.enabled = not state.enabled
+	if state.enabled then
+		tw(powerBtn, {BackgroundColor3 = C.green, BackgroundTransparency = 0.15}, 0.25)
+		tw(statusDot, {BackgroundColor3 = C.green}, 0.25)
+		statusLabel.Text = "LIVE"
+		statusLabel.TextColor3 = C.green
+		tw(mainStroke, {Color = C.accent}, 0.25)
+	else
+		tw(powerBtn, {BackgroundColor3 = C.red, BackgroundTransparency = 0.15}, 0.25)
+		tw(statusDot, {BackgroundColor3 = C.red}, 0.25)
+		statusLabel.Text = "OFF"
+		statusLabel.TextColor3 = C.red
+		tw(mainStroke, {Color = C.red}, 0.25)
+	end
+	syncEffects()
+	replicate()
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+	tw(main, {Size = UDim2.new(0, panelW, 0, 0), BackgroundTransparency = 1}, 0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+	task.wait(0.35)
+	main.Visible = false
+	fab.Visible = true
+	spring(fab, {}, 0.3)
+end)
+
+minBtn.MouseButton1Click:Connect(function()
+	state.minimized = not state.minimized
+	if state.minimized then
+		tw(main, {Size = UDim2.new(0, panelW, 0, math.floor(62 * guiScale))}, 0.35, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+		minBtn.Text = "＋"
+	else
+		spring(main, {Size = UDim2.new(0, panelW, 0, panelH)}, 0.4)
+		minBtn.Text = "—"
+	end
+end)
+
+fab.MouseButton1Click:Connect(function()
+	main.Visible = true
+	main.Size = UDim2.new(0, panelW, 0, 0)
+	main.BackgroundTransparency = 1
+	main.Position = UDim2.new(0.5, -panelW/2, 0.5, -panelH/2)
+	fab.Visible = false
+	
+	tw(main, {BackgroundTransparency = 0}, 0.2)
+	spring(main, {Size = UDim2.new(0, panelW, 0, panelH)}, 0.5)
+end)
+
+main.Visible = false
+main.Size = UDim2.new(0, panelW, 0, 0)
+main.BackgroundTransparency = 1
+
+task.delay(0.3, function()
+	main.Visible = true
+	tw(main, {BackgroundTransparency = 0}, 0.3)
+	spring(main, {Size = UDim2.new(0, panelW, 0, panelH)}, 0.6)
+end)
+
+task.spawn(function()
+	if player.Character then
+		setupEffects()
+		getAudioAnalyzer()
+	end
+	player.CharacterAdded:Connect(function()
+		task.wait(1)
+		setupEffects()
+		getAudioAnalyzer()
+		syncEffects()
+		replicate()
+	end)
+end)
+
+task.spawn(function()
+	local clock = 0
+	while true do
+		local dt = RunService.RenderStepped:Wait()
+		clock = clock + dt
+		
+		processAudioData(dt)
+		
+		local maxBarH = analyzerH - 10
+		for i = 1, barCount do
+			local bandVal = state.frequencyBands[i]
+			local peakVal = state.peakHold[i]
+			
+			local h = math.max(2, bandVal * maxBarH)
+			local peakH = math.max(2, peakVal * maxBarH)
+			
+			bars[i].Size = UDim2.new(0, barWidth, 0, h)
+			bars[i].Position = UDim2.new(0, bars[i].Position.X.Offset, 1, -4)
+			
+			local t = math.clamp(i / barCount, 0, 1)
+			local barColor
+			if bandVal > 0.7 then
+				barColor = lerpC(C.gold, C.red, (bandVal - 0.7) / 0.3)
+			elseif bandVal > 0.4 then
+				barColor = lerpC(C.cyan, C.gold, (bandVal - 0.4) / 0.3)
+			else
+				barColor = lerpC(C.accentDim, C.cyan, t)
+			end
+			
+			if state.distortion > 0.3 then
+				barColor = lerpC(barColor, C.red, state.distortion * 0.4)
+			end
+			
+			bars[i].BackgroundColor3 = barColor
+			bars[i].BackgroundTransparency = state.enabled and 0.05 or 0.7
+			
+			peakDots[i].Position = UDim2.new(0, bars[i].Position.X.Offset, 1, -(peakH + 6))
+			peakDots[i].BackgroundTransparency = state.enabled and 0.35 or 0.85
+			
+			reflectionBars[i].Size = UDim2.new(0, barWidth, 0, math.max(1, h * 0.2))
+			reflectionBars[i].BackgroundTransparency = 0.88
+			reflectionBars[i].BackgroundColor3 = barColor
+		end
+		
+		local dbValue = state.loudness > 0.001 and (20 * math.log10(state.loudness)) or -math.huge
+		if dbValue > -100 then
+			dbLabel.Text = string.format("%.0f dB", dbValue)
+		else
+			dbLabel.Text = "-∞ dB"
+		end
+		
+		levelFill.Size = UDim2.new(math.clamp(state.loudness, 0, 1), 0, 1, 0)
+		if state.loudness > 0.8 then
+			levelFill.BackgroundColor3 = C.red
+		elseif state.loudness > 0.5 then
+			levelFill.BackgroundColor3 = C.gold
+		else
+			levelFill.BackgroundColor3 = C.green
+		end
+		
+		scanline.Position = UDim2.new(0, 0, (math.sin(clock * 0.8) + 1) / 2, 0)
+		scanline.BackgroundTransparency = 0.88 + math.sin(clock * 3) * 0.05
+		
+		if state.enabled then
+			local pulse = (math.sin(clock * 5) + 1) / 2
+			statusDot.BackgroundTransparency = pulse * 0.35
+			logoGlow.BackgroundTransparency = 0.7 + pulse * 0.15
+		else
+			statusDot.BackgroundTransparency = 0
+			logoGlow.BackgroundTransparency = 0.9
+		end
+	end
+end)
+
+task.spawn(function()
+	while true do
+		replicate()
+		task.wait(0.3)
+	end
+end)
+
+task.spawn(function()
+	while true do
+		local character = player.Character
+		if character then
+			local head = character:FindFirstChild("Head")
+			if head and not head:FindFirstChild("VMPitch") then
+				setupEffects()
+				getAudioAnalyzer()
+			end
+		end
+		task.wait(2)
+	end
+end)
+
+local function applyOtherPlayerEffects(otherPlayer)
+	task.spawn(function()
+		while otherPlayer.Parent do
+			local char = otherPlayer.Character
+			if char then
+				local head = char:FindFirstChild("Head")
+				if head then
+					local cfg = head:FindFirstChild("VMConfig")
+					if cfg and cfg:IsA("StringValue") and cfg.Value ~= "" then
+						local parts = string.split(cfg.Value, "|")
+						if #parts >= 9 then
+							local vals = {}
+							for i = 1, 8 do vals[i] = tonumber(parts[i]) or 0 end
+							local enabled = parts[9] == "true"
+							
+							local function getOrCreate(class, name)
+								local existing = head:FindFirstChild(name)
+								if not existing then
+									existing = Instance.new(class)
+									existing.Name = name
+									existing.Parent = head
+								end
+								return existing
+							end
+							
+							local p = getOrCreate("PitchShiftSoundEffect", "VMPitch")
+							p.Octave = vals[1]
+							p.Enabled = enabled
+							
+							local r = getOrCreate("ReverbSoundEffect", "VMReverb")
+							r.DecayTime = math.max(0.1, vals[2] * 12)
+							r.Density = vals[2]
+							r.Diffusion = vals[2]
+							r.WetLevel = vals[2] > 0.01 and (vals[2] * -15 + (-15)) or -80
+							r.Enabled = enabled and vals[2] > 0.01
+							
+							local d = getOrCreate("DistortionSoundEffect", "VMDistortion")
+							d.Level = vals[3] * 0.75
+							d.Enabled = enabled and vals[3] > 0.01
+							
+							local ch = getOrCreate("ChorusSoundEffect", "VMChorus")
+							ch.Depth = vals[4] * 0.8
+							ch.Mix = vals[4] * 0.7
+							ch.Rate = math.max(0.01, vals[4] * 4)
+							ch.Enabled = enabled and vals[4] > 0.01
+							
+							local ec = getOrCreate("EchoSoundEffect", "VMEcho")
+							ec.Delay = math.max(0.02, vals[5] * 0.4 + 0.02)
+							ec.Feedback = vals[5] * 0.55
+							ec.WetMix = vals[5] * 0.8
+							ec.Enabled = enabled and vals[5] > 0.01
+							
+							local fl = getOrCreate("FlangeSoundEffect", "VMFlanger")
+							fl.Depth = vals[6] * 0.9
+							fl.Mix = vals[6] * 0.75
+							fl.Rate = math.max(0.01, vals[6] * 8)
+							fl.Enabled = enabled and vals[6] > 0.01
+							
+							local co = getOrCreate("CompressorSoundEffect", "VMCompressor")
+							co.Threshold = -8 - vals[7] * 32
+							co.Ratio = 1 + vals[7] * 24
+							co.Enabled = enabled and vals[7] > 0.01
+							
+							local tr = getOrCreate("TremoloSoundEffect", "VMTremolo")
+							tr.Depth = vals[8] * 0.85
+							tr.Frequency = math.max(0.01, vals[8] * 12)
+							tr.Enabled = enabled and vals[8] > 0.01
+							
+							local eq = getOrCreate("EqualizerSoundEffect", "VMEqualizer")
+							if vals[1] < 0.8 then
+								eq.LowGain = (1 - vals[1]) * 6
+								eq.HighGain = -(1 - vals[1]) * 3
+							elseif vals[1] > 1.3 then
+								eq.LowGain = -(vals[1] - 1) * 4
+								eq.HighGain = (vals[1] - 1) * 5
+							else
+								eq.LowGain = 0
+								eq.HighGain = 0
+							end
+							eq.Enabled = enabled
+						end
+					end
+				end
+			end
+			task.wait(0.8)
+		end
+	end)
+end
+
+for _, p in ipairs(Players:GetPlayers()) do
+	if p ~= player then
+		applyOtherPlayerEffects(p)
+	end
+end
+
+Players.PlayerAdded:Connect(function(p)
+	if p ~= player then
+		applyOtherPlayerEffects(p)
+	end
+end)
+
+if not isMobile then
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed then return end
+		if input.KeyCode == Enum.KeyCode.V then
+			if main.Visible then
+				tw(main, {Size = UDim2.new(0, panelW, 0, 0), BackgroundTransparency = 1}, 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+				task.wait(0.3)
+				main.Visible = false
+				fab.Visible = true
+			else
+				main.Visible = true
+				main.Size = UDim2.new(0, panelW, 0, 0)
+				main.BackgroundTransparency = 1
+				main.Position = UDim2.new(0.5, -panelW/2, 0.5, -panelH/2)
+				fab.Visible = false
+				tw(main, {BackgroundTransparency = 0}, 0.2)
+				spring(main, {Size = UDim2.new(0, panelW, 0, panelH)}, 0.5)
+			end
+		end
+	end)
+end
